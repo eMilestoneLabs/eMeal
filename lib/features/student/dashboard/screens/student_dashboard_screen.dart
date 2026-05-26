@@ -1,0 +1,874 @@
+import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
+import 'package:smart_meal_management/app/router/route_names.dart';
+import 'package:smart_meal_management/core/constants/app_constants.dart';
+import 'package:smart_meal_management/core/theme/app_colors.dart';
+import 'package:smart_meal_management/core/theme/app_typography.dart';
+import 'package:smart_meal_management/data/services/notification_service.dart';
+import 'package:smart_meal_management/features/auth/providers/auth_provider.dart';
+import 'package:smart_meal_management/features/student/dashboard/providers/student_dashboard_provider.dart';
+import 'package:smart_meal_management/features/student/dashboard/screens/no_group_screen.dart';
+import 'package:smart_meal_management/features/student/dashboard/widgets/meal_timeline_card.dart';
+import 'package:smart_meal_management/features/student/dashboard/widgets/next_meal_card.dart';
+import 'package:smart_meal_management/features/student/dashboard/widgets/student_greeting_card.dart';
+// group_config_provider.dart removed — GroupConfigProvider is now managed by
+// StudentShell and accessed only via StudentDashboardProvider.
+import 'package:smart_meal_management/shared/enums/user_role.dart';
+import 'package:smart_meal_management/shared/models/attendance_model.dart';
+import 'package:smart_meal_management/shared/models/user_model.dart';
+import 'package:smart_meal_management/shared/widgets/app_glass_card.dart';
+
+/// Primary student dashboard — the home tab of the student shell.
+///
+/// ## Layout (scrollable)
+/// ```
+/// [greeting card]
+/// ─── Vacation mode banner (conditional) ───
+/// [next / current meal card]
+/// [section: Today's Meals]
+/// [meal timeline horizontal scroll]
+/// [section: 30-Day Summary]
+/// [attendance summary bar]
+/// ```
+///
+/// State is managed by [StudentDashboardProvider] (ChangeNotifier).
+/// The provider is created once inside [State] and disposed with it.
+class StudentDashboardScreen extends StatefulWidget {
+  const StudentDashboardScreen({super.key});
+
+  @override
+  State<StudentDashboardScreen> createState() => _StudentDashboardScreenState();
+}
+
+class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
+  // Provider is now owned by the shell (StudentDashboardScope) — this screen
+  // reads it from the scope and fires the initial load if not yet done.
+  AuthProvider? _authProvider;
+  bool _initialized = false;
+
+  /// The group currently selected in the group-switcher chip row.
+  /// Null means use the user's default [UserModel.groupId].
+  String? _activeGroupId;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_initialized) return;
+    _initialized = true;
+
+    // Listen to auth changes (vacation toggle, default attendance from settings)
+    // so the dashboard reflects them immediately without requiring a full reload.
+    _authProvider = AuthProviderScope.of(context);
+    _authProvider!.addListener(_onUserChanged);
+
+    // Trigger initial load via the shell-level shared provider.
+    final provider = StudentDashboardScope.of(context);
+    final user = _authProvider!.currentUser;
+    if (user != null && !provider.isLoading && provider.todayMeals.isEmpty) {
+      provider.load(user: _userWithActiveGroup(user));
+    }
+  }
+
+  /// Returns [user] with [groupId] overridden to [_activeGroupId] when set.
+  UserModel _userWithActiveGroup(UserModel user) {
+    if (_activeGroupId == null) return user;
+    return user.copyWith(groupId: _activeGroupId);
+  }
+
+  /// Switches the active group and reloads dashboard data.
+  Future<void> _switchGroup(String groupId) async {
+    if (_activeGroupId == groupId) return;
+    setState(() => _activeGroupId = groupId);
+    final user = _authProvider?.currentUser;
+    if (user != null) {
+      final provider = StudentDashboardScope.of(context);
+      await provider.load(user: _userWithActiveGroup(user));
+    }
+  }
+
+  /// Fires when vacation mode or other user flags change from settings screen.
+  ///
+  /// Syncs vacation state into the dashboard provider and reschedules local
+  /// notifications immediately when vacation turns OFF.
+  void _onUserChanged() {
+    final user = _authProvider?.currentUser;
+    if (user == null || !mounted) return;
+    final p = StudentDashboardScope.maybeOf(context);
+    if (p == null) return;
+
+    final wasVacation = p.isVacationMode;
+    p.setVacationMode(user.isVacationMode);
+
+    // Reschedule reminders immediately when vacation ends.
+    if (wasVacation && !user.isVacationMode && p.remindersEnabled && p.todayMeals.isNotEmpty) {
+      NotificationService.instance.syncReminders(
+        p.todayMeals,
+        isVacationMode: false,
+        markedMealIds: p.markedMealIds,
+      );
+    }
+  }
+
+  @override
+  void dispose() {
+    _authProvider?.removeListener(_onUserChanged);
+    // Do NOT dispose the provider — it is owned by StudentShell.
+    super.dispose();
+  }
+
+  Future<void> _onRefresh() async {
+    final user = AuthProviderScope.of(context).currentUser;
+    if (user != null) {
+      final provider = StudentDashboardScope.of(context);
+      await provider.load(user: _userWithActiveGroup(user));
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final provider = StudentDashboardScope.maybeOf(context);
+    if (provider == null) {
+      return const Scaffold(
+        body: Center(
+          child: CircularProgressIndicator(
+            color: AppColors.primary,
+            strokeWidth: 2.5,
+          ),
+        ),
+      );
+    }
+
+    return ListenableBuilder(
+      listenable: provider,
+      builder: (context, _) {
+        final user = AuthProviderScope.of(context).currentUser;
+
+        // ── No-group gate ──────────────────────────────────────────────────
+        // If the user has not joined any group yet, skip all dashboard content
+        // and show the premium onboarding prompt instead.
+        if (user != null && user.effectiveGroupIds.isEmpty) {
+          return const NoGroupScreen();
+        }
+
+        final currentUser = user ?? _placeholderUser;
+
+        return Scaffold(
+          backgroundColor: Theme.of(context).colorScheme.surface,
+          body: SafeArea(
+            child: RefreshIndicator(
+              color: AppColors.primary,
+              onRefresh: _onRefresh,
+              child: CustomScrollView(
+                physics: const AlwaysScrollableScrollPhysics(),
+                slivers: [
+                  // ── Top padding ──────────────────────────────────────────
+                  const SliverToBoxAdapter(
+                      child: SizedBox(height: AppConstants.space24)),
+
+                  // ── Greeting card ────────────────────────────────────────
+                  SliverToBoxAdapter(
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: AppConstants.space20),
+                      child: StudentGreetingCard(
+                        user: currentUser,
+                        // Use real group name from provider (loaded from mock data)
+                        groupName: provider.groupName.isNotEmpty
+                            ? provider.groupName
+                            : null,
+                        streakDays: provider.streakDays,
+                        isVacationMode: currentUser.isVacationMode,
+                        attendanceRate:
+                            provider.summary?.attendanceRate ?? 0.0,
+                        isDefaultAttendance: currentUser.isDefaultAttendance,
+                        onAvatarTap: () =>
+                            context.go(RouteNames.studentProfile),
+                      ),
+                    ),
+                  ),
+
+                  const SliverToBoxAdapter(
+                      child: SizedBox(height: AppConstants.space16)),
+
+                  // ── Group switcher (multi-group only) ────────────────────
+                  if (currentUser.effectiveGroupIds.length > 1)
+                    SliverToBoxAdapter(
+                      child: _GroupSwitcherRow(
+                        groupIds: currentUser.effectiveGroupIds,
+                        activeGroupId: _activeGroupId ??
+                            currentUser.groupId ??
+                            currentUser.effectiveGroupIds.first,
+                        onSwitch: _switchGroup,
+                        isDark: Theme.of(context).brightness == Brightness.dark,
+                      ),
+                    ),
+
+                  if (currentUser.effectiveGroupIds.length > 1)
+                    const SliverToBoxAdapter(
+                        child: SizedBox(height: AppConstants.space16)),
+
+                  // ── Vacation mode banner ─────────────────────────────────
+                  // Always read from the live user model (reflects settings
+                  // changes immediately via the InheritedNotifier rebuild).
+                  if (currentUser.isVacationMode)
+                    SliverToBoxAdapter(
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: AppConstants.space20),
+                        child: _VacationBanner(
+                          onDisable: () =>
+                              context.go(RouteNames.studentSettings),
+                        ),
+                      ),
+                    ),
+
+                  if (currentUser.isVacationMode)
+                    const SliverToBoxAdapter(
+                        child: SizedBox(height: AppConstants.space16)),
+
+                  // ── Loading / Error / Content ────────────────────────────
+                  if (provider.isLoading)
+                    const SliverFillRemaining(
+                      hasScrollBody: false,
+                      child: _LoadingView(),
+                    )
+                  else if (provider.error != null)
+                    SliverFillRemaining(
+                      hasScrollBody: false,
+                      child: _ErrorView(
+                        message: provider.error!,
+                        onRetry: _onRefresh,
+                      ),
+                    )
+                  else ...[
+                    // ── Next / Current Meal Card ─────────────────────────
+                    if (provider.mealsEnabled &&
+                        provider.currentOrNextMeal != null)
+                      SliverToBoxAdapter(
+                        child: NextMealCard(
+                          meal: provider.currentOrNextMeal!,
+                          status: provider
+                              .statusForMeal(provider.currentOrNextMeal!.id),
+                          isWindowOpen: provider
+                              .isWindowOpen(provider.currentOrNextMeal!),
+                          isWindowPast: provider
+                              .isWindowPast(provider.currentOrNextMeal!),
+                          onMarkAttendance: () =>
+                              context.go(RouteNames.studentAttendance),
+                        ),
+                      ),
+
+                    if (provider.mealsEnabled &&
+                        provider.currentOrNextMeal != null)
+                      const SliverToBoxAdapter(
+                          child: SizedBox(height: AppConstants.space24)),
+
+                    // ── Today's Meals section ────────────────────────────
+                    if (provider.mealsEnabled &&
+                        provider.todayMeals.isNotEmpty) ...[
+                      SliverToBoxAdapter(
+                        child: _SectionHeader(
+                          title: "Today's Meals",
+                          actionLabel: provider.weeklyMenuEnabled
+                              ? 'Full Menu'
+                              : null,
+                          onAction: provider.weeklyMenuEnabled
+                              ? () =>
+                                  context.go(RouteNames.studentWeeklyMenu)
+                              : null,
+                        ),
+                      ),
+                      const SliverToBoxAdapter(
+                          child: SizedBox(height: AppConstants.space12)),
+                      SliverToBoxAdapter(
+                        child: MealTimelineCard(
+                          meals: provider.todayMeals,
+                          provider: provider,
+                          onMealTap: (_) =>
+                              context.go(RouteNames.studentAttendance),
+                        ),
+                      ),
+                      const SliverToBoxAdapter(
+                          child: SizedBox(height: AppConstants.space24)),
+                    ],
+
+                    // ── 30-Day Attendance Summary ─────────────────────────
+                    if (provider.summary != null) ...[
+                      SliverToBoxAdapter(
+                        child: _SectionHeader(
+                          title: '30-Day Summary',
+                          actionLabel: 'History',
+                          onAction: () =>
+                              context.go(RouteNames.studentAttendanceHistory),
+                        ),
+                      ),
+                      const SliverToBoxAdapter(
+                          child: SizedBox(height: AppConstants.space12)),
+                      SliverToBoxAdapter(
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: AppConstants.space20),
+                          child: _AttendanceSummaryCard(
+                              summary: provider.summary!),
+                        ),
+                      ),
+                      const SliverToBoxAdapter(
+                          child: SizedBox(height: AppConstants.space24)),
+                    ],
+
+                    // ── Quick Actions row ────────────────────────────────
+                    SliverToBoxAdapter(
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: AppConstants.space20),
+                        child: _QuickActionsRow(
+                          onAttendance: () =>
+                              context.go(RouteNames.studentAttendance),
+                          onHistory: () =>
+                              context.go(RouteNames.studentAttendanceHistory),
+                          onMenu: provider.mealsEnabled &&
+                                  provider.weeklyMenuEnabled
+                              ? () => context.go(RouteNames.studentWeeklyMenu)
+                              : null,
+                        ),
+                      ),
+                    ),
+                  ],
+
+                  // ── Bottom padding ───────────────────────────────────────
+                  const SliverToBoxAdapter(
+                      child: SizedBox(height: AppConstants.space40)),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+// ── Placeholder user (prevents null crash during first frame) ──────────────────
+const _placeholderUser = UserModel(
+  id: '',
+  name: 'Student',
+  email: '',
+  role: UserRole.student,
+  organizationId: '',
+  groupIds: [],
+  isVacationMode: false,
+  isDefaultAttendance: false,
+);
+
+// ── Sub-widgets ────────────────────────────────────────────────────────────────
+
+class _SectionHeader extends StatelessWidget {
+  const _SectionHeader({
+    required this.title,
+    this.actionLabel,
+    this.onAction,
+  });
+
+  final String title;
+  final String? actionLabel;
+  final VoidCallback? onAction;
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: AppConstants.space20),
+      child: Row(
+        children: [
+          Text(
+            title,
+            style: AppTypography.titleSmall.copyWith(
+              color: isDark ? AppColors.textPrimaryDark : AppColors.textPrimary,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const Spacer(),
+          if (actionLabel != null && onAction != null)
+            GestureDetector(
+              onTap: onAction,
+              child: Text(
+                actionLabel!,
+                style: AppTypography.labelMedium.copyWith(
+                  color: AppColors.primary,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _VacationBanner extends StatelessWidget {
+  const _VacationBanner({this.onDisable});
+  final VoidCallback? onDisable;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppConstants.space16,
+        vertical: AppConstants.space12,
+      ),
+      decoration: BoxDecoration(
+        color: AppColors.vacation.withValues(alpha: 0.10),
+        borderRadius: BorderRadius.circular(AppConstants.cardRadius),
+        border: Border.all(
+          color: AppColors.vacation.withValues(alpha: 0.25),
+          width: 1,
+        ),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.beach_access_rounded,
+              size: 20, color: AppColors.vacation),
+          const SizedBox(width: AppConstants.space12),
+          Expanded(
+            child: Text(
+              'Vacation Mode is ON — attendance paused.',
+              style: AppTypography.bodySmall.copyWith(
+                color: AppColors.vacation,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+          if (onDisable != null)
+            GestureDetector(
+              onTap: onDisable,
+              child: Text(
+                'Turn Off',
+                style: AppTypography.labelSmall.copyWith(
+                  color: AppColors.vacation,
+                  fontWeight: FontWeight.w700,
+                  decoration: TextDecoration.underline,
+                  decorationColor: AppColors.vacation,
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _AttendanceSummaryCard extends StatelessWidget {
+  const _AttendanceSummaryCard({required this.summary});
+  final AttendanceSummary summary;
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    return AppCard(
+      padding: const EdgeInsets.all(AppConstants.space20),
+      child: Column(
+        children: [
+          // ── Rate row ────────────────────────────────────────────────────
+          Row(
+            children: [
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    '${summary.attendancePercent.round()}%',
+                    style: AppTypography.displaySmall.copyWith(
+                      color: isDark
+                          ? AppColors.textPrimaryDark
+                          : AppColors.textPrimary,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  Text(
+                    'Attendance rate',
+                    style: AppTypography.bodySmall.copyWith(
+                      color: isDark
+                          ? AppColors.textSecondaryDark
+                          : AppColors.textSecondary,
+                    ),
+                  ),
+                ],
+              ),
+              const Spacer(),
+              _RateRing(rate: summary.attendanceRate),
+            ],
+          ),
+
+          const SizedBox(height: AppConstants.space16),
+
+          // ── Progress bar ────────────────────────────────────────────────
+          ClipRRect(
+            borderRadius: BorderRadius.circular(4),
+            child: LinearProgressIndicator(
+              value: summary.attendanceRate,
+              backgroundColor:
+                  isDark ? AppColors.borderDark : AppColors.surfaceVariant,
+              valueColor:
+                  const AlwaysStoppedAnimation<Color>(AppColors.present),
+              minHeight: 6,
+            ),
+          ),
+
+          const SizedBox(height: AppConstants.space16),
+
+          // ── Stats row ───────────────────────────────────────────────────
+          Row(
+            children: [
+              _StatPill(
+                  label: 'Present',
+                  value: summary.presentCount,
+                  color: AppColors.present),
+              const SizedBox(width: AppConstants.space8),
+              _StatPill(
+                  label: 'Absent',
+                  value: summary.absentCount,
+                  color: AppColors.absent),
+              const SizedBox(width: AppConstants.space8),
+              _StatPill(
+                  label: 'Pending',
+                  value: summary.pendingCount,
+                  color: AppColors.skipped),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _RateRing extends StatelessWidget {
+  const _RateRing({required this.rate});
+  final double rate;
+
+  @override
+  Widget build(BuildContext context) {
+    final color = rate >= 0.75
+        ? AppColors.present
+        : rate >= 0.5
+            ? AppColors.skipped
+            : AppColors.absent;
+
+    return SizedBox(
+      width: 56,
+      height: 56,
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          CircularProgressIndicator(
+            value: rate,
+            strokeWidth: 5,
+            backgroundColor: color.withValues(alpha: 0.15),
+            valueColor: AlwaysStoppedAnimation<Color>(color),
+            strokeCap: StrokeCap.round,
+          ),
+          Center(
+            child: Text(
+              '${(rate * 100).round()}',
+              style: AppTypography.labelMedium.copyWith(
+                color: color,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _StatPill extends StatelessWidget {
+  const _StatPill({
+    required this.label,
+    required this.value,
+    required this.color,
+  });
+
+  final String label;
+  final int value;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Expanded(
+      child: Container(
+        padding: const EdgeInsets.symmetric(
+          horizontal: AppConstants.space8,
+          vertical: AppConstants.space8,
+        ),
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: 0.08),
+          borderRadius: BorderRadius.circular(AppConstants.chipRadius),
+        ),
+        child: Column(
+          children: [
+            Text(
+              '$value',
+              style: AppTypography.titleSmall.copyWith(
+                color: color,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+            const SizedBox(height: 2),
+            Text(
+              label,
+              style: AppTypography.labelSmall.copyWith(
+                color: color.withValues(alpha: 0.8),
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _QuickActionsRow extends StatelessWidget {
+  const _QuickActionsRow({
+    this.onAttendance,
+    this.onHistory,
+    this.onMenu,
+  });
+
+  final VoidCallback? onAttendance;
+  final VoidCallback? onHistory;
+  final VoidCallback? onMenu;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Expanded(
+          child: _QuickActionTile(
+            icon: Icons.how_to_reg_rounded,
+            label: 'Attendance',
+            color: AppColors.primary,
+            onTap: onAttendance,
+          ),
+        ),
+        const SizedBox(width: AppConstants.space12),
+        Expanded(
+          child: _QuickActionTile(
+            icon: Icons.history_rounded,
+            label: 'History',
+            color: AppColors.secondary,
+            onTap: onHistory,
+          ),
+        ),
+        if (onMenu != null) ...[
+          const SizedBox(width: AppConstants.space12),
+          Expanded(
+            child: _QuickActionTile(
+              icon: Icons.menu_book_rounded,
+              label: 'Menu',
+              color: AppColors.warning,
+              onTap: onMenu,
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+class _QuickActionTile extends StatelessWidget {
+  const _QuickActionTile({
+    required this.icon,
+    required this.label,
+    required this.color,
+    this.onTap,
+  });
+
+  final IconData icon;
+  final String label;
+  final Color color;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: AppConstants.space16),
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: 0.08),
+          borderRadius: BorderRadius.circular(AppConstants.cardRadius),
+          border: Border.all(
+            color: color.withValues(alpha: 0.18),
+            width: 1,
+          ),
+        ),
+        child: Column(
+          children: [
+            Icon(icon, size: 22, color: color),
+            const SizedBox(height: AppConstants.space6),
+            Text(
+              label,
+              style: AppTypography.labelSmall.copyWith(
+                color: isDark ? AppColors.textSecondaryDark : AppColors.textSecondary,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _LoadingView extends StatelessWidget {
+  const _LoadingView();
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const CircularProgressIndicator(
+            color: AppColors.primary,
+            strokeWidth: 2.5,
+          ),
+          const SizedBox(height: AppConstants.space16),
+          Text(
+            'Loading dashboard…',
+            style: AppTypography.bodySmall.copyWith(
+              color: AppColors.textSecondary,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+
+class _ErrorView extends StatelessWidget {
+  const _ErrorView({required this.message, required this.onRetry});
+  final String message;
+  final VoidCallback onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(AppConstants.space32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(
+              Icons.wifi_off_rounded,
+              size: 48,
+              color: AppColors.error,
+            ),
+            const SizedBox(height: AppConstants.space16),
+            Text(
+              'Could not load dashboard',
+              style: AppTypography.titleSmall.copyWith(
+                color: AppColors.textPrimary,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            const SizedBox(height: AppConstants.space8),
+            Text(
+              message,
+              style: AppTypography.bodySmall.copyWith(
+                color: AppColors.textSecondary,
+              ),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: AppConstants.space20),
+            FilledButton.icon(
+              onPressed: onRetry,
+              icon: const Icon(Icons.refresh_rounded, size: 16),
+              label: const Text('Retry'),
+              style: FilledButton.styleFrom(
+                backgroundColor: AppColors.primary,
+                shape: RoundedRectangleBorder(
+                  borderRadius:
+                      BorderRadius.circular(AppConstants.buttonRadius),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ── Group Switcher Row ─────────────────────────────────────────────────────────
+
+/// Horizontal chip row shown when the student belongs to more than one group.
+class _GroupSwitcherRow extends StatelessWidget {
+  const _GroupSwitcherRow({
+    required this.groupIds,
+    required this.activeGroupId,
+    required this.onSwitch,
+    required this.isDark,
+  });
+
+  final List<String> groupIds;
+  final String activeGroupId;
+  final ValueChanged<String> onSwitch;
+  final bool isDark;
+
+  String _label(String groupId) {
+    final clean = groupId.replaceAll(RegExp(r'^grp_|^group_'), '');
+    final parts = clean.split(RegExp(r'[-_]'));
+    return parts.map((p) => p.isEmpty ? '' : p[0].toUpperCase() + p.substring(1)).join(' ');
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 40,
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.symmetric(
+          horizontal: AppConstants.space20,
+        ),
+        itemCount: groupIds.length,
+        separatorBuilder: (_, _) => const SizedBox(width: AppConstants.space8),
+        itemBuilder: (context, index) {
+          final id = groupIds[index];
+          final isActive = id == activeGroupId;
+          return ChoiceChip(
+            label: Text(_label(id)),
+            selected: isActive,
+            onSelected: (_) => onSwitch(id),
+            selectedColor: AppColors.primary,
+            backgroundColor: isDark ? AppColors.surfaceDark : AppColors.surface,
+            labelStyle: AppTypography.labelSmall.copyWith(
+              color: isActive
+                  ? Colors.white
+                  : isDark
+                      ? AppColors.textSecondaryDark
+                      : AppColors.textSecondary,
+              fontWeight: isActive ? FontWeight.w600 : FontWeight.w400,
+            ),
+            side: BorderSide(
+              color: isActive
+                  ? AppColors.primary
+                  : isDark
+                      ? AppColors.borderDark
+                      : AppColors.border,
+            ),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(AppConstants.chipRadius),
+            ),
+            padding: const EdgeInsets.symmetric(horizontal: AppConstants.space8),
+          );
+        },
+      ),
+    );
+  }
+}

@@ -1,0 +1,319 @@
+import 'dart:typed_data';
+
+import 'package:flutter/widgets.dart';
+import 'package:smart_meal_management/data/repositories/auth_repository.dart';
+import 'package:smart_meal_management/features/auth/models/auth_session.dart';
+import 'package:smart_meal_management/features/auth/models/auth_state.dart';
+import 'package:smart_meal_management/features/auth/services/auth_storage_service.dart';
+import 'package:smart_meal_management/features/events/models/event_model.dart';
+import 'package:smart_meal_management/shared/enums/user_role.dart';
+import 'package:smart_meal_management/shared/models/result.dart';
+import 'package:smart_meal_management/shared/models/user_model.dart';
+
+/// Central authentication state manager.
+///
+/// Holds the current [AuthState] and exposes:
+///   - [initialize]  — restores persisted session on cold start
+///   - [login]       — email-or-mobile + password (any role context)
+///   - [loginWithOtp] / [verifyOtp] — passwordless OTP flow
+///   - [signup]      — creates a new account (student / admin / event admin)
+///   - [logout]      — clears session from memory + SharedPreferences
+///   - [refreshUser] — in-memory user model patch (settings toggles etc.)
+///
+/// Consumed by [AuthProviderScope] via [InheritedNotifier].
+class AuthProvider extends ChangeNotifier {
+  AuthProvider({AuthRepository? repo}) : _repo = repo ?? AuthRepository();
+
+  final AuthRepository _repo;
+
+  AuthState _state = const AuthUnknown();
+  AuthSession? _session;
+
+  /// In-memory avatar image bytes — used by profile screens for local
+  /// image upload before a backend round-trip is available.
+  Uint8List? _avatarBytes;
+
+  // ── Getters ────────────────────────────────────────────────────────────────
+
+  AuthState get state => _state;
+  AuthSession? get session => _session;
+  UserModel? get currentUser => _session?.user;
+  bool get isAuthenticated => _state is AuthAuthenticated;
+  bool get isLoading => _state is AuthLoading;
+
+  /// Locally-picked avatar image bytes (not yet persisted to backend).
+  Uint8List? get avatarBytes => _avatarBytes;
+
+  // ── Initialise ─────────────────────────────────────────────────────────────
+
+  /// Called once from [bootstrap.dart] / app startup.
+  ///
+  /// Restores a persisted session from SharedPreferences.
+  /// Falls back to [AuthUnauthenticated] if none found or session expired.
+  Future<void> initialize() async {
+    _state = const AuthUnknown();
+    notifyListeners();
+
+    final result = await _repo.restoreSession();
+    switch (result) {
+      case Ok(:final value):
+        if (value != null && value.isValid) {
+          _session = value;
+          _state = AuthAuthenticated(session: value);
+          // Restore persisted avatar bytes (fire-and-forget assignment; null is fine).
+          _avatarBytes = await AuthStorageService.instance.loadAvatarBytes();
+        } else {
+          _state = const AuthUnauthenticated();
+        }
+      case Err():
+        _state = const AuthUnauthenticated();
+    }
+    notifyListeners();
+  }
+
+  // ── Login ──────────────────────────────────────────────────────────────────
+
+  /// Authenticate with [identifier] (email OR mobile) + [password].
+  ///
+  /// [roleContext] is one of `'student'`, `'admin'`, `'event'` — used to
+  /// validate that the credential belongs to the expected role group.
+  ///
+  /// Returns `null` on success, or an error message string on failure.
+  Future<String?> login({
+    required String identifier,
+    required String password,
+    required String roleContext,
+  }) async {
+    _state = const AuthLoading();
+    notifyListeners();
+
+    final result = await _repo.login(
+      identifier: identifier,
+      password: password,
+      roleContext: roleContext,
+    );
+
+    switch (result) {
+      case Ok(:final value):
+        _session = value;
+        _state = AuthAuthenticated(session: value);
+        notifyListeners();
+        return null; // success
+
+      case Err(:final failure):
+        _state = const AuthUnauthenticated();
+        notifyListeners();
+        return failure.message;
+    }
+  }
+
+  // ── OTP flow ───────────────────────────────────────────────────────────────
+
+  /// Request a one-time password for [identifier].
+  ///
+  /// Returns `null` on success, or an error message string on failure.
+  Future<String?> requestOtp({required String identifier}) async {
+    final result = await _repo.requestOtp(identifier: identifier);
+    return switch (result) {
+      Ok() => null,
+      Err(:final failure) => failure.message,
+    };
+  }
+
+  /// Verify [otp] for [identifier] and establish an authenticated session.
+  ///
+  /// Returns `null` on success, or an error message string on failure.
+  Future<String?> verifyOtp({
+    required String identifier,
+    required String otp,
+    required String roleContext,
+  }) async {
+    _state = const AuthLoading();
+    notifyListeners();
+
+    final result = await _repo.verifyOtp(
+      identifier: identifier,
+      otp: otp,
+      roleContext: roleContext,
+    );
+
+    switch (result) {
+      case Ok(:final value):
+        _session = value;
+        _state = AuthAuthenticated(session: value);
+        notifyListeners();
+        return null;
+
+      case Err(:final failure):
+        _state = const AuthUnauthenticated();
+        notifyListeners();
+        return failure.message;
+    }
+  }
+
+  // ── Reset password ────────────────────────────────────────────────────────
+
+  /// Validate [otp] and reset password for [identifier].
+  ///
+  /// Returns `null` on success, or an error message on failure.
+  /// On success the user's session is NOT established — they must re-login.
+  Future<String?> resetPassword({
+    required String identifier,
+    required String otp,
+    required String newPassword,
+  }) async {
+    final result = await _repo.resetPassword(
+      identifier: identifier,
+      otp: otp,
+      newPassword: newPassword,
+    );
+    return switch (result) {
+      Ok() => null,
+      Err(:final failure) => failure.message,
+    };
+  }
+
+  // ── Signup ─────────────────────────────────────────────────────────────────
+
+  /// Create a new account.
+  ///
+  /// All base fields are required. Pass event-specific fields for
+  /// [UserRole.eventAdmin] signups.
+  ///
+  /// Returns `null` on success, or an error message string on failure.
+  Future<String?> signup({
+    required String name,
+    required UserRole role,
+    required String mobile,
+    required String email,
+    required String password,
+    required LoginPreference loginPreference,
+    int? age,
+    String? gender,
+    // Event admin extras
+    String? eventName,
+    EventType? eventType,
+    DateTime? eventDate,
+    int? expectedGuestCount,
+    bool autoDeleteEvent = false,
+  }) async {
+    _state = const AuthLoading();
+    notifyListeners();
+
+    final result = await _repo.signup(
+      name: name,
+      role: role,
+      mobile: mobile,
+      email: email,
+      password: password,
+      loginPreference: loginPreference,
+      age: age,
+      gender: gender,
+      eventName: eventName,
+      eventType: eventType,
+      eventDate: eventDate,
+      expectedGuestCount: expectedGuestCount,
+      autoDeleteEvent: autoDeleteEvent,
+    );
+
+    switch (result) {
+      case Ok(:final value):
+        _session = value;
+        _state = AuthAuthenticated(session: value);
+        notifyListeners();
+        return null;
+
+      case Err(:final failure):
+        _state = const AuthUnauthenticated();
+        notifyListeners();
+        return failure.message;
+    }
+  }
+
+  // ── Logout ─────────────────────────────────────────────────────────────────
+
+  Future<void> logout() async {
+    await _repo.logout();
+    clearSession();
+  }
+
+  void clearSession() {
+    _session = null;
+    _state = const AuthUnauthenticated();
+    _avatarBytes = null;
+    notifyListeners();
+    // Clear persisted avatar on logout — fire-and-forget.
+    AuthStorageService.instance.clearAvatarBytes();
+  }
+
+  /// Stores locally-picked avatar bytes in memory, notifies listeners,
+  /// and persists to SharedPreferences (up to 200 KB) for cross-restart survival.
+  void setAvatarBytes(Uint8List? bytes) {
+    _avatarBytes = bytes;
+    notifyListeners();
+    if (bytes != null) {
+      // Fire-and-forget — UI is already updated; storage is best-effort.
+      AuthStorageService.instance.saveAvatarBytes(bytes);
+    } else {
+      AuthStorageService.instance.clearAvatarBytes();
+    }
+  }
+
+  // ── Profile update ─────────────────────────────────────────────────────────
+
+  Future<bool> updateProfile(UserModel updated) async {
+    final result = await _repo.updateProfile(user: updated);
+    switch (result) {
+      case Ok(:final value):
+        if (_session != null) {
+          _session = _session!.copyWith(user: value);
+          _state = AuthAuthenticated(session: _session!);
+          notifyListeners();
+        }
+        return true;
+      case Err():
+        return false;
+    }
+  }
+
+  // ── In-memory user refresh ─────────────────────────────────────────────────
+
+  /// Updates the in-memory user model without a network call.
+  ///
+  /// Used by settings/profile screens to persist local toggle changes
+  /// (vacation mode, default attendance) immediately. Also used by the
+  /// group-join flow to inject the newly joined groupId so that
+  /// [StudentShell] tab visibility rebuilds without requiring a re-login.
+  Future<void> refreshUser(UserModel updated) async {
+    if (_session == null) return;
+    _session = _session!.copyWith(user: updated);
+    _state = AuthAuthenticated(session: _session!);
+    notifyListeners();
+  }
+}
+
+// ── InheritedNotifier scope ────────────────────────────────────────────────────
+
+/// Provides [AuthProvider] to the subtree.
+///
+/// Usage in build:
+/// ```dart
+/// final auth = AuthProviderScope.of(context);
+/// ```
+class AuthProviderScope extends InheritedNotifier<AuthProvider> {
+  const AuthProviderScope({
+    super.key,
+    required AuthProvider provider,
+    required super.child,
+  }) : super(notifier: provider);
+
+  static AuthProvider of(BuildContext context) {
+    final scope =
+        context.dependOnInheritedWidgetOfExactType<AuthProviderScope>();
+    assert(scope != null, 'AuthProviderScope not found in widget tree');
+    return scope!.notifier!;
+  }
+
+  @override
+  bool updateShouldNotify(AuthProviderScope oldWidget) => true;
+}
