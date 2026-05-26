@@ -1,0 +1,23 @@
+name: Flutter Build
+
+on:
+  push:
+    branches:
+      - emeal
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.24.0'
+
+      - run: flutter pub get
+
+      - run: flutter analyze
+
+      - run: flutter build apk --release
