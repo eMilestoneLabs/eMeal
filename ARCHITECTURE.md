@@ -1,16 +1,15 @@
-# Smart Hostel - Architecture Documentation
-## System Architecture
-# 🏗️ MealAttend - Architecture Documentation
+# System Architecture MealAttend - Architecture Documentation
+## 🏗️ MealAttend - Architecture Documentation
 
-## 🎯 System Architecture
+### 🎯 System Architecture
 
 ```text
 ┌──────────────────────────────────────────────────────────────────────────────┐
-│                            MealAttend Flutter App                           │
+│                            MealAttend Flutter App                            │
 ├──────────────────────────────────────────────────────────────────────────────┤
 │
 │  ┌──────────────────────────────────────────────────────────────────────┐
-│  │                 Presentation Layer (UI & Features)                  │
+│  │                 Presentation Layer (UI & Features)                   │
 │  ├──────────────────────────────────────────────────────────────────────┤
 │  │                                                                      │
 │  │  Features/                                                           │
@@ -63,29 +62,29 @@
 │                                   ▼
 │
 │  ┌──────────────────────────────────────────────────────────────────────┐
-│  │                    Shared Layer (Reusable)                          │
+│  │                    Shared Layer (Reusable)                           │
 │  ├──────────────────────────────────────────────────────────────────────┤
 │  │                                                                      │
-│  │  Widgets/                                                           │
-│  │  ├─ Common Components                                               │
-│  │  ├─ Form Components                                                 │
-│  │  ├─ Dashboard Widgets                                               │
-│  │  ├─ Loading Components                                              │
-│  │  └─ Error Components                                                │
+│  │  Widgets/                                                            │
+│  │  ├─ Common Components                                                │
+│  │  ├─ Form Components                                                  │
+│  │  ├─ Dashboard Widgets                                                │
+│  │  ├─ Loading Components                                               │
+│  │  └─ Error Components                                                 │
 │  │                                                                      │
-│  │  Models/                                                            │
-│  │  ├─ UserModel                                                       │
-│  │  ├─ OrganizationModel                                               │
-│  │  ├─ GroupModel                                                      │
-│  │  ├─ MealModel                                                       │
-│  │  ├─ AttendanceModel                                                 │
-│  │  ├─ EventModel                                                      │
-│  │  └─ GuestModel                                                      │
+│  │  Models/                                                             │
+│  │  ├─ UserModel                                                        │
+│  │  ├─ OrganizationModel                                                │
+│  │  ├─ GroupModel                                                       │
+│  │  ├─ MealModel                                                        │
+│  │  ├─ AttendanceModel                                                  │
+│  │  ├─ EventModel                                                       │
+│  │  └─ GuestModel                                                       │
 │  │                                                                      │
-│  │  Enums/                                                             │
-│  │  ├─ UserRole                                                        │
-│  │  ├─ GroupType                                                       │
-│  │  └─ AttendanceStatus                                                │
+│  │  Enums/                                                              │
+│  │  ├─ UserRole                                                         │
+│  │  ├─ GroupType                                                        │
+│  │  └─ AttendanceStatus                                                 │
 │  │                                                                      │
 │  └──────────────────────────────────────────────────────────────────────┘
 │                                   ▲
@@ -93,29 +92,29 @@
 │                                   ▼
 │
 │  ┌──────────────────────────────────────────────────────────────────────┐
-│  │                     Core Layer (Infrastructure)                     │
+│  │                     Core Layer (Infrastructure)                      │
 │  ├──────────────────────────────────────────────────────────────────────┤
 │  │                                                                      │
-│  │  Theme/                                                             │
-│  │  ├─ Material 3                                                      │
-│  │  ├─ App Theme                                                       │
-│  │  └─ Color System                                                    │
+│  │  Theme/                                                              │
+│  │  ├─ Material 3                                                       │
+│  │  ├─ App Theme                                                        │
+│  │  └─ Color System                                                     │
 │  │                                                                      │
-│  │  Networking/                                                        │
-│  │  ├─ DioApiService                                                   │
-│  │  ├─ API Interceptors                                                │
-│  │  ├─ Auth Headers                                                    │
-│  │  └─ Error Handling                                                  │
+│  │  Networking/                                                         │
+│  │  ├─ DioApiService                                                    │
+│  │  ├─ API Interceptors                                                 │
+│  │  ├─ Auth Headers                                                     │
+│  │  └─ Error Handling                                                   │
 │  │                                                                      │
-│  │  Realtime/                                                          │
-│  │  ├─ Socket.IO Client                                                │
-│  │  ├─ Event Subscriptions                                             │
-│  │  └─ Live Updates                                                    │
+│  │  Realtime/                                                           │
+│  │  ├─ Socket.IO Client                                                 │
+│  │  ├─ Event Subscriptions                                              │
+│  │  └─ Live Updates                                                     │
 │  │                                                                      │
-│  │  Configuration/                                                     │
-│  │  ├─ Environment Config                                              │
-│  │  ├─ API Endpoints                                                   │
-│  │  └─ Constants                                                       │
+│  │  Configuration/                                                      │
+│  │  ├─ Environment Config                                               │
+│  │  ├─ API Endpoints                                                    │
+│  │  └─ Constants                                                        │
 │  │                                                                      │
 │  └──────────────────────────────────────────────────────────────────────┘
 │                                   ▲
@@ -123,21 +122,21 @@
 │                                   ▼
 │
 │  ┌──────────────────────────────────────────────────────────────────────┐
-│  │                      Data Layer (Repositories)                      │
+│  │                      Data Layer (Repositories)                       │
 │  ├──────────────────────────────────────────────────────────────────────┤
 │  │                                                                      │
-│  │  Repositories/                                                      │
-│  │  ├─ AuthRepository                                                  │
-│  │  ├─ GroupRepository                                                 │
-│  │  ├─ MealRepository                                                  │
-│  │  ├─ AttendanceRepository                                            │
-│  │  └─ EventRepository                                                 │
+│  │  Repositories/                                                       │
+│  │  ├─ AuthRepository                                                   │
+│  │  ├─ GroupRepository                                                  │
+│  │  ├─ MealRepository                                                   │
+│  │  ├─ AttendanceRepository                                             │
+│  │  └─ EventRepository                                                  │
 │  │                                                                      │
-│  │  State Management                                                   │
-│  │  ├─ StatefulWidget                                                  │
-│  │  ├─ ChangeNotifier                                                  │
-│  │  ├─ ValueNotifier                                                   │
-│  │  └─ Provider                                                        │
+│  │  State Management                                                    │
+│  │  ├─ StatefulWidget                                                   │
+│  │  ├─ ChangeNotifier                                                   │
+│  │  ├─ ValueNotifier                                                    │
+│  │  └─ Provider                                                         │
 │  │                                                                      │
 │  └──────────────────────────────────────────────────────────────────────┘
 │                                   ▲
@@ -145,28 +144,28 @@
 │                                   ▼
 │
 │  ┌──────────────────────────────────────────────────────────────────────┐
-│  │                   Backend Infrastructure Layer                      │
+│  │                   Backend Infrastructure Layer                       │
 │  ├──────────────────────────────────────────────────────────────────────┤
 │  │                                                                      │
-│  │  NestJS Backend                                                     │
-│  │  ├─ Authentication Module                                           │
-│  │  ├─ Organization Module                                             │
-│  │  ├─ Group Module                                                    │
-│  │  ├─ Meal Module                                                     │
-│  │  ├─ Attendance Module                                               │
-│  │  ├─ Event Module                                                    │
-│  │  ├─ Notification Module                                             │
-│  │  ├─ Analytics Module                                                │
-│  │  ├─ Export Module                                                   │
-│  │  └─ Realtime Gateway                                                │
+│  │  NestJS Backend                                                      │
+│  │  ├─ Authentication Module                                            │
+│  │  ├─ Organization Module                                              │
+│  │  ├─ Group Module                                                     │
+│  │  ├─ Meal Module                                                      │
+│  │  ├─ Attendance Module                                                │
+│  │  ├─ Event Module                                                     │
+│  │  ├─ Notification Module                                              │
+│  │  ├─ Analytics Module                                                 │
+│  │  ├─ Export Module                                                    │
+│  │  └─ Realtime Gateway                                                 │
 │  │                                                                      │
-│  │  Infrastructure                                                     │
-│  │  ├─ PostgreSQL                                                     │
-│  │  ├─ Prisma ORM                                                     │
-│  │  ├─ Redis                                                          │
-│  │  ├─ BullMQ                                                         │
-│  │  ├─ MinIO                                                          │
-│  │  └─ WebSocket Gateway                                              │
+│  │  Infrastructure                                                      │
+│  │  ├─ PostgreSQL                                                       │
+│  │  ├─ Prisma ORM                                                       │
+│  │  ├─ Redis                                                            │
+│  │  ├─ BullMQ                                                           │
+│  │  ├─ MinIO                                                            │
+│  │  └─ WebSocket Gateway                                                │
 │  │                                                                      │
 │  └──────────────────────────────────────────────────────────────────────┘
 │
@@ -391,22 +390,6 @@ Provider Update
 UI Refresh
 ```
 
-Realtime Events:
-
-• attendance.marked.v1
-
-• attendance.overridden.v1
-
-• guest.joined.v1
-
-• guest.updated.v1
-
-• meal.updated.v1
-
-• event.updated.v1
-
-• dashboard.updated.v1
-
 ---
 
 ### 📊 Analytics & Dashboard Flow
@@ -479,7 +462,7 @@ User Dashboard
 Accessible only to:
 
 ```text
-student
+student/member
 ```
 
 ### Key Operations
@@ -511,7 +494,11 @@ student
 
 ### Visibility
 
-Accessible to organization administrators.
+Accessible only to:
+
+```text
+admin/hostelmanager/manager
+```
 
 ### Key Operations
 
@@ -523,7 +510,6 @@ Accessible to organization administrators.
 * Export reports
 * Manage organization settings
 * Send notifications
-
 ---
 
 ## 🎉 Event Admin Module
@@ -546,7 +532,6 @@ Accessible to organization administrators.
 * Track attendance
 * View event analytics
 * Export guest reports
-
 ---
 
 ## 🎫 Event Guest Module
@@ -567,7 +552,6 @@ Accessible to organization administrators.
 * Select meals
 * Update guest information
 * Confirm attendance
-
 ---
 
 # 🏗️ Key Design Patterns
@@ -601,11 +585,8 @@ Repositories:
 ### Benefits
 
 ✅ Separation of concerns
-
 ✅ Testability
-
 ✅ Contract isolation
-
 ✅ Backend abstraction
 
 ---
@@ -624,11 +605,8 @@ lib/features/
 ### Benefits
 
 ✅ Clear ownership
-
 ✅ Modular development
-
 ✅ Easier maintenance
-
 ✅ Scalable architecture
 
 ---
@@ -652,9 +630,7 @@ Desktop   > 900px
 ### Goals
 
 ✅ Mobile-first
-
 ✅ Tablet optimized
-
 ✅ Desktop compatible
 
 ---
@@ -672,9 +648,7 @@ AppTheme
 ### Benefits
 
 ✅ Consistent design
-
 ✅ Easier maintenance
-
 ✅ Centralized styling
 
 ---
@@ -706,11 +680,8 @@ Student Dashboard Refresh
 ### Important Rules
 
 ✅ Disabled meals are hidden from students
-
 ✅ Historical attendance remains intact
-
 ✅ Admins retain full visibility
-
 ✅ Attendance records are never deleted
 
 ---
@@ -729,11 +700,8 @@ MealAttend intentionally uses lightweight state management.
 ### Governance
 
 ❌ Riverpod
-
 ❌ Bloc
-
 ❌ Redux
-
 ❌ GetX
 
 Not part of the approved architecture.
@@ -741,11 +709,8 @@ Not part of the approved architecture.
 ### Benefits
 
 ✅ Lightweight
-
 ✅ Predictable
-
 ✅ Easy onboarding
-
 ✅ Low complexity
 
 ---
@@ -782,9 +747,7 @@ User-Friendly Message
 ### Goals
 
 ✅ Consistent UX
-
 ✅ Contract-compliant errors
-
 ✅ Clear user feedback
 
 ---
@@ -867,15 +830,10 @@ All future enhancements must preserve frontend-backend contracts.
 ### Designed To Scale
 
 ✅ Multi-tenant organizations
-
 ✅ Large member counts
-
 ✅ High attendance volumes
-
 ✅ Multiple event types
-
 ✅ Dynamic meal structures
-
 ✅ Realtime updates
 
 ---
@@ -896,23 +854,14 @@ All future enhancements must preserve frontend-backend contracts.
 Current Production Security:
 
 ✅ JWT Authentication
-
 ✅ Refresh Token Rotation
-
 ✅ Role-Based Authorization
-
 ✅ Organization Isolation
-
 ✅ Audit Logging
-
 ✅ Input Validation
-
 ✅ Rate Limiting
-
 ✅ Secure File Uploads
-
 ✅ HTTPS Enforcement
-
 ✅ WebSocket JWT Validation
 
 ### Security Principles
@@ -928,17 +877,11 @@ Current Production Security:
 **🏆 MealAttend Architecture Status**
 
 Frontend Architecture: ✅ Production Ready
-
 Backend Architecture: ✅ Production Ready
-
 Realtime Architecture: ✅ Enabled
-
 Multi-Tenant Architecture: ✅ Enabled
-
 Security Architecture: ✅ Enabled
-
 Scalability Architecture: ✅ Ready
-
 Contract Governance: ✅ Locked
 
 ---
