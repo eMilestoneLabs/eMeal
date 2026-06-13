@@ -2,6 +2,7 @@ import 'dart:typed_data';
 
 import 'package:flutter/widgets.dart';
 import 'package:smart_meal_management/data/repositories/auth_repository.dart';
+import 'package:smart_meal_management/data/services/realtime_service.dart';
 import 'package:smart_meal_management/features/auth/models/auth_session.dart';
 import 'package:smart_meal_management/features/auth/models/auth_state.dart';
 import 'package:smart_meal_management/features/auth/services/auth_storage_service.dart';
@@ -60,6 +61,8 @@ class AuthProvider extends ChangeNotifier {
         if (value != null && value.isValid) {
           _session = value;
           _state = AuthAuthenticated(session: value);
+          // B10: open realtime socket once a session is restored (no-op in mock).
+          RealtimeService.instance.connect();
           // Restore persisted avatar bytes (fire-and-forget assignment; null is fine).
           _avatarBytes = await AuthStorageService.instance.loadAvatarBytes();
         } else {
@@ -97,6 +100,7 @@ class AuthProvider extends ChangeNotifier {
       case Ok(:final value):
         _session = value;
         _state = AuthAuthenticated(session: value);
+        RealtimeService.instance.connect(); // B10: live realtime (no-op in mock)
         notifyListeners();
         return null; // success
 
@@ -141,6 +145,7 @@ class AuthProvider extends ChangeNotifier {
       case Ok(:final value):
         _session = value;
         _state = AuthAuthenticated(session: value);
+        RealtimeService.instance.connect(); // B10: live realtime (no-op in mock)
         notifyListeners();
         return null;
 
@@ -220,6 +225,7 @@ class AuthProvider extends ChangeNotifier {
       case Ok(:final value):
         _session = value;
         _state = AuthAuthenticated(session: value);
+        RealtimeService.instance.connect(); // B10: live realtime (no-op in mock)
         notifyListeners();
         return null;
 
@@ -238,6 +244,8 @@ class AuthProvider extends ChangeNotifier {
   }
 
   void clearSession() {
+    // B10: close realtime socket on logout (no-op in mock).
+    RealtimeService.instance.disconnect();
     _session = null;
     _state = const AuthUnauthenticated();
     _avatarBytes = null;

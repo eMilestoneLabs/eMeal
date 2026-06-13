@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:smart_meal_management/data/repositories/attendance_repository.dart';
 import 'package:smart_meal_management/data/repositories/group_repository.dart';
@@ -7,6 +9,8 @@ import 'package:smart_meal_management/shared/models/attendance_model.dart';
 import 'package:smart_meal_management/shared/models/meal_model.dart';
 import 'package:smart_meal_management/shared/models/paginated_response.dart';
 import 'package:smart_meal_management/shared/models/result.dart';
+import 'package:smart_meal_management/data/services/realtime_service.dart';
+import 'package:smart_meal_management/core/constants/realtime_events.dart';
 
 /// Repository-driven provider for the admin home dashboard.
 ///
@@ -41,6 +45,32 @@ class AdminDashboardProvider extends ChangeNotifier {
 
   /// Last 5 attendance records across all groups — used for the activity feed.
   List<AttendanceModel> _recentActivity = [];
+
+  // ── B10 realtime ───────────────────────────────────────────────────────────
+  StreamSubscription<RealtimeMessage>? _rtSub;
+  Timer? _rtDebounce;
+  final Set<String> _rtJoinedGroups = <String>{};
+  String? _rtAdminId;
+  String? _rtOrgId;
+  String _rtName = 'Admin';
+  String _rtOrgName = 'Your Organisation';
+
+  /// Org/admin-room + group-scoped events that trigger a silent reload.
+  static const Set<String> _rtEvents = <String>{
+    RealtimeEvents.attendanceMarked,
+    RealtimeEvents.attendanceUpdated,
+    RealtimeEvents.attendanceOverridden,
+    RealtimeEvents.attendanceAnalyticsUpdated,
+    RealtimeEvents.analyticsUpdated,
+    RealtimeEvents.dashboardSummaryUpdated,
+    RealtimeEvents.dashboardUpdated,
+    RealtimeEvents.mealUpdated,
+    RealtimeEvents.mealPublished,
+    RealtimeEvents.schedulePublished,
+    RealtimeEvents.scheduleUpdated,
+    RealtimeEvents.groupMemberUpdated,
+    RealtimeEvents.memberBlocked,
+  };
 
   // ── Getters ────────────────────────────────────────────────────────────────
 
@@ -80,6 +110,10 @@ class AdminDashboardProvider extends ChangeNotifier {
     _error = null;
     _adminName = name;
     _orgName = organizationName;
+    _rtAdminId = adminId;
+    _rtOrgId = organizationId;
+    _rtName = name;
+    _rtOrgName = organizationName;
     notifyListeners();
 
     // 1. Fetch groups for this organisation
@@ -184,6 +218,9 @@ class AdminDashboardProvider extends ChangeNotifier {
       _recentActivity = allRecords.take(5).toList();
     }
 
+    // B10: join group rooms + subscribe to live events (no-op in mock mode).
+    _bindRealtime();
+
     _isLoading = false;
     notifyListeners();
   }
@@ -207,5 +244,47 @@ class AdminDashboardProvider extends ChangeNotifier {
   DateTime _today() {
     final now = DateTime.now();
     return DateTime(now.year, now.month, now.day);
+  }
+
+  // ── B10 realtime binding ───────────────────────────────────────────────────
+
+  /// Connects, joins every loaded group room (admins bypass membership
+  /// server-side), and subscribes to live events. Idempotent; no-op in mock.
+  void _bindRealtime() {
+    if (_rtOrgId == null) return;
+    RealtimeService.instance.connect();
+    for (final g in _groups) {
+      if (_rtJoinedGroups.add(g.id)) RealtimeService.instance.joinGroup(g.id);
+    }
+    _rtSub ??= RealtimeService.instance.events
+        .where((m) => _rtEvents.contains(m.name))
+        .listen((_) => _scheduleRealtimeRefresh());
+  }
+
+  /// Coalesces bursts of events into a single reload.
+  void _scheduleRealtimeRefresh() {
+    _rtDebounce?.cancel();
+    _rtDebounce = Timer(const Duration(milliseconds: 800), () {
+      final adminId = _rtAdminId;
+      final orgId = _rtOrgId;
+      if (adminId != null && orgId != null && !_isLoading) {
+        load(
+          adminId: adminId,
+          organizationId: orgId,
+          name: _rtName,
+          organizationName: _rtOrgName,
+        );
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _rtDebounce?.cancel();
+    _rtSub?.cancel();
+    for (final g in _rtJoinedGroups) {
+      RealtimeService.instance.leaveGroup(g);
+    }
+    super.dispose();
   }
 }

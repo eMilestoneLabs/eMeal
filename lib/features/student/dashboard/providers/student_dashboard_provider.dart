@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart' show TimeOfDay;
 import 'package:flutter/widgets.dart' show BuildContext, InheritedNotifier;
@@ -15,6 +17,8 @@ import 'package:smart_meal_management/shared/models/meal_model.dart';
 import 'package:smart_meal_management/shared/models/paginated_response.dart';
 import 'package:smart_meal_management/shared/models/result.dart';
 import 'package:smart_meal_management/shared/models/user_model.dart';
+import 'package:smart_meal_management/data/services/realtime_service.dart';
+import 'package:smart_meal_management/core/constants/realtime_events.dart';
 
 /// Student dashboard state manager.
 ///
@@ -56,6 +60,23 @@ class StudentDashboardProvider extends ChangeNotifier {
   bool _remindersEnabled = true;
   GroupMealConfig _groupConfig = const GroupMealConfig();
   String _groupName = '';
+
+  // ── B10 realtime ───────────────────────────────────────────────────────────
+  StreamSubscription<RealtimeMessage>? _rtSub;
+  Timer? _rtDebounce;
+  String? _rtGroupId;
+  UserModel? _rtUser;
+
+  /// Events that should trigger a silent dashboard reload (group-scoped).
+  static const Set<String> _rtEvents = <String>{
+    RealtimeEvents.attendanceMarked,
+    RealtimeEvents.attendanceUpdated,
+    RealtimeEvents.attendanceOverridden,
+    RealtimeEvents.mealUpdated,
+    RealtimeEvents.mealPublished,
+    RealtimeEvents.schedulePublished,
+    RealtimeEvents.dashboardSummaryUpdated,
+  };
 
   // ── Getters ────────────────────────────────────────────────────────────────
 
@@ -215,6 +236,9 @@ class StudentDashboardProvider extends ChangeNotifier {
       );
     }
 
+    // B10: subscribe to live updates for this group (no-op in mock mode).
+    _bindRealtime(user, groupId);
+
     _isLoading = false;
     notifyListeners();
   }
@@ -318,6 +342,42 @@ class StudentDashboardProvider extends ChangeNotifier {
       streak++;
     }
     return streak;
+  }
+
+  // ── B10 realtime binding ───────────────────────────────────────────────────
+
+  /// Joins the group room and subscribes to live events so the dashboard
+  /// refreshes itself when attendance/meals change server-side. Idempotent
+  /// and a no-op in mock mode (the socket is never opened).
+  void _bindRealtime(UserModel user, String groupId) {
+    _rtUser = user;
+    if (_rtGroupId != groupId) {
+      if (_rtGroupId != null) RealtimeService.instance.leaveGroup(_rtGroupId!);
+      RealtimeService.instance.connect();
+      RealtimeService.instance.joinGroup(groupId);
+      _rtGroupId = groupId;
+    }
+    _rtSub ??= RealtimeService.instance.events
+        .where((m) => _rtEvents.contains(m.name))
+        .listen((_) => _scheduleRealtimeRefresh());
+  }
+
+  /// Coalesces bursts of events into a single reload.
+  void _scheduleRealtimeRefresh() {
+    _rtDebounce?.cancel();
+    _rtDebounce = Timer(const Duration(milliseconds: 800), () {
+      final user = _rtUser;
+      if (user != null && !_isLoading) load(user: user);
+    });
+  }
+
+  @override
+  void dispose() {
+    _rtDebounce?.cancel();
+    _rtSub?.cancel();
+    final g = _rtGroupId;
+    if (g != null) RealtimeService.instance.leaveGroup(g);
+    super.dispose();
   }
 }
 
