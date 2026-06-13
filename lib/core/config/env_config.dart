@@ -64,16 +64,21 @@ class EnvConfig {
 
   // ── Environments ───────────────────────────────────────────────────────────
 
+  // B10 LIVE MODE (2026-06-12):
+  //   - apiBaseUrl 10.0.2.2 = host machine as seen from the Android emulator.
+  //     Physical device: replace with your LAN IP (e.g. http://192.168.1.x:3000/api).
+  //   - INSTANT ROLLBACK: set mockAuthEnabled back to true + hot restart
+  //     → the entire app returns to in-memory mock mode (no other change needed).
   static const EnvConfig _development = EnvConfig._(
-    apiBaseUrl: 'http://localhost:3000/api',
-    wsBaseUrl: 'ws://localhost:3000',
+    apiBaseUrl: 'http://10.0.2.2:3000/api',
+    wsBaseUrl: 'ws://10.0.2.2:3000',
     connectTimeoutMs: 10000,
     receiveTimeoutMs: 30000,
     sendTimeoutMs: 30000,
     enableVerboseLogging: true,
     enableAnalytics: false,
     enableCrashReporting: false,
-    mockAuthEnabled: true,
+    mockAuthEnabled: false, // B10: live backend (was true — flip back to roll back)
   );
 
   static const EnvConfig _staging = EnvConfig._(

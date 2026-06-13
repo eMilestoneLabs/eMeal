@@ -2,8 +2,7 @@ import 'package:smart_meal_management/core/config/env_config.dart';
 import 'package:smart_meal_management/core/errors/failure.dart';
 import 'package:smart_meal_management/data/contracts/i_auth_repository.dart';
 import 'package:smart_meal_management/data/mock/mock_auth_service.dart';
-// PHASE_B6: uncomment this import when wiring real API calls.
-// import 'package:smart_meal_management/data/services/dio_api_service.dart';
+import 'package:smart_meal_management/data/services/dio_api_service.dart';
 import 'package:smart_meal_management/features/auth/models/auth_session.dart';
 import 'package:smart_meal_management/features/auth/services/auth_storage_service.dart';
 import 'package:smart_meal_management/features/events/models/event_model.dart';
@@ -59,24 +58,39 @@ class AuthRepository implements IAuthRepository {
     required String roleContext,
   }) async {
     if (!_isMock) {
-      // PHASE_B6: implement — call POST /v1/auth/login via DioApiService.
-      // Example:
-      //   final result = await DioApiService.instance.post<Map<String, dynamic>>(
-      //     ApiEndpoints.auth.login,
-      //     body: {'identifier': identifier, 'password': password},
-      //     requiresAuth: false,
-      //   );
-      //   return result.fold(
-      //     (failure) => Err(failure),
-      //     (body) async {
-      //       final session = AuthSession.fromJson(body);
-      //       await _storage.saveSession(session);
-      //       return Ok(session);
-      //     },
-      //   );
-      return const Err(NetworkFailure(
-        message: 'Live API integration not yet wired. Enable mock mode for development.',
-      ));
+      // B10 LIVE: POST /auth/login — backend contract:
+      // { accessToken, refreshToken, expiresIn: 900, user: {...} }
+      final result = await DioApiService.instance.post<Map<String, dynamic>>(
+        '/auth/login',
+        body: {'identifier': identifier.trim(), 'password': password},
+        requiresAuth: false,
+      );
+      switch (result) {
+        case Err(:final failure):
+          return Err(failure);
+        case Ok(:final value):
+          final AuthSession session;
+          try {
+            session = AuthSession.fromJson(value);
+          } catch (e) {
+            return Err(UnexpectedFailure(message: 'Unexpected login response: $e'));
+          }
+          // Role-context guard mirrors mock behavior — prevents cross-role login.
+          final liveRoleOk = switch (roleContext) {
+            'admin' => session.user.role.isAdminGroup,
+            'event' => session.user.role.isEventGroup,
+            _ => session.user.role.isStudentGroup,
+          };
+          if (!liveRoleOk) {
+            return Err(AuthFailure(
+              message: 'This account does not have ${_roleLabel(roleContext)} access.',
+            ));
+          }
+          _session = session;
+          _profileCache[session.user.id] = session.user;
+          await _storage.saveSession(session);
+          return Ok(session);
+      }
     }
 
     await _delay(400);
@@ -110,10 +124,16 @@ class AuthRepository implements IAuthRepository {
   @override
   Future<Result<Unit>> requestOtp({required String identifier}) async {
     if (!_isMock) {
-      // PHASE_B6: implement — call POST /v1/auth/otp/request via DioApiService.
-      return const Err(NetworkFailure(
-        message: 'Live API integration not yet wired. Enable mock mode for development.',
-      ));
+      // B10 LIVE: POST /auth/otp/request — { identifier, purpose: 'login' }
+      final result = await DioApiService.instance.post<Map<String, dynamic>>(
+        '/auth/otp/request',
+        body: {'identifier': identifier.trim(), 'purpose': 'login'},
+        requiresAuth: false,
+      );
+      return switch (result) {
+        Err(:final failure) => Err(failure),
+        Ok() => const Ok(Unit.instance),
+      };
     }
     await _delay(300);
     // Mock: just succeed — real impl sends SMS/email via NestJS.
@@ -131,10 +151,37 @@ class AuthRepository implements IAuthRepository {
     required String roleContext,
   }) async {
     if (!_isMock) {
-      // PHASE_B6: implement — call POST /v1/auth/otp/verify via DioApiService.
-      return const Err(NetworkFailure(
-        message: 'Live API integration not yet wired. Enable mock mode for development.',
-      ));
+      // B10 LIVE: POST /auth/otp/verify — returns a full auth session.
+      final result = await DioApiService.instance.post<Map<String, dynamic>>(
+        '/auth/otp/verify',
+        body: {'identifier': identifier.trim(), 'otp': otp},
+        requiresAuth: false,
+      );
+      switch (result) {
+        case Err(:final failure):
+          return Err(failure);
+        case Ok(:final value):
+          final AuthSession session;
+          try {
+            session = AuthSession.fromJson(value);
+          } catch (e) {
+            return Err(UnexpectedFailure(message: 'Unexpected OTP response: $e'));
+          }
+          final liveRoleOk = switch (roleContext) {
+            'admin' => session.user.role.isAdminGroup,
+            'event' => session.user.role.isEventGroup,
+            _ => session.user.role.isStudentGroup,
+          };
+          if (!liveRoleOk) {
+            return Err(AuthFailure(
+              message: 'This account does not have ${_roleLabel(roleContext)} access.',
+            ));
+          }
+          _session = session;
+          _profileCache[session.user.id] = session.user;
+          await _storage.saveSession(session);
+          return Ok(session);
+      }
     }
     await _delay(500);
 
@@ -184,10 +231,20 @@ class AuthRepository implements IAuthRepository {
     required String newPassword,
   }) async {
     if (!_isMock) {
-      // PHASE_B6: implement — call POST /v1/auth/reset-password via DioApiService.
-      return const Err(NetworkFailure(
-        message: 'Live API integration not yet wired. Enable mock mode for development.',
-      ));
+      // B10 LIVE: POST /auth/reset-password — { identifier, otp, newPassword }
+      final result = await DioApiService.instance.post<Map<String, dynamic>>(
+        '/auth/reset-password',
+        body: {
+          'identifier': identifier.trim(),
+          'otp': otp,
+          'newPassword': newPassword,
+        },
+        requiresAuth: false,
+      );
+      return switch (result) {
+        Err(:final failure) => Err(failure),
+        Ok() => const Ok(Unit.instance),
+      };
     }
     await _delay(500);
 
@@ -227,10 +284,45 @@ class AuthRepository implements IAuthRepository {
     bool autoDeleteEvent = false,
   }) async {
     if (!_isMock) {
-      // PHASE_B6: implement — call POST /v1/auth/signup via DioApiService.
-      return const Err(NetworkFailure(
-        message: 'Live API integration not yet wired. Enable mock mode for development.',
-      ));
+      // B10 LIVE: POST /auth/register — single endpoint, backend dispatches
+      // by `role` to student/admin/eventAdmin signup. Backend uses `phone`
+      // (never `mobile`) and `autoDeleteAfter7Days` (never `autoDeleteEvent`).
+      final body = <String, dynamic>{
+        'name': name.trim(),
+        'role': role.name,
+        'email': email.trim(),
+        'phone': mobile.trim(),
+        'password': password,
+        'loginPreference': loginPreference.name,
+        if (age != null) 'age': age,
+        if (gender != null) 'gender': gender,
+        // Event admin extras — backend EventAdminSignupDto:
+        if (eventName != null) 'eventName': eventName,
+        if (eventType != null) 'eventType': eventType.name,
+        if (eventDate != null) 'eventDate': eventDate.toIso8601String(),
+        if (expectedGuestCount != null) 'expectedGuestCount': expectedGuestCount,
+        if (autoDeleteEvent) 'autoDeleteAfter7Days': true,
+      };
+      final result = await DioApiService.instance.post<Map<String, dynamic>>(
+        '/auth/register',
+        body: body,
+        requiresAuth: false,
+      );
+      switch (result) {
+        case Err(:final failure):
+          return Err(failure);
+        case Ok(:final value):
+          final AuthSession session;
+          try {
+            session = AuthSession.fromJson(value);
+          } catch (e) {
+            return Err(UnexpectedFailure(message: 'Unexpected signup response: $e'));
+          }
+          _session = session;
+          _profileCache[session.user.id] = session.user;
+          await _storage.saveSession(session);
+          return Ok(session);
+      }
     }
     await _delay(500);
 
@@ -259,6 +351,22 @@ class AuthRepository implements IAuthRepository {
 
   @override
   Future<Result<Unit>> logout() async {
+    if (!_isMock) {
+      // B10 LIVE: best-effort server-side revocation (refresh-token family),
+      // then ALWAYS clear locally — logout must never strand the user.
+      final refreshToken = _session?.refreshToken;
+      try {
+        await DioApiService.instance.post<Map<String, dynamic>>(
+          '/auth/logout',
+          body: {if (refreshToken != null) 'refreshToken': refreshToken},
+        );
+      } catch (_) {
+        // Network failure must not block local logout.
+      }
+      _session = null;
+      await _storage.clearSession();
+      return const Ok(Unit.instance);
+    }
     await _delay();
     _session = null;
     await _storage.clearSession();
@@ -269,6 +377,29 @@ class AuthRepository implements IAuthRepository {
 
   @override
   Future<Result<AuthSession>> refreshToken({required String token}) async {
+    if (!_isMock) {
+      // B10 LIVE: POST /auth/refresh — rotating refresh-token family.
+      final result = await DioApiService.instance.post<Map<String, dynamic>>(
+        '/auth/refresh',
+        body: {'refreshToken': token},
+        requiresAuth: false,
+      );
+      switch (result) {
+        case Err(:final failure):
+          return Err(failure);
+        case Ok(:final value):
+          final AuthSession session;
+          try {
+            session = AuthSession.fromJson(value);
+          } catch (e) {
+            return Err(UnexpectedFailure(message: 'Unexpected refresh response: $e'));
+          }
+          _session = session;
+          _profileCache[session.user.id] = session.user;
+          await _storage.saveSession(session);
+          return Ok(session);
+      }
+    }
     await _delay();
     if (_session == null) {
       return const Err(AuthFailure(message: 'No active session to refresh.'));
@@ -290,6 +421,22 @@ class AuthRepository implements IAuthRepository {
 
   @override
   Future<Result<UserModel>> getProfile({required String userId}) async {
+    if (!_isMock) {
+      // B10 LIVE: GET /auth/me — returns the full UserModel for the JWT user.
+      final result = await DioApiService.instance.get<Map<String, dynamic>>('/auth/me');
+      switch (result) {
+        case Err(:final failure):
+          return Err(failure);
+        case Ok(:final value):
+          final user = UserModel.fromJson(value);
+          _profileCache[user.id] = user;
+          if (_session != null && _session!.user.id == user.id) {
+            _session = _session!.copyWith(user: user);
+            await _storage.saveSession(_session!);
+          }
+          return Ok(user);
+      }
+    }
     await _delay();
     // Return from in-memory cache first.
     final cached = _profileCache[userId];
@@ -304,6 +451,35 @@ class AuthRepository implements IAuthRepository {
 
   @override
   Future<Result<UserModel>> updateProfile({required UserModel user}) async {
+    if (!_isMock) {
+      // B10 LIVE: PATCH /users/me — UpdateUserDto whitelist:
+      // name, email, phone, avatarUrl, gender, age, isVacationMode,
+      // isDefaultAttendance, remindersEnabled, loginPreference.
+      final result = await DioApiService.instance.patch<Map<String, dynamic>>(
+        '/users/me',
+        body: {
+          'name': user.name,
+          if (user.phone != null) 'phone': user.phone,
+          if (user.gender != null) 'gender': user.gender,
+          if (user.age != null) 'age': user.age,
+          if (user.avatarUrl != null) 'avatarUrl': user.avatarUrl,
+          'isVacationMode': user.isVacationMode,
+          'isDefaultAttendance': user.isDefaultAttendance,
+        },
+      );
+      switch (result) {
+        case Err(:final failure):
+          return Err(failure);
+        case Ok(:final value):
+          final updated = UserModel.fromJson(value);
+          _profileCache[updated.id] = updated;
+          if (_session != null && _session!.user.id == updated.id) {
+            _session = _session!.copyWith(user: updated);
+            await _storage.saveSession(_session!);
+          }
+          return Ok(updated);
+      }
+    }
     await _delay(300);
     _profileCache[user.id] = user;
     // Keep the active session in sync if this is the current user.
@@ -320,6 +496,25 @@ class AuthRepository implements IAuthRepository {
     try {
       final stored = await _storage.loadSession();
       if (stored == null) return const Ok(null);
+      if (!_isMock) {
+        // B10 LIVE: validate the stored token against GET /auth/me.
+        // DioApiService transparently refreshes on 401 (rotating family);
+        // if validation still fails the user must log in again.
+        final result = await DioApiService.instance.get<Map<String, dynamic>>('/auth/me');
+        switch (result) {
+          case Err():
+            return const Ok(null); // invalid/expired → force re-login
+          case Ok(:final value):
+            final user = UserModel.fromJson(value);
+            // Storage may hold rotated tokens (refreshed by the interceptor).
+            final latest = await _storage.loadSession() ?? stored;
+            final refreshed = latest.copyWith(user: user);
+            _session = refreshed;
+            _profileCache[user.id] = user;
+            await _storage.saveSession(refreshed);
+            return Ok(refreshed);
+        }
+      }
       _session = stored;
       _profileCache[stored.user.id] = stored.user;
       return Ok(stored);

@@ -1,28 +1,45 @@
 import 'dart:typed_data';
 
+import 'package:smart_meal_management/core/config/env_config.dart';
 import 'package:smart_meal_management/core/errors/failure.dart';
 import 'package:smart_meal_management/data/contracts/i_meal_repository.dart';
 import 'package:smart_meal_management/data/mock/mock_meals_data.dart';
+import 'package:smart_meal_management/data/services/dio_api_service.dart';
 import 'package:smart_meal_management/shared/models/attendance_model.dart';
 import 'package:smart_meal_management/shared/models/meal_model.dart';
 import 'package:smart_meal_management/shared/models/meal_schedule_model.dart';
+import 'package:smart_meal_management/shared/models/paginated_response.dart';
 import 'package:smart_meal_management/shared/models/result.dart';
 
-/// In-memory mock implementation of [IMealRepository].
+/// Meal repository with dual-mode dispatch based on [EnvConfig.mockAuthEnabled].
 ///
-/// All meals are defined via [slotKey] + [order] — no hardcoded MealType enum.
-/// Simulates 250 ms latency.
+/// ## Live mode ([EnvConfig.mockAuthEnabled] == false — B10 default)
+/// Calls the NestJS backend via [DioApiService]:
+///   - GET    /meals?groupId=&page=&limit=        → list group meals
+///   - GET    /meals/today?groupId=               → today's active meals
+///   - POST   /meals                              → create meal (CreateMealDto)
+///   - PATCH  /meals/:id                          → update meal (UpdateMealDto)
+///   - DELETE /meals/:id                          → soft-delete meal
+///   - GET    /meals/weekly-schedule?groupId=     → current week schedule (paginated, limit 1)
+///   - POST   /schedules/:id/publish              → publish schedule
 ///
-/// Uses **static** backing stores so multiple [MealConfigProvider] instances
-/// (e.g. MealConfigScreen + MealScheduleScreen) always read the same data.
+/// All slots are defined via [slotKey] + [order] — no hardcoded MealType enum.
+/// Organisation scope is derived server-side from the JWT, never the client.
+///
+/// ## Mock mode ([EnvConfig.mockAuthEnabled] == true — instant rollback)
+/// In-memory store seeded from [MockMealsData]. Static backing stores so
+/// multiple [MealConfigProvider] instances share the same data. 250 ms latency.
 class MealRepository implements IMealRepository {
   MealRepository() {
-    if (_mealsStore.isEmpty) {
+    if (_isMock && _mealsStore.isEmpty) {
       _mealsStore.addAll(MockMealsData.groupMeals());
     }
   }
 
-  // ── Static shared stores ──────────────────────────────────────────────────
+  /// B10: live/mock dispatch — same single switch as the other repositories.
+  static bool get _isMock => EnvConfig.current.mockAuthEnabled;
+
+  // -- Static shared stores (mock only) --------------------------------------
   static final List<MealModel> _mealsStore = [];
   static MealScheduleModel? _schedule;
   static int _idCounter = 100;
@@ -35,6 +52,18 @@ class MealRepository implements IMealRepository {
     required String organizationId,
     required String groupId,
   }) async {
+    if (!_isMock) {
+      // B10 LIVE: GET /meals — org scope comes from the JWT, never the client.
+      final result = await DioApiService.instance.get<Map<String, dynamic>>(
+        '/meals',
+        queryParameters: {'groupId': groupId, 'page': '1', 'limit': '100'},
+      );
+      return switch (result) {
+        Err(:final failure) => Err(failure),
+        Ok(:final value) =>
+          Ok(PaginatedResponse.fromJson(value, MealModel.fromJson).data),
+      };
+    }
     await _delay();
     final meals = _mealsStore
         .where((m) =>
@@ -49,6 +78,18 @@ class MealRepository implements IMealRepository {
     required String organizationId,
     required String groupId,
   }) async {
+    if (!_isMock) {
+      // B10 LIVE: GET /meals/today — backend filters isActive=true server-side.
+      final result = await DioApiService.instance.get<Map<String, dynamic>>(
+        '/meals/today',
+        queryParameters: {'groupId': groupId},
+      );
+      return switch (result) {
+        Err(:final failure) => Err(failure),
+        Ok(:final value) =>
+          Ok(PaginatedResponse.fromJson(value, MealModel.fromJson).data),
+      };
+    }
     await _delay();
     final meals = _mealsStore
         .where((m) =>
@@ -73,6 +114,29 @@ class MealRepository implements IMealRepository {
     List<String> availablePreferences = const [],
     List<Uint8List> imageBytes = const [],
   }) async {
+    if (!_isMock) {
+      // B10 LIVE: POST /meals — CreateMealDto whitelist only.
+      // slotKey is free-form (never an enum) per dynamic rendering contract.
+      // imageBytes are NOT uploaded here — R2 multipart upload lands in B11.
+      final result = await DioApiService.instance.post<Map<String, dynamic>>(
+        '/meals',
+        body: {
+          'groupId': groupId,
+          'slotKey': slotKey,
+          'name': name,
+          'order': order,
+          'attendanceWindow': attendanceWindow.toJson(),
+          if (description != null) 'description': description,
+          'menuItems': menuItems,
+          'preferencesEnabled': availablePreferences.isNotEmpty,
+          'enabledPreferences': availablePreferences,
+        },
+      );
+      return switch (result) {
+        Err(:final failure) => Err(failure),
+        Ok(:final value) => Ok(MealModel.fromJson(value)),
+      };
+    }
     await _delay();
     try {
       final meal = MealModel(
@@ -111,6 +175,29 @@ class MealRepository implements IMealRepository {
     bool? isActive,
     List<Uint8List>? imageBytes,
   }) async {
+    if (!_isMock) {
+      // B10 LIVE: PATCH /meals/:id — UpdateMealDto partial update.
+      // API contract: isActive (DB) is exposed as isEnabled (API).
+      final result = await DioApiService.instance.patch<Map<String, dynamic>>(
+        '/meals/$mealId',
+        body: {
+          if (name != null) 'name': name,
+          if (description != null) 'description': description,
+          if (menuItems != null) 'menuItems': menuItems,
+          if (attendanceWindow != null)
+            'attendanceWindow': attendanceWindow.toJson(),
+          if (isActive != null) 'isEnabled': isActive,
+          if (availablePreferences != null) ...{
+            'enabledPreferences': availablePreferences,
+            'preferencesEnabled': availablePreferences.isNotEmpty,
+          },
+        },
+      );
+      return switch (result) {
+        Err(:final failure) => Err(failure),
+        Ok(:final value) => Ok(MealModel.fromJson(value)),
+      };
+    }
     await _delay();
     final idx = _mealsStore.indexWhere((m) => m.id == mealId);
     if (idx == -1) {
@@ -135,6 +222,15 @@ class MealRepository implements IMealRepository {
     required String groupId,
     required String mealId,
   }) async {
+    if (!_isMock) {
+      // B10 LIVE: DELETE /meals/:id — soft-delete server-side.
+      final result =
+          await DioApiService.instance.delete<dynamic>('/meals/$mealId');
+      return switch (result) {
+        Err(:final failure) => Err(failure),
+        Ok() => const Ok(Unit.instance),
+      };
+    }
     await _delay();
     final idx = _mealsStore.indexWhere((m) => m.id == mealId);
     if (idx == -1) {
@@ -149,6 +245,30 @@ class MealRepository implements IMealRepository {
     required String organizationId,
     required String groupId,
   }) async {
+    if (!_isMock) {
+      // B10 LIVE: GET /meals/weekly-schedule — returns a paginated list
+      // (limit 1). Extract the first schedule; empty -> blank 7-day schedule.
+      final result = await DioApiService.instance.get<Map<String, dynamic>>(
+        '/meals/weekly-schedule',
+        queryParameters: {'groupId': groupId},
+      );
+      switch (result) {
+        case Err(:final failure):
+          return Err(failure);
+        case Ok(:final value):
+          final page =
+              PaginatedResponse.fromJson(value, MealScheduleModel.fromJson);
+          if (page.data.isEmpty) {
+            return Ok(MealScheduleModel(
+              id: '',
+              groupId: groupId,
+              organizationId: organizationId,
+              days: const [],
+            ));
+          }
+          return Ok(page.data.first);
+      }
+    }
     await _delay();
     _schedule ??= MockMealsData.weekSchedule(
       groupId: groupId,
@@ -163,6 +283,16 @@ class MealRepository implements IMealRepository {
     required String groupId,
     required String scheduleId,
   }) async {
+    if (!_isMock) {
+      // B10 LIVE: POST /schedules/:id/publish — admin only.
+      final result = await DioApiService.instance.post<Map<String, dynamic>>(
+        '/schedules/$scheduleId/publish',
+      );
+      return switch (result) {
+        Err(:final failure) => Err(failure),
+        Ok(:final value) => Ok(MealScheduleModel.fromJson(value)),
+      };
+    }
     await _delay();
     if (_schedule == null) {
       return const Err(NetworkFailure(message: 'No schedule found.', statusCode: 404));

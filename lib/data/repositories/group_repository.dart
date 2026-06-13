@@ -1,10 +1,13 @@
+import 'package:smart_meal_management/core/config/env_config.dart';
 import 'package:smart_meal_management/core/errors/failure.dart';
 import 'package:smart_meal_management/data/contracts/i_group_repository.dart';
+import 'package:smart_meal_management/data/services/dio_api_service.dart';
 import 'package:smart_meal_management/data/mock/mock_groups_data.dart';
 import 'package:smart_meal_management/shared/models/group_model.dart';
 import 'package:smart_meal_management/shared/models/paginated_response.dart';
 import 'package:smart_meal_management/shared/models/result.dart';
 import 'package:smart_meal_management/shared/models/user_model.dart';
+import 'package:smart_meal_management/shared/enums/user_role.dart';
 
 /// In-memory mock implementation of [IGroupRepository].
 ///
@@ -15,11 +18,14 @@ import 'package:smart_meal_management/shared/models/user_model.dart';
 /// block/unblock actions to be visible to the student join flow immediately.
 class GroupRepository implements IGroupRepository {
   GroupRepository() {
-    if (!_initialized) {
+    if (_isMock && !_initialized) {
       _store.addAll(MockGroupsData.groups());
       _initialized = true;
     }
   }
+
+  /// B10: live/mock dispatch — same single switch as AuthRepository.
+  static bool get _isMock => EnvConfig.current.mockAuthEnabled;
 
   // Shared in-memory store — survives across repository instances.
   static final List<GroupModel> _store = [];
@@ -33,6 +39,18 @@ class GroupRepository implements IGroupRepository {
   Future<Result<PaginatedResponse<GroupModel>>> getOrganisationGroups({
     required String organizationId,
   }) async {
+    if (!_isMock) {
+      // B10 LIVE: GET /groups — org scope comes from the JWT, never the client.
+      final result = await DioApiService.instance.get<Map<String, dynamic>>(
+        '/groups',
+        queryParameters: {'page': '1', 'limit': '100'},
+      );
+      return switch (result) {
+        Err(:final failure) => Err(failure),
+        Ok(:final value) =>
+          Ok(PaginatedResponse.fromJson(value, GroupModel.fromJson)),
+      };
+    }
     await _delay();
     final groups = _store
         .where((g) => g.organizationId == organizationId && g.isActive)
@@ -50,6 +68,25 @@ class GroupRepository implements IGroupRepository {
     required String userId,
     required String organizationId,
   }) async {
+    if (!_isMock) {
+      // B10 LIVE: GET /groups then filter to the user's memberships using the
+      // serializer-provided memberIds[] (group serializer contract).
+      final result = await DioApiService.instance.get<Map<String, dynamic>>(
+        '/groups',
+        queryParameters: {'page': '1', 'limit': '100'},
+      );
+      return switch (result) {
+        Err(:final failure) => Err(failure),
+        Ok(:final value) => Ok(
+            PaginatedResponse.fromJson(value, GroupModel.fromJson)
+                .data
+                .where((g) =>
+                    g.isActive &&
+                    (g.memberIds.contains(userId) || g.adminId == userId))
+                .toList(),
+          ),
+      };
+    }
     await _delay();
     final groups = _store
         .where((g) =>
@@ -65,6 +102,14 @@ class GroupRepository implements IGroupRepository {
     required String organizationId,
     required String groupId,
   }) async {
+    if (!_isMock) {
+      final result = await DioApiService.instance
+          .get<Map<String, dynamic>>('/groups/$groupId');
+      return switch (result) {
+        Err(:final failure) => Err(failure),
+        Ok(:final value) => Ok(GroupModel.fromJson(value)),
+      };
+    }
     await _delay();
     try {
       final group = _store.firstWhere(
@@ -85,6 +130,24 @@ class GroupRepository implements IGroupRepository {
     int? maxMembers,
     GroupMealConfig? mealConfig,
   }) async {
+    if (!_isMock) {
+      // B10 LIVE: POST /groups — CreateGroupDto whitelist only.
+      // type.name serializes factory_ as "factory_" (locked API contract).
+      final result = await DioApiService.instance.post<Map<String, dynamic>>(
+        '/groups',
+        body: {
+          'name': name,
+          'type': type.name,
+          if (description != null) 'description': description,
+          if (maxMembers != null) 'maxMembers': maxMembers,
+          if (mealConfig != null) 'mealConfig': mealConfig.toJson(),
+        },
+      );
+      return switch (result) {
+        Err(:final failure) => Err(failure),
+        Ok(:final value) => Ok(GroupModel.fromJson(value)),
+      };
+    }
     await _delay();
     final group = GroupModel(
       id: 'grp_${++_idCounter}',
@@ -113,6 +176,22 @@ class GroupRepository implements IGroupRepository {
     GroupMealConfig? mealConfig,
     int? maxMembers,
   }) async {
+    if (!_isMock) {
+      final result = await DioApiService.instance.patch<Map<String, dynamic>>(
+        '/groups/$groupId',
+        body: {
+          if (name != null) 'name': name,
+          if (type != null) 'type': type.name,
+          if (description != null) 'description': description,
+          if (maxMembers != null) 'maxMembers': maxMembers,
+          if (mealConfig != null) 'mealConfig': mealConfig.toJson(),
+        },
+      );
+      return switch (result) {
+        Err(:final failure) => Err(failure),
+        Ok(:final value) => Ok(GroupModel.fromJson(value)),
+      };
+    }
     await _delay();
     final idx = _store.indexWhere((g) => g.id == groupId);
     if (idx == -1) {
@@ -134,6 +213,15 @@ class GroupRepository implements IGroupRepository {
     required String organizationId,
     required String groupId,
   }) async {
+    if (!_isMock) {
+      // B10 LIVE: DELETE /groups/:id — soft-delete (archive) server-side.
+      final result =
+          await DioApiService.instance.delete<dynamic>('/groups/$groupId');
+      return switch (result) {
+        Err(:final failure) => Err(failure),
+        Ok() => const Ok(Unit.instance),
+      };
+    }
     await _delay();
     final idx = _store.indexWhere((g) => g.id == groupId);
     if (idx == -1) {
@@ -148,6 +236,19 @@ class GroupRepository implements IGroupRepository {
     required String organizationId,
     required String groupId,
   }) async {
+    if (!_isMock) {
+      // B10 LIVE: GET /groups/:id/members — paginated member records.
+      // Each record carries a nested `user` profile (additive contract).
+      final result = await DioApiService.instance.get<Map<String, dynamic>>(
+        '/groups/$groupId/members',
+        queryParameters: {'page': '1', 'limit': '100'},
+      );
+      return switch (result) {
+        Err(:final failure) => Err(failure),
+        Ok(:final value) =>
+          Ok(PaginatedResponse.fromJson(value, _memberToUser)),
+      };
+    }
     await _delay();
     final members = MockGroupsData.membersForGroup(groupId);
     return Ok(PaginatedResponse(
@@ -164,6 +265,15 @@ class GroupRepository implements IGroupRepository {
     required String groupId,
     required String userId,
   }) async {
+    if (!_isMock) {
+      // B10 LIVE: DELETE /groups/:id/members/:userId — :memberId == userId.
+      final result = await DioApiService.instance
+          .delete<dynamic>('/groups/$groupId/members/$userId');
+      return switch (result) {
+        Err(:final failure) => Err(failure),
+        Ok() => const Ok(Unit.instance),
+      };
+    }
     await _delay();
     final idx = _store.indexWhere((g) => g.id == groupId);
     if (idx == -1) {
@@ -182,6 +292,18 @@ class GroupRepository implements IGroupRepository {
     required String joinCode,
     required String userId,
   }) async {
+    if (!_isMock) {
+      // B10 LIVE: POST /groups/join — org scope derives from the JWT.
+      // Blocked / already-member rules enforced server-side.
+      final result = await DioApiService.instance.post<Map<String, dynamic>>(
+        '/groups/join',
+        body: {'joinCode': joinCode},
+      );
+      return switch (result) {
+        Err(:final failure) => Err(failure),
+        Ok(:final value) => Ok(GroupModel.fromJson(value)),
+      };
+    }
     await _delay();
     try {
       final idx = _store.indexWhere(
@@ -223,6 +345,17 @@ class GroupRepository implements IGroupRepository {
     required String groupId,
     required String userId,
   }) async {
+    if (!_isMock) {
+      // B10 LIVE: PATCH /groups/:id/members/:userId { status: 'blocked' }.
+      final result = await DioApiService.instance.patch<dynamic>(
+        '/groups/$groupId/members/$userId',
+        body: {'status': 'blocked'},
+      );
+      return switch (result) {
+        Err(:final failure) => Err(failure),
+        Ok() => const Ok(Unit.instance),
+      };
+    }
     await _delay();
     final idx = _store.indexWhere((g) => g.id == groupId);
     if (idx == -1) {
@@ -245,6 +378,15 @@ class GroupRepository implements IGroupRepository {
     required String groupId,
     required String userId,
   }) async {
+    if (!_isMock) {
+      // B10 LIVE: PATCH /groups/:id/members/:userId/unblock — restores active.
+      final result = await DioApiService.instance
+          .patch<dynamic>('/groups/$groupId/members/$userId/unblock');
+      return switch (result) {
+        Err(:final failure) => Err(failure),
+        Ok() => const Ok(Unit.instance),
+      };
+    }
     await _delay();
     final idx = _store.indexWhere((g) => g.id == groupId);
     if (idx == -1) {
@@ -255,6 +397,27 @@ class GroupRepository implements IGroupRepository {
       blockedMemberIds: group.blockedMemberIds.where((id) => id != userId).toList(),
     );
     return const Ok(Unit.instance);
+  }
+
+  // ── Live member mapping ────────────────────────────────────────────────────
+
+  /// Maps a backend group-member record to a [UserModel].
+  /// Member records nest the joined profile under `user`; fall back to a
+  /// minimal model built from membership fields when it is absent.
+  UserModel _memberToUser(Map<String, dynamic> m) {
+    final user = m['user'];
+    if (user is Map<String, dynamic>) {
+      return UserModel.fromJson(user);
+    }
+    final status = m['status'];
+    return UserModel(
+      id: (m['userId'] ?? '').toString(),
+      name: '',
+      email: '',
+      role: UserRole.student,
+      organizationId: '',
+      isActive: status != 'blocked' && status != 'removed',
+    );
   }
 
   // ── Convenience aliases used by GroupProvider ──────────────────────────────
