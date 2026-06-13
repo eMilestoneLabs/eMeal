@@ -1,0 +1,12 @@
+# Copy to android/key.properties and fill with YOUR upload keystore values.
+# android/key.properties is gitignored — never commit the real file or the .jks.
+#
+# Create the keystore (run once, keep the .jks + passwords safe forever):
+#   keytool -genkey -v -keystore upload-keystore.jks \
+#     -keyalg RSA -keysize 2048 -validity 10000 -alias upload
+#
+# storeFile may be absolute (e.g. C:\\keys\\upload-keystore.jks) or relative to android/.
+storePassword=YOUR_STORE_PASSWORD
+keyPassword=YOUR_KEY_PASSWORD
+keyAlias=upload
+storeFile=upload-keystore.jks
