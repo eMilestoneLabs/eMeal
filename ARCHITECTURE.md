@@ -1,374 +1,945 @@
 # Smart Hostel - Architecture Documentation
-
 ## System Architecture
+# 🏗️ MealAttend - Architecture Documentation
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│                       Flutter App                            │
-├─────────────────────────────────────────────────────────────┤
+## 🎯 System Architecture
+
+```text
+┌──────────────────────────────────────────────────────────────────────────────┐
+│                            MealAttend Flutter App                           │
+├──────────────────────────────────────────────────────────────────────────────┤
 │
-│  ┌──────────────────────────────────────────────────────┐
-│  │              Presentation Layer (UI)                 │
-│  ├──────────────────────────────────────────────────────┤
-│  │  Features/
-│  │  ├─ Auth (Splash, Login)
-│  │  ├─ Student
-│  │  │   ├─ Dashboard
-│  │  │   ├─ Meals
-│  │  │   ├─ Attendance
-│  │  │   ├─ Profile
-│  │  │   └─ Navigation
-│  │  └─ Admin
-│  │      ├─ Dashboard
-│  │      ├─ Meals Management
-│  │      ├─ Attendance Tracking
-│  │      ├─ Settings
-│  │      └─ Navigation
-│  └──────────────────────────────────────────────────────┘
-│                          ▲
-│                          │ Uses
-│                          ▼
-│  ┌──────────────────────────────────────────────────────┐
-│  │            Shared Layer (Reusable)                   │
-│  ├──────────────────────────────────────────────────────┤
-│  │  Widgets/
-│  │  ├─ GlassCard
-│  │  ├─ PremiumButton
-│  │  └─ SectionTitle
-│  │
-│  │  Models/
-│  │  ├─ UserModel
-│  │  ├─ MealModel
-│  │  └─ AttendanceModel
-│  │
-│  │  Enums/
-│  │  ├─ UserRole
-│  │  └─ MealType
-│  └──────────────────────────────────────────────────────┘
-│                          ▲
-│                          │ Uses
-│                          ▼
-│  ┌──────────────────────────────────────────────────────┐
-│  │            Core Layer (Utilities)                    │
-│  ├──────────────────────────────────────────────────────┤
-│  │  Theme/
-│  │  ├─ app_colors.dart
-│  │  └─ app_theme.dart (Material 3)
-│  │
-│  │  Responsive/
-│  │  └─ responsive.dart (Breakpoints)
-│  │
-│  │  Constants/
-│  │  ├─ app_spacing.dart
-│  │  └─ app_radius.dart
-│  │
-│  │  Utils/
-│  │  └─ date_utils.dart
-│  └──────────────────────────────────────────────────────┘
-│                          ▲
-│                          │ Uses
-│                          ▼
-│  ┌──────────────────────────────────────────────────────┐
-│  │           Data Layer (Services & Repos)              │
-│  ├──────────────────────────────────────────────────────┤
-│  │  Repositories/
-│  │  ├─ AuthRepository
-│  │  ├─ MealRepository
-│  │  └─ AttendanceRepository
-│  │
-│  │  Mock Services/ (Will be replaced with APIs)
-│  │  ├─ MockAuthService
-│  │  ├─ MockMealService
-│  │  └─ MockAttendanceService
-│  └──────────────────────────────────────────────────────┘
-│                          ▲
-│                          │ Calls
-│                          ▼
-│  ┌──────────────────────────────────────────────────────┐
-│  │          External (APIs, Databases)                  │
-│  ├──────────────────────────────────────────────────────┤
-│  │  [Backend APIs] - To be implemented
-│  │  [Database] - To be connected
-│  └──────────────────────────────────────────────────────┘
+│  ┌──────────────────────────────────────────────────────────────────────┐
+│  │                 Presentation Layer (UI & Features)                  │
+│  ├──────────────────────────────────────────────────────────────────────┤
+│  │                                                                      │
+│  │  Features/                                                           │
+│  │                                                                      │
+│  │  ├─ Auth                                                             │
+│  │  │   ├─ Splash                                                       │
+│  │  │   ├─ Login                                                        │
+│  │  │   ├─ Register                                                     │
+│  │  │   ├─ Forgot Password                                              │
+│  │  │   └─ OTP Verification                                             │
+│  │                                                                      │
+│  │  ├─ Student                                                          │
+│  │  │   ├─ Dashboard                                                    │
+│  │  │   ├─ Meals                                                        │
+│  │  │   ├─ Attendance                                                   │
+│  │  │   ├─ Profile                                                      │
+│  │  │   ├─ Settings                                                     │
+│  │  │   └─ Navigation                                                   │
+│  │                                                                      │
+│  │  ├─ Admin                                                            │
+│  │  │   ├─ Dashboard                                                    │
+│  │  │   ├─ Groups                                                       │
+│  │  │   ├─ Meals                                                        │
+│  │  │   ├─ Attendance                                                   │
+│  │  │   ├─ Analytics                                                    │
+│  │  │   ├─ Reports                                                      │
+│  │  │   ├─ Notifications                                                │
+│  │  │   ├─ Members                                                      │
+│  │  │   ├─ Settings                                                     │
+│  │  │   └─ Navigation                                                   │
+│  │                                                                      │
+│  │  ├─ Event Admin                                                      │
+│  │  │   ├─ Dashboard                                                    │
+│  │  │   ├─ Guests                                                       │
+│  │  │   ├─ Meals                                                        │
+│  │  │   ├─ Statistics                                                   │
+│  │  │   ├─ Settings                                                     │
+│  │  │   └─ Navigation                                                   │
+│  │                                                                      │
+│  │  └─ Event Guest                                                      │
+│  │      ├─ Registration                                                 │
+│  │      ├─ Family Members                                               │
+│  │      ├─ Meal Selection                                               │
+│  │      ├─ Attendance Confirmation                                      │
+│  │      └─ Guest Dashboard                                              │
+│  │                                                                      │
+│  └──────────────────────────────────────────────────────────────────────┘
+│                                   ▲
+│                                   │ Uses
+│                                   ▼
 │
-└─────────────────────────────────────────────────────────────┘
+│  ┌──────────────────────────────────────────────────────────────────────┐
+│  │                    Shared Layer (Reusable)                          │
+│  ├──────────────────────────────────────────────────────────────────────┤
+│  │                                                                      │
+│  │  Widgets/                                                           │
+│  │  ├─ Common Components                                               │
+│  │  ├─ Form Components                                                 │
+│  │  ├─ Dashboard Widgets                                               │
+│  │  ├─ Loading Components                                              │
+│  │  └─ Error Components                                                │
+│  │                                                                      │
+│  │  Models/                                                            │
+│  │  ├─ UserModel                                                       │
+│  │  ├─ OrganizationModel                                               │
+│  │  ├─ GroupModel                                                      │
+│  │  ├─ MealModel                                                       │
+│  │  ├─ AttendanceModel                                                 │
+│  │  ├─ EventModel                                                      │
+│  │  └─ GuestModel                                                      │
+│  │                                                                      │
+│  │  Enums/                                                             │
+│  │  ├─ UserRole                                                        │
+│  │  ├─ GroupType                                                       │
+│  │  └─ AttendanceStatus                                                │
+│  │                                                                      │
+│  └──────────────────────────────────────────────────────────────────────┘
+│                                   ▲
+│                                   │ Uses
+│                                   ▼
+│
+│  ┌──────────────────────────────────────────────────────────────────────┐
+│  │                     Core Layer (Infrastructure)                     │
+│  ├──────────────────────────────────────────────────────────────────────┤
+│  │                                                                      │
+│  │  Theme/                                                             │
+│  │  ├─ Material 3                                                      │
+│  │  ├─ App Theme                                                       │
+│  │  └─ Color System                                                    │
+│  │                                                                      │
+│  │  Networking/                                                        │
+│  │  ├─ DioApiService                                                   │
+│  │  ├─ API Interceptors                                                │
+│  │  ├─ Auth Headers                                                    │
+│  │  └─ Error Handling                                                  │
+│  │                                                                      │
+│  │  Realtime/                                                          │
+│  │  ├─ Socket.IO Client                                                │
+│  │  ├─ Event Subscriptions                                             │
+│  │  └─ Live Updates                                                    │
+│  │                                                                      │
+│  │  Configuration/                                                     │
+│  │  ├─ Environment Config                                              │
+│  │  ├─ API Endpoints                                                   │
+│  │  └─ Constants                                                       │
+│  │                                                                      │
+│  └──────────────────────────────────────────────────────────────────────┘
+│                                   ▲
+│                                   │ Uses
+│                                   ▼
+│
+│  ┌──────────────────────────────────────────────────────────────────────┐
+│  │                      Data Layer (Repositories)                      │
+│  ├──────────────────────────────────────────────────────────────────────┤
+│  │                                                                      │
+│  │  Repositories/                                                      │
+│  │  ├─ AuthRepository                                                  │
+│  │  ├─ GroupRepository                                                 │
+│  │  ├─ MealRepository                                                  │
+│  │  ├─ AttendanceRepository                                            │
+│  │  └─ EventRepository                                                 │
+│  │                                                                      │
+│  │  State Management                                                   │
+│  │  ├─ StatefulWidget                                                  │
+│  │  ├─ ChangeNotifier                                                  │
+│  │  ├─ ValueNotifier                                                   │
+│  │  └─ Provider                                                        │
+│  │                                                                      │
+│  └──────────────────────────────────────────────────────────────────────┘
+│                                   ▲
+│                                   │ REST API + WebSocket
+│                                   ▼
+│
+│  ┌──────────────────────────────────────────────────────────────────────┐
+│  │                   Backend Infrastructure Layer                      │
+│  ├──────────────────────────────────────────────────────────────────────┤
+│  │                                                                      │
+│  │  NestJS Backend                                                     │
+│  │  ├─ Authentication Module                                           │
+│  │  ├─ Organization Module                                             │
+│  │  ├─ Group Module                                                    │
+│  │  ├─ Meal Module                                                     │
+│  │  ├─ Attendance Module                                               │
+│  │  ├─ Event Module                                                    │
+│  │  ├─ Notification Module                                             │
+│  │  ├─ Analytics Module                                                │
+│  │  ├─ Export Module                                                   │
+│  │  └─ Realtime Gateway                                                │
+│  │                                                                      │
+│  │  Infrastructure                                                     │
+│  │  ├─ PostgreSQL                                                     │
+│  │  ├─ Prisma ORM                                                     │
+│  │  ├─ Redis                                                          │
+│  │  ├─ BullMQ                                                         │
+│  │  ├─ MinIO                                                          │
+│  │  └─ WebSocket Gateway                                              │
+│  │                                                                      │
+│  └──────────────────────────────────────────────────────────────────────┘
+│
+└──────────────────────────────────────────────────────────────────────────────┘
 ```
 
-## Data Flow
+### 🚀 Architecture Principles
 
-### Authentication Flow
+✅ Feature-First Architecture
+
+✅ Frontend–Backend Contract Lock
+
+✅ Multi-Tenant Organization Isolation
+
+✅ JWT Authentication + Refresh Token Rotation
+
+✅ Dynamic slotKey Meal Governance
+
+✅ Realtime WebSocket Updates
+
+✅ Provider + ChangeNotifier State Management
+
+✅ NestJS + PostgreSQL + Redis + BullMQ + MinIO
+
+✅ Mobile First Design
+
+✅ Production Ready Scalability
+
+❌ No Mock Service Architecture
+
+❌ No MealType Enum Governance
+
+❌ No Riverpod / Bloc / Redux
+
+❌ No Hardcoded Meal Structures
+
+## 🔄 Data Flow
+
+### 🔐 Authentication Flow
+
+```text
+Splash Screen
+     │
+     ▼
+Check Stored Session
+     │
+     ├── Valid Access Token
+     │          │
+     │          ▼
+     │    Load User Profile
+     │          │
+     │          ▼
+     │    Navigate By Role
+     │
+     └── No Session
+                │
+                ▼
+           Login Screen
+                │
+                ▼
+      AuthRepository.login()
+                │
+                ▼
+          DioApiService
+                │
+                ▼
+        POST /auth/login
+                │
+                ▼
+        JWT Access Token
+        Refresh Token
+                │
+                ▼
+         Save Session
+                │
+                ▼
+         Load Profile
+                │
+                ▼
+         Route By Role
+                │
+ ┌──────────────┼──────────────┬──────────────┐
+ ▼              ▼              ▼              ▼
+Student      Admin       Event Admin     Event Guest
+Portal       Portal        Portal          Portal
 ```
-LoginScreen
-    │
-    ├─> AuthRepository.login()
-    │       │
-    │       ├─> MockAuthService.login()
-    │       │       │
-    │       │       └─> Return UserModel
-    │       │
-    │       └─> Save user state
-    │
-    └─> Navigate to DashboardRouter
+
+---
+
+### 🍽️ Meal Loading Flow
+
+```text
+Student Meals Screen
+        │
+        ▼
+MealRepository.getMeals()
+        │
+        ▼
+DioApiService
+        │
+        ▼
+GET /meals
+        │
+        ▼
+NestJS Meal Module
+        │
+        ▼
+PostgreSQL
+        │
+        ▼
+Meal Response
+        │
+        ▼
+Repository Mapping
+        │
+        ▼
+MealModel List
+        │
+        ▼
+Render UI
+```
+
+---
+
+### ✅ Attendance Marking Flow
+
+```text
+Student Marks Attendance
+          │
+          ▼
+AttendanceRepository.markAttendance()
+          │
+          ▼
+DioApiService
+          │
+          ▼
+POST /attendance
+          │
+          ▼
+Attendance Service
+          │
+          ├── Validate User
+          ├── Validate Group
+          ├── Validate Window
+          └── Upsert Attendance
+          │
+          ▼
+PostgreSQL
+          │
+          ▼
+Attendance Response
+          │
+          ▼
+Update UI
+          │
+          ▼
+Emit WebSocket Event
+attendance.marked.v1
+```
+
+---
+
+### 🎉 Event Guest Registration Flow
+
+```text
+Guest Registration Screen
             │
-            ├─> Check user.role.isAdmin
+            ▼
+EventRepository.registerGuest()
             │
-            ├─ YES ─> AdminNavigationScreen
+            ▼
+DioApiService
             │
-            └─ NO ──> StudentNavigationScreen
-```
-
-### Meal Display Flow
-```
-StudentDashboardScreen
-    │
-    ├─> MealRepository.getMeals()
-    │       │
-    │       ├─> MockMealService.getMeals()
-    │       │       │
-    │       │       └─> Return List<MealModel>
-    │       │
-    │       └─> Return data
-    │
-    ├─> Filter enabled meals (meal.isEnabled == true)
-    │
-    └─> Build UI with meal data
+            ▼
+POST /events/:id/guests
             │
-            └─> Display cards with meal info
+            ▼
+Event Service
+            │
+            ├── Validate Event
+            ├── Validate Capacity
+            ├── Validate Guest Data
+            └── Create Guest
+            │
+            ▼
+PostgreSQL
+            │
+            ▼
+Guest Created
+            │
+            ▼
+Emit WebSocket Event
+guest.joined.v1
+            │
+            ▼
+Update Event Dashboard
 ```
 
-### Attendance Tracking Flow
+---
+
+### 📡 Realtime Update Flow
+
+```text
+Backend Event
+      │
+      ▼
+NestJS Realtime Gateway
+      │
+      ▼
+Redis Adapter
+      │
+      ▼
+Socket.IO Broadcast
+      │
+      ▼
+Flutter RealtimeService
+      │
+      ▼
+Provider Update
+      │
+      ▼
+UI Refresh
 ```
-Student marks attendance
+
+Realtime Events:
+
+• attendance.marked.v1
+
+• attendance.overridden.v1
+
+• guest.joined.v1
+
+• guest.updated.v1
+
+• meal.updated.v1
+
+• event.updated.v1
+
+• dashboard.updated.v1
+
+---
+
+### 📊 Analytics & Dashboard Flow
+
+```text
+Dashboard Screen
+        │
+        ▼
+Dashboard Provider
+        │
+        ▼
+Analytics API
+        │
+        ▼
+NestJS Analytics Module
+        │
+        ▼
+PostgreSQL Aggregation
+        │
+        ▼
+Analytics Response
+        │
+        ▼
+Charts & KPI Widgets
+```
+
+---
+
+### 🔔 Notification Flow
+
+```text
+Scheduled Reminder
+         │
+         ▼
+BullMQ Queue
+         │
+         ▼
+Notification Worker
+         │
+         ▼
+Notification Service
+         │
+         ▼
+Create Notification
+         │
+         ▼
+Send Realtime Update
+         │
+         ▼
+User Dashboard
+```
+
+# 🎯 Feature Separation
+
+## 👨‍🎓 Student Module
+
+**Location:** `lib/features/student/`
+
+### Features
+
+* 📊 Dashboard
+* 🍽️ Meals
+* ✅ Attendance
+* 👤 Profile
+* ⚙️ Settings
+* 🔔 Notifications
+
+### Visibility
+
+Accessible only to:
+
+```text
+student
+```
+
+### Key Operations
+
+* View meal schedule
+* Select meal preferences
+* Mark attendance
+* View attendance history
+* View attendance analytics
+* Receive attendance reminders
+* Manage profile settings
+
+---
+
+## 👨‍💼 Admin Module
+
+**Location:** `lib/features/admin/`
+
+### Features
+
+* 📊 Dashboard
+* 👥 Groups
+* 🍽️ Meals
+* ✅ Attendance
+* 📈 Analytics
+* 📄 Reports
+* 🔔 Notifications
+* ⚙️ Settings
+
+### Visibility
+
+Accessible to organization administrators.
+
+### Key Operations
+
+* Manage groups
+* Manage members
+* Manage meals
+* Configure attendance windows
+* View analytics
+* Export reports
+* Manage organization settings
+* Send notifications
+
+---
+
+## 🎉 Event Admin Module
+
+**Location:** `lib/features/event_admin/`
+
+### Features
+
+* 📊 Dashboard
+* 👥 Guest Management
+* 🍽️ Meal Management
+* 📈 Statistics
+* ⚙️ Settings
+
+### Key Operations
+
+* Create events
+* Manage guests
+* Manage family registrations
+* Track attendance
+* View event analytics
+* Export guest reports
+
+---
+
+## 🎫 Event Guest Module
+
+**Location:** `lib/features/event_guest/`
+
+### Features
+
+* 📝 Registration
+* 👨‍👩‍👧 Family Members
+* 🍽️ Meal Selection
+* ✅ Attendance Confirmation
+
+### Key Operations
+
+* Register for events
+* Add family members
+* Select meals
+* Update guest information
+* Confirm attendance
+
+---
+
+# 🏗️ Key Design Patterns
+
+## 1️⃣ Repository Pattern
+
+```text
+UI Layer
     │
-    ├─> AttendanceRepository.markAttendance()
-    │       │
-    │       ├─> MockAttendanceService.markAttendance()
-    │       │       │
-    │       │       └─> Save to local list
-    │       │
-    │       └─> Return AttendanceModel
+    ▼
+Provider / ChangeNotifier
     │
-    └─> Update UI to show confirmation
+    ▼
+Repository
+    │
+    ▼
+DioApiService
+    │
+    ▼
+NestJS Backend API
 ```
 
-## Feature Separation
+Repositories:
 
-### Student Module
-- **Location**: `lib/features/student/`
-- **Contains**: Dashboard, Meals, Attendance, Profile
-- **Visibility**: Only shown to users with role = `student`
-- **Key Operations**:
-  - View available meals
-  - Mark attendance
-  - View attendance history
-  - Manage profile
+* AuthRepository
+* GroupRepository
+* MealRepository
+* AttendanceRepository
+* EventRepository
 
-### Admin Module
-- **Location**: `lib/features/admin/`
-- **Contains**: Dashboard, Meal Management, Attendance Tracking, Settings
-- **Visibility**: Only shown to users with role = `admin`, `messManager`, `hostelManager`, `hostelAdmin`
-- **Key Operations**:
-  - Create/edit/delete meals
-  - Enable/disable meals
-  - View meal attendance
-  - Manage organization settings
+### Benefits
 
-## Key Design Patterns
+✅ Separation of concerns
 
-### 1. Repository Pattern
+✅ Testability
+
+✅ Contract isolation
+
+✅ Backend abstraction
+
+---
+
+## 2️⃣ Feature-First Organization
+
+```text
+lib/features/
+├── auth/
+├── student/
+├── admin/
+├── event_admin/
+└── event_guest/
+```
+
+### Benefits
+
+✅ Clear ownership
+
+✅ Modular development
+
+✅ Easier maintenance
+
+✅ Scalable architecture
+
+---
+
+## 3️⃣ Responsive Design
+
 ```dart
-// UI always goes through Repository
-Widget → Repository → Service → Data Source
-
-// Easy to swap implementations
-MockMealService ─┐
-                 ├─> MealRepository ─> UI
-ApiMealService ──┘
+Responsive.isMobile(context)
+Responsive.isTablet(context)
+Responsive.isDesktop(context)
 ```
-
-### 2. Feature-First Organization
-```
-Benefits:
-- Clear separation of concerns
-- Easy to maintain
-- Simple to add new features
-- Scalable structure
-```
-
-### 3. Responsive Design
-```dart
-Responsive.isMobile(context)   // < 600px
-Responsive.isTablet(context)   // 600-900px
-Responsive.isDesktop(context)  // > 900px
-
-// Automatic layout adjustment
-```
-
-### 4. Theme Centralization
-```dart
-// All colors in one place
-AppColors.primary
-AppColors.success
-AppColors.error
-
-// All spacing in one place
-AppSpacing.md
-AppSpacing.lg
-
-// All theme in one place
-AppTheme.lightTheme
-AppTheme.darkTheme
-```
-
-## Role-Based Behavior
-
-### Admin Disables Meal
-
-```
-Admin toggles meal disabled
-    │
-    ├─> MealRepository.toggleMealStatus(id, false)
-    │       │
-    │       ├─> meal.isEnabled = false
-    │       │
-    │       └─> Persist change
-    │
-    └─> Student screens update
-            │
-            ├─> StudentDashboard filters out disabled meal
-            │
-            ├─> MealsScreen shows only enabled meals
-            │
-            └─> But attendance still tracked for that meal
-```
-
-### Important Behavior
-- When meal is disabled: UI hides it from students
-- When meal is disabled: Attendance system still works
-- Students can't see disabled meals
-- Admin can still track attendance for disabled meals
-
-## State Management Approach
-
-**Current**: StatefulWidget (Simple, MVP-ready)
-**Future**: Add Riverpod/Bloc when complexity grows
-
-Benefits of current approach:
-- No extra dependencies
-- Easy to understand
-- Performant for MVP
-- Quick to develop
-
-## Error Handling Strategy
-
-### Current Implementation
-```dart
-try {
-  final data = await repository.getData();
-  setState(() {
-    _data = data;
-    _isLoading = false;
-  });
-} catch (e) {
-  // Show error to user
-  ScaffoldMessenger.show(SnackBar(...));
-}
-```
-
-### Future Improvements
-- Centralized error handling
-- Retry logic
-- Offline support
-- Error logging
-
-## Responsive Layout Strategy
 
 ### Breakpoints
-```
-Mobile   (< 600px):  1 column layout
-Tablet   (600-900px): 2 column layout
-Desktop  (> 900px):   3 column layout
+
+```text
+Mobile    < 600px
+Tablet    600–900px
+Desktop   > 900px
 ```
 
-### Implementation
+### Goals
+
+✅ Mobile-first
+
+✅ Tablet optimized
+
+✅ Desktop compatible
+
+---
+
+## 4️⃣ Theme Centralization
+
 ```dart
-// In any screen
-final columns = Responsive.gridColumns(context);
-final padding = Responsive.horizontalPadding(context);
-
-GridView.builder(
-  gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-    crossAxisCount: columns,
-    mainAxisSpacing: padding,
-    crossAxisSpacing: padding,
-  ),
-  // ...
-)
+AppColors
+AppSpacing
+AppRadius
+AppTypography
+AppTheme
 ```
 
-## Future Architecture Considerations
+### Benefits
 
-### When Adding State Management
+✅ Consistent design
+
+✅ Easier maintenance
+
+✅ Centralized styling
+
+---
+
+# 🔐 Role-Based Behavior
+
+## Meal Visibility Flow
+
+```text
+Admin Updates Meal
+          │
+          ▼
+MealRepository
+          │
+          ▼
+Backend API
+          │
+          ▼
+Database Updated
+          │
+          ▼
+Realtime Event
+meal.updated.v1
+          │
+          ▼
+Student Dashboard Refresh
 ```
-Current:  Widget → Repository → Service
-Future:   Widget → Provider/Stream ← Repository ← Service
+
+### Important Rules
+
+✅ Disabled meals are hidden from students
+
+✅ Historical attendance remains intact
+
+✅ Admins retain full visibility
+
+✅ Attendance records are never deleted
+
+---
+
+# ⚡ State Management Approach
+
+MealAttend intentionally uses lightweight state management.
+
+### Approved Architecture
+
+* StatefulWidget
+* ChangeNotifier
+* ValueNotifier
+* Provider
+
+### Governance
+
+❌ Riverpod
+
+❌ Bloc
+
+❌ Redux
+
+❌ GetX
+
+Not part of the approved architecture.
+
+### Benefits
+
+✅ Lightweight
+
+✅ Predictable
+
+✅ Easy onboarding
+
+✅ Low complexity
+
+---
+
+# ⚠️ Error Handling Strategy
+
+```dart
+UI
+ │
+ ▼
+Repository
+ │
+ ▼
+DioApiService
+ │
+ ▼
+Backend API
+ │
+ ▼
+Standard Error Response
+ │
+ ▼
+User-Friendly Message
 ```
 
-### When Adding Backend
+### Error Categories
+
+* Validation Errors
+* Authentication Errors
+* Authorization Errors
+* Network Errors
+* Server Errors
+
+### Goals
+
+✅ Consistent UX
+
+✅ Contract-compliant errors
+
+✅ Clear user feedback
+
+---
+
+# 📱 Responsive Layout Strategy
+
+### Breakpoints
+
+```text
+Mobile    (<600px)
+Tablet    (600–900px)
+Desktop   (>900px)
 ```
-Current:  Mock Service
-Future:   API Service (REST/GraphQL) ← Dio/Retrofit
+
+### Layout Rules
+
+Mobile
+
+* Single column
+* Bottom navigation
+
+Tablet
+
+* Two-column layouts
+* Expanded cards
+
+Desktop
+
+* Multi-column layouts
+* Wider dashboards
+
+---
+
+# 🚀 Architecture Evolution
+
+## Current Production Architecture
+
+```text
+Flutter
+   │
+Provider
+   │
+Repository
+   │
+DioApiService
+   │
+NestJS Backend
+   │
+PostgreSQL
+Redis
+BullMQ
+MinIO
 ```
 
-### When Adding Database
+### Realtime Layer
+
+```text
+Flutter
+   │
+Socket.IO
+   │
+WebSocket Gateway
+   │
+Redis Adapter
 ```
-Current:  In-memory
-Future:   Local (Hive/SQLite) ← Remote (Backend DB)
-```
 
-### When Adding Advanced Features
-```
-Current:  Simple widgets
-Future:   Advanced (Notifications, Sync, Caching)
-```
+### Future Additive Enhancements
 
-## Scalability Notes
+* Offline synchronization
+* Push notifications
+* Advanced analytics
+* Enhanced caching
 
-✅ **Scales Well**:
-- Adding new student features
-- Adding new admin features
-- Creating new roles
-- Expanding meal types
-- Adding more attendance fields
+All future enhancements must preserve frontend-backend contracts.
 
-⚠️ **May Need Refactoring**:
-- Complex state management (add Riverpod)
-- Real-time sync (add WebSockets)
-- Offline-first (add Hive/SQLite)
-- Advanced caching (add custom layer)
+---
 
-## Performance Considerations
+# 📈 Scalability Notes
 
-1. **List Rendering**: Use `.builder()` for large lists
-2. **Images**: Add caching when implementing image uploads
-3. **API Calls**: Add debouncing for search/filter
-4. **State Updates**: Minimize rebuild scope
-5. **Navigation**: Lazy load feature modules if needed
+### Designed To Scale
 
-## Security Baseline
+✅ Multi-tenant organizations
 
-Current MVP:
-- ✅ Local session management
-- ✅ Role-based navigation
-- ❌ Real authentication
-- ❌ Encrypted storage
+✅ Large member counts
 
-Future:
-- JWT tokens
-- Secure token storage
-- HTTPS enforcement
-- Input validation
-- Rate limiting
+✅ High attendance volumes
+
+✅ Multiple event types
+
+✅ Dynamic meal structures
+
+✅ Realtime updates
+
+---
+
+# ⚙️ Performance Considerations
+
+1. Use builder-based list rendering
+2. Minimize widget rebuilds
+3. Cache static assets
+4. Paginate large datasets
+5. Use realtime updates instead of excessive polling
+6. Process background work through BullMQ
+
+---
+
+# 🔒 Security Architecture
+
+Current Production Security:
+
+✅ JWT Authentication
+
+✅ Refresh Token Rotation
+
+✅ Role-Based Authorization
+
+✅ Organization Isolation
+
+✅ Audit Logging
+
+✅ Input Validation
+
+✅ Rate Limiting
+
+✅ Secure File Uploads
+
+✅ HTTPS Enforcement
+
+✅ WebSocket JWT Validation
+
+### Security Principles
+
+* Never trust client data
+* Organization isolation is mandatory
+* Authorization before business logic
+* Audit critical actions
+* Contract-safe validation
+
+---
+
+**🏆 MealAttend Architecture Status**
+
+Frontend Architecture: ✅ Production Ready
+
+Backend Architecture: ✅ Production Ready
+
+Realtime Architecture: ✅ Enabled
+
+Multi-Tenant Architecture: ✅ Enabled
+
+Security Architecture: ✅ Enabled
+
+Scalability Architecture: ✅ Ready
+
+Contract Governance: ✅ Locked
 
 ---
 
