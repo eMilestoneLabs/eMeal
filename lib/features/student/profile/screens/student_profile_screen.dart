@@ -35,6 +35,7 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
       _provider = StudentProfileProvider(
         authProvider: AuthProviderScope.of(context),
       );
+      _provider?.loadSummary();
     }
   }
 
