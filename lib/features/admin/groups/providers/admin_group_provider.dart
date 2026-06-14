@@ -79,15 +79,41 @@ class AdminGroupProvider extends ChangeNotifier {
     required String groupId,
     required String organizationId,
   }) async {
-    try {
-      _selectedGroup = _groups.firstWhere((g) => g.id == groupId);
-    } catch (_) {
-      // Group not in list yet, will be loaded
+    // Prefer the already-loaded list (instant). The detail screen calls
+    // loadGroups() + selectGroup() without awaiting, so _groups can still be
+    // empty here; in that case fetch the group by id from the API. Without this
+    // fallback the detail/QR screen showed "Group not found" for the admin's
+    // own group in live mode.
+    _isLoading = true; // keep the detail screen on the loader until the group resolves (no "not found" flash)
+    GroupModel? local;
+    for (final g in _groups) {
+      if (g.id == groupId) {
+        local = g;
+        break;
+      }
     }
+    _selectedGroup = local;
     // Clear stale meal/member lists immediately so UI shows loading state
     _selectedGroupMeals = [];
     _selectedGroupMembers = [];
     notifyListeners();
+
+    if (_selectedGroup == null) {
+      final result = await _groupRepo.getGroup(
+        organizationId: organizationId,
+        groupId: groupId,
+      );
+      switch (result) {
+        case Ok(:final value):
+          _selectedGroup = value;
+        case Err():
+          break; // leave null → detail screen shows its empty state
+      }
+    }
+
+    _isLoading = false;
+    notifyListeners();
+
     // Load members and meals in parallel
     await Future.wait([
       loadGroupMembers(groupId: groupId, organizationId: organizationId),

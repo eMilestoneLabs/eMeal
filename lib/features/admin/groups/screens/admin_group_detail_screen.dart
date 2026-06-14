@@ -55,9 +55,6 @@ class _AdminGroupDetailScreenState extends State<AdminGroupDetailScreen>
       _initialized = true;
       final auth = AuthProviderScope.of(context);
       _currentUserId = auth.currentUser?.id ?? '';
-      _provider.loadGroups(
-        organizationId: widget.organizationId,
-      );
       _provider.selectGroup(
         groupId: widget.groupId,
         organizationId: widget.organizationId,
@@ -321,6 +318,7 @@ class _GroupAppBar extends StatelessWidget {
   void _showQrSheet(BuildContext context) {
     showModalBottomSheet(
       context: context,
+      isScrollControlled: true,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
@@ -357,13 +355,19 @@ class _QrBottomSheet extends StatelessWidget {
       joinToken: code,
     );
 
-    return Container(
-      decoration: BoxDecoration(
-        color: colorScheme.surface,
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+    return ConstrainedBox(
+      constraints: BoxConstraints(
+        maxHeight: MediaQuery.sizeOf(context).height * 0.9,
       ),
-      padding: const EdgeInsets.fromLTRB(24, 12, 24, 32),
-      child: Column(
+      child: SingleChildScrollView(
+        child: Container(
+          decoration: BoxDecoration(
+            color: colorScheme.surface,
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+          ),
+          padding: EdgeInsets.fromLTRB(
+              24, 12, 24, 24 + MediaQuery.viewPaddingOf(context).bottom),
+          child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
           // Handle
@@ -493,6 +497,8 @@ class _QrBottomSheet extends StatelessWidget {
           ),
         ],
       ),
+          ),
+        ),
     );
   }
 }

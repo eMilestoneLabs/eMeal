@@ -150,9 +150,12 @@ GoRouter buildRouter(AuthProvider auth) {
         path: RouteNames.login,
         builder: (context, state) {
           final extra = state.extra;
-          final roleContext = extra is AuthRouteExtra
-              ? extra.roleContext
-              : 'student';
+          // roleContext travels in the URL query (?role=admin) so it survives
+          // GoRouter refreshes (refreshListenable: auth) during the login attempt.
+          // Without this, a refresh dropped state.extra and the admin login screen
+          // flipped to the student ('student' fallback) screen mid-sign-in.
+          final roleContext = state.uri.queryParameters['role'] ??
+              (extra is AuthRouteExtra ? extra.roleContext : 'student');
           return LoginScreen(roleContext: roleContext);
         },
       ),

@@ -58,7 +58,7 @@ class _EventEntryScreenState extends State<EventEntryScreen>
   }
 
   void _onAdminTap() {
-    context.push(RouteNames.login,
+    context.push('${RouteNames.login}?role=event',
         extra: const AuthRouteExtra(roleContext: 'event'));
   }
 

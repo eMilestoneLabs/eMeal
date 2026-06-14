@@ -153,6 +153,31 @@ class AdminMoreScreen extends StatelessWidget {
             subtitle: 'Return to role selection',
             color: AppColors.error,
             onTap: () async {
+              // Confirmation dialog before sign-out (parity with the student flow).
+              final confirmed = await showDialog<bool>(
+                context: context,
+                barrierColor: Colors.black.withValues(alpha: 0.5),
+                builder: (ctx) => AlertDialog(
+                  title: const Text('Sign Out'),
+                  content: const Text(
+                    'You will need to sign in again to continue.',
+                  ),
+                  actions: [
+                    TextButton(
+                      onPressed: () => Navigator.of(ctx).pop(false),
+                      child: const Text('Cancel'),
+                    ),
+                    TextButton(
+                      onPressed: () => Navigator.of(ctx).pop(true),
+                      style: TextButton.styleFrom(
+                        foregroundColor: AppColors.error,
+                      ),
+                      child: const Text('Sign Out'),
+                    ),
+                  ],
+                ),
+              );
+              if (confirmed != true) return;
               await auth.logout();
               if (context.mounted) context.go(RouteNames.roleSelect);
             },

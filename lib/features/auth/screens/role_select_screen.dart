@@ -68,12 +68,12 @@ class _RoleSelectScreenState extends State<RoleSelectScreen>
   }
 
   void _onStudentTap() {
-    context.push(RouteNames.login,
+    context.push('${RouteNames.login}?role=student',
         extra: const AuthRouteExtra(roleContext: 'student'));
   }
 
   void _onAdminTap() {
-    context.push(RouteNames.login,
+    context.push('${RouteNames.login}?role=admin',
         extra: const AuthRouteExtra(roleContext: 'admin'));
   }
 
