@@ -153,29 +153,11 @@ class AdminMoreScreen extends StatelessWidget {
             subtitle: 'Return to role selection',
             color: AppColors.error,
             onTap: () async {
-              // Confirmation dialog before sign-out (parity with the student flow).
+              // Premium confirmation dialog (visual parity with the student flow).
               final confirmed = await showDialog<bool>(
                 context: context,
                 barrierColor: Colors.black.withValues(alpha: 0.5),
-                builder: (ctx) => AlertDialog(
-                  title: const Text('Sign Out'),
-                  content: const Text(
-                    'You will need to sign in again to continue.',
-                  ),
-                  actions: [
-                    TextButton(
-                      onPressed: () => Navigator.of(ctx).pop(false),
-                      child: const Text('Cancel'),
-                    ),
-                    TextButton(
-                      onPressed: () => Navigator.of(ctx).pop(true),
-                      style: TextButton.styleFrom(
-                        foregroundColor: AppColors.error,
-                      ),
-                      child: const Text('Sign Out'),
-                    ),
-                  ],
-                ),
+                builder: (_) => const _AdminLogoutDialog(),
               );
               if (confirmed != true) return;
               await auth.logout();
@@ -280,6 +262,126 @@ class _NavTile extends StatelessWidget {
           Icons.chevron_right_rounded,
           color: (isDark ? AppColors.textSecondaryDark : AppColors.textSecondary)
               .withValues(alpha: 0.6),
+        ),
+      ),
+    );
+  }
+}
+
+
+// ── Sign-out confirmation dialog (matches the student settings dialog style) ──
+class _AdminLogoutDialog extends StatelessWidget {
+  const _AdminLogoutDialog();
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return Dialog(
+      backgroundColor: Colors.transparent,
+      child: Container(
+        padding: const EdgeInsets.all(24),
+        decoration: BoxDecoration(
+          color: isDark ? AppColors.surfaceDark : AppColors.surface,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: isDark
+                ? AppColors.borderDark.withValues(alpha: 0.5)
+                : AppColors.border,
+          ),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 52,
+              height: 52,
+              decoration: BoxDecoration(
+                color: AppColors.error.withValues(alpha: 0.10),
+                borderRadius: BorderRadius.circular(14),
+              ),
+              child: const Icon(Icons.logout_rounded,
+                  size: 24, color: AppColors.error),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              'Sign out?',
+              style: AppTypography.titleMedium.copyWith(
+                color:
+                    isDark ? AppColors.textPrimaryDark : AppColors.textPrimary,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'You will be returned to the role selection screen.',
+              style: AppTypography.bodySmall.copyWith(
+                color: isDark
+                    ? AppColors.textSecondaryDark
+                    : AppColors.textSecondary,
+                height: 1.5,
+              ),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 24),
+            Row(
+              children: [
+                Expanded(
+                  child: GestureDetector(
+                    onTap: () => Navigator.of(context).pop(false),
+                    child: Container(
+                      height: 46,
+                      decoration: BoxDecoration(
+                        color: isDark
+                            ? AppColors.surfaceVariantDark
+                            : AppColors.surfaceVariant,
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                      child: Center(
+                        child: Text(
+                          'Cancel',
+                          style: AppTypography.labelMedium.copyWith(
+                            color: isDark
+                                ? AppColors.textPrimaryDark
+                                : AppColors.textPrimary,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: GestureDetector(
+                    onTap: () => Navigator.of(context).pop(true),
+                    child: Container(
+                      height: 46,
+                      decoration: BoxDecoration(
+                        color: AppColors.error,
+                        borderRadius: BorderRadius.circular(14),
+                        boxShadow: [
+                          BoxShadow(
+                            color: AppColors.error.withValues(alpha: 0.30),
+                            blurRadius: 10,
+                            offset: const Offset(0, 3),
+                          ),
+                        ],
+                      ),
+                      child: Center(
+                        child: Text(
+                          'Sign Out',
+                          style: AppTypography.labelMedium.copyWith(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
         ),
       ),
     );

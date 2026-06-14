@@ -298,6 +298,25 @@ class AuthProvider extends ChangeNotifier {
     _state = AuthAuthenticated(session: _session!);
     notifyListeners();
   }
+
+  /// Refreshes the JWT using the stored refresh token so server-side claim
+  /// changes (e.g. organizationId set on first group join — the backend
+  /// re-reads the user when refreshing) enter the active session. Without this
+  /// the access token keeps organizationId=null and org-scoped queries
+  /// (group / weekly menu / dashboard) fail. No-op if unauthenticated.
+  Future<void> refreshSession() async {
+    final token = _session?.refreshToken;
+    if (token == null || token.isEmpty) return;
+    final result = await _repo.refreshToken(token: token);
+    switch (result) {
+      case Ok(:final value):
+        _session = value;
+        _state = AuthAuthenticated(session: value);
+        notifyListeners();
+      case Err():
+        break; // keep current session; user can re-login if it persists
+    }
+  }
 }
 
 // ── InheritedNotifier scope ────────────────────────────────────────────────────

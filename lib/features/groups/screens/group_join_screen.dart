@@ -71,6 +71,11 @@ class _GroupJoinScreenState extends State<GroupJoinScreen> {
         _successGroupId = _provider.lastJoined!.id;
       });
 
+      // Refresh the JWT so the organizationId the backend just set on this first
+      // join enters the access token — fixes group / weekly menu / dashboard load.
+      await authProvider.refreshSession();
+      if (!mounted) return;
+
       // G2 fix: patch the in-memory UserModel so StudentShell's ListenableBuilder
       // fires immediately — Meals and Attendance tabs appear without a re-login.
       final currentUser = authProvider.currentUser;
