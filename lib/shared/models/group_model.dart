@@ -1,4 +1,5 @@
 import 'package:equatable/equatable.dart';
+import 'package:smart_meal_management/shared/enums/user_role.dart';
 
 // ── GroupType ──────────────────────────────────────────────────────────────────
 
@@ -191,6 +192,7 @@ class GroupModel extends Equatable {
     this.isActive = true,
     this.joinCode,
     this.createdAt,
+    this.functionalRole,
   });
 
   final String id;
@@ -212,6 +214,10 @@ class GroupModel extends Equatable {
   final bool isActive;
   final String? joinCode;
   final DateTime? createdAt;
+
+  /// The CURRENT user's functional role for THIS group (#8), e.g. hostelAdmin
+  /// in one group, messManager in another. null -> use the global user role.
+  final UserRole? functionalRole;
 
   int get memberCount => memberIds.length;
 
@@ -235,6 +241,7 @@ class GroupModel extends Equatable {
         joinCode: j['joinCode'],
         createdAt:
             j['createdAt'] != null ? DateTime.parse(j['createdAt']) : null,
+        functionalRole: UserRole.fromName(j['functionalRole'] as String?),
       );
 
   Map<String, dynamic> toJson() => {
@@ -251,6 +258,7 @@ class GroupModel extends Equatable {
         'isActive': isActive,
         'joinCode': joinCode,
         'createdAt': createdAt?.toIso8601String(),
+        'functionalRole': functionalRole?.name,
       };
 
   GroupModel copyWith({
@@ -263,6 +271,7 @@ class GroupModel extends Equatable {
     int? maxMembers,
     bool? isActive,
     String? joinCode,
+    UserRole? functionalRole,
   }) =>
       GroupModel(
         id: id,
@@ -278,6 +287,7 @@ class GroupModel extends Equatable {
         isActive: isActive ?? this.isActive,
         joinCode: joinCode ?? this.joinCode,
         createdAt: createdAt,
+        functionalRole: functionalRole ?? this.functionalRole,
       );
 
   @override
@@ -290,5 +300,6 @@ class GroupModel extends Equatable {
         memberIds,
         blockedMemberIds,
         isActive,
+        functionalRole,
       ];
 }

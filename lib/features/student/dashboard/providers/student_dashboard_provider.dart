@@ -250,6 +250,75 @@ class StudentDashboardProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Marks attendance for [meal] directly from the dashboard with an optimistic
+  /// update + rollback, then keeps [_todayAttendance] in sync so the Next-Meal
+  /// card flips to the Present badge immediately (Issue #1). Returns true on
+  /// success. [user] supplies the ids; [_activeGroup] resolution mirrors [load].
+  Future<bool> markStatus({
+    required UserModel user,
+    required MealModel meal,
+    required AttendanceStatus status,
+    String? preference,
+  }) async {
+    final groupId =
+        user.groupId ?? (user.groupIds.isNotEmpty ? user.groupIds.first : null);
+    if (groupId == null) return false;
+
+    final today = DateTime.now();
+    final existingIdx = _todayAttendance.indexWhere(
+      (r) =>
+          r.mealId == meal.id &&
+          r.date.year == today.year &&
+          r.date.month == today.month &&
+          r.date.day == today.day,
+    );
+
+    final optimistic = existingIdx != -1
+        ? _todayAttendance[existingIdx]
+            .copyWith(status: status, preference: preference, markedAt: today)
+        : AttendanceModel(
+            id: 'temp_${meal.id}_${today.millisecondsSinceEpoch}',
+            mealId: meal.id,
+            userId: user.id,
+            groupId: groupId,
+            organizationId: user.organizationId,
+            status: status,
+            date: today,
+            markedAt: today,
+            preference: preference,
+          );
+
+    final snapshot = List<AttendanceModel>.from(_todayAttendance);
+    if (existingIdx != -1) {
+      _todayAttendance[existingIdx] = optimistic;
+    } else {
+      _todayAttendance = [..._todayAttendance, optimistic];
+    }
+    notifyListeners();
+
+    final result = await _attendanceRepo.markAttendance(record: optimistic);
+    switch (result) {
+      case Ok(:final value):
+        final idx = _todayAttendance.indexWhere((r) => r.id == optimistic.id);
+        if (idx != -1) _todayAttendance[idx] = value;
+        // Reminders no longer needed for a meal that's now marked.
+        if (_remindersEnabled && !_isVacationMode && _todayMeals.isNotEmpty) {
+          NotificationService.instance.syncReminders(
+            _todayMeals,
+            isVacationMode: _isVacationMode,
+            markedMealIds: markedMealIds,
+          );
+        }
+        notifyListeners();
+        return true;
+      case Err(:final failure):
+        _todayAttendance = snapshot;
+        _error = failure.message;
+        notifyListeners();
+        return false;
+    }
+  }
+
   // ── Settings ───────────────────────────────────────────────────────────────
 
   void setRemindersEnabled(bool enabled) {

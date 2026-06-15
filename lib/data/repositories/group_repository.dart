@@ -129,6 +129,7 @@ class GroupRepository implements IGroupRepository {
     String? description,
     int? maxMembers,
     GroupMealConfig? mealConfig,
+    UserRole? functionalRole,
   }) async {
     if (!_isMock) {
       // B10 LIVE: POST /groups — CreateGroupDto whitelist only.
@@ -141,6 +142,7 @@ class GroupRepository implements IGroupRepository {
           if (description != null) 'description': description,
           if (maxMembers != null) 'maxMembers': maxMembers,
           if (mealConfig != null) 'mealConfig': mealConfig.toJson(),
+          if (functionalRole != null) 'functionalRole': functionalRole.name,
         },
       );
       return switch (result) {
@@ -161,6 +163,7 @@ class GroupRepository implements IGroupRepository {
       isActive: true,
       joinCode: 'JOIN-$_idCounter',
       createdAt: DateTime.now(),
+      functionalRole: functionalRole,
     );
     _store.add(group);
     return Ok(group);
@@ -175,6 +178,7 @@ class GroupRepository implements IGroupRepository {
     String? description,
     GroupMealConfig? mealConfig,
     int? maxMembers,
+    UserRole? functionalRole,
   }) async {
     if (!_isMock) {
       final result = await DioApiService.instance.patch<Map<String, dynamic>>(
@@ -185,6 +189,7 @@ class GroupRepository implements IGroupRepository {
           if (description != null) 'description': description,
           if (maxMembers != null) 'maxMembers': maxMembers,
           if (mealConfig != null) 'mealConfig': mealConfig.toJson(),
+          if (functionalRole != null) 'functionalRole': functionalRole.name,
         },
       );
       return switch (result) {

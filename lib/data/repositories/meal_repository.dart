@@ -278,6 +278,69 @@ class MealRepository implements IMealRepository {
   }
 
   @override
+  Future<Result<MealScheduleModel>> saveSchedule({
+    required String organizationId,
+    required String groupId,
+    required MealScheduleModel schedule,
+  }) async {
+    if (!_isMock) {
+      // Build entries[] from the edited days, attaching concrete dates for the
+      // current ISO week (Monday = weekStartDate; each day = Monday + index).
+      final now = DateTime.now();
+      final monday = DateTime(now.year, now.month, now.day)
+          .subtract(Duration(days: now.weekday - 1));
+      String fmt(DateTime d) =>
+          '${d.year.toString().padLeft(4, '0')}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+
+      final entries = <Map<String, dynamic>>[];
+      for (final daySchedule in schedule.days) {
+        final date = fmt(monday.add(Duration(days: daySchedule.day.index)));
+        for (final e in daySchedule.meals) {
+          entries.add({
+            'mealId': e.mealId,
+            'date': date,
+            if (e.name.isNotEmpty) 'mealName': e.name,
+            if (e.openTime != null && e.closeTime != null)
+              'attendanceWindow': {
+                'openTime': e.openTime,
+                'closeTime': e.closeTime,
+              },
+          });
+        }
+      }
+
+      if (schedule.id.isEmpty) {
+        // CREATE — POST /schedules { groupId, weekStartDate, entries }
+        final result = await DioApiService.instance.post<Map<String, dynamic>>(
+          '/schedules',
+          body: {
+            'groupId': groupId,
+            'weekStartDate': fmt(monday),
+            'entries': entries,
+          },
+        );
+        return switch (result) {
+          Err(:final failure) => Err(failure),
+          Ok(:final value) => Ok(MealScheduleModel.fromJson(value)),
+        };
+      }
+
+      // UPDATE — PATCH /schedules/:id { entries, replaceEntries: true }
+      final result = await DioApiService.instance.patch<Map<String, dynamic>>(
+        '/schedules/${schedule.id}',
+        body: {'entries': entries, 'replaceEntries': true},
+      );
+      return switch (result) {
+        Err(:final failure) => Err(failure),
+        Ok(:final value) => Ok(MealScheduleModel.fromJson(value)),
+      };
+    }
+    await _delay();
+    _schedule = schedule;
+    return Ok(_schedule!);
+  }
+
+  @override
   Future<Result<MealScheduleModel>> publishSchedule({
     required String organizationId,
     required String groupId,

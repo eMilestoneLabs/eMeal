@@ -71,9 +71,19 @@ class AuthStorageService {
 
   /// Reconstructs an [AuthSession] from split storage.
   ///
-  /// Returns `null` if any required field is missing, the session is expired,
-  /// or the stored data is corrupted.
-  Future<AuthSession?> loadSession() async {
+  /// Returns `null` if any required field is missing or the stored data is
+  /// corrupted.
+  ///
+  /// [allowExpired] controls what happens when the *access token* has expired
+  /// (the access token lives only ~15 min, while the refresh token is valid for
+  /// days). When `false` (default), an expired session is cleared and `null` is
+  /// returned — suitable for callers that want a ready-to-use session. When
+  /// `true`, the session is returned even with an expired access token so the
+  /// Dio refresh flow can mint a new access token from the still-valid refresh
+  /// token. The session is NEVER cleared here merely because the access token
+  /// expired — only on corruption — so a routine 15-min expiry can no longer
+  /// strand the refresh token and force a re-login.
+  Future<AuthSession?> loadSession({bool allowExpired = false}) async {
     try {
       // Read tokens from secure storage
       final results = await Future.wait([
@@ -108,8 +118,10 @@ class AuthStorageService {
         user: user,
       );
 
-      // Don't restore expired sessions — force re-login.
-      if (session.isExpired) {
+      // An expired ACCESS token does not mean the session is dead: the refresh
+      // token is still valid for days. Only the explicit non-allowExpired path
+      // (callers wanting an immediately-usable token) clears here.
+      if (session.isExpired && !allowExpired) {
         await clearSession();
         return null;
       }

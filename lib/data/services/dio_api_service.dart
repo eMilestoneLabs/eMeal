@@ -67,8 +67,13 @@ class DioApiService {
 
   late final Dio _dio;
 
-  /// Whether a token refresh is currently in flight.
-  bool _isRefreshing = false;
+  /// The single in-flight token refresh, if any.
+  ///
+  /// Concurrent callers (e.g. the parallel requests a dashboard fires on load)
+  /// all await this same future instead of each kicking off — or worse, being
+  /// rejected by — a separate refresh. This prevents the refresh storm that
+  /// previously surfaced as "random" Authentication-required failures.
+  Future<String?>? _refreshFuture;
 
   // ── Dio factory ───────────────────────────────────────────────────────────
 
@@ -198,17 +203,23 @@ class DioApiService {
 
   /// Refreshes the access token using the stored refresh token.
   ///
-  /// On success: overwrites the session in [AuthStorageService] and returns
-  /// the new `accessToken`.
-  /// On failure: clears the stored session and returns `null`, signalling that
-  /// the user must log in again.
-  Future<String?> refreshAccessToken() async {
-    if (_isRefreshing) return null;
-    _isRefreshing = true;
+  /// Concurrent invocations are coalesced into a single network refresh: every
+  /// caller awaits the same [_refreshFuture]. On success the rotated tokens are
+  /// persisted and the new `accessToken` is returned. On failure `null` is
+  /// returned; the session is cleared ONLY when the refresh token itself is
+  /// rejected (401/403) — a transient network error must never strand the user.
+  Future<String?> refreshAccessToken() {
+    return _refreshFuture ??=
+        _performRefresh().whenComplete(() => _refreshFuture = null);
+  }
 
+  Future<String?> _performRefresh() async {
     try {
-      final session = await AuthStorageService.instance.loadSession();
-      if (session == null || session.isExpired) {
+      // Load with allowExpired: the access token is (almost certainly) expired —
+      // that's why we're refreshing — but the refresh token is still valid.
+      final session =
+          await AuthStorageService.instance.loadSession(allowExpired: true);
+      if (session == null || session.refreshToken.isEmpty) {
         await AuthStorageService.instance.clearSession();
         return null;
       }
@@ -226,18 +237,27 @@ class DioApiService {
       final newRefreshToken = body['refreshToken'] as String?;
       if (newAccessToken == null || newRefreshToken == null) return null;
 
-      // Persist refreshed session — only tokens change, user profile stays.
+      // Compute a FRESH expiry from the server's expiresIn (seconds). The old
+      // code reused the stale expiresAt, so the refreshed token was instantly
+      // treated as expired — defeating the whole refresh.
+      final expiresIn = (body['expiresIn'] as num?)?.toInt() ?? 900;
       final updatedSession = session.copyWith(
         accessToken: newAccessToken,
         refreshToken: newRefreshToken,
+        expiresAt: DateTime.now().toUtc().add(Duration(seconds: expiresIn)),
       );
       await AuthStorageService.instance.saveSession(updatedSession);
       return newAccessToken;
-    } catch (_) {
-      await AuthStorageService.instance.clearSession();
+    } on DioException catch (e) {
+      final status = e.response?.statusCode;
+      // Only a rejected refresh token (auth error) means re-login. Network/
+      // timeout errors leave the session intact so the next attempt can retry.
+      if (status == 401 || status == 403) {
+        await AuthStorageService.instance.clearSession();
+      }
       return null;
-    } finally {
-      _isRefreshing = false;
+    } catch (_) {
+      return null;
     }
   }
 
@@ -376,8 +396,21 @@ class _AuthInterceptor extends Interceptor {
     final requiresAuth = options.extra[DioApiService._kRequiresAuth] != false;
 
     if (requiresAuth) {
-      final session = await AuthStorageService.instance.loadSession();
-      if (session != null && session.isValid) {
+      var session =
+          await AuthStorageService.instance.loadSession(allowExpired: true);
+
+      // Proactively refresh an already-expired access token BEFORE sending,
+      // rather than letting every parallel request 401 first. The coalesced
+      // refresh means all in-flight requests share a single refresh call.
+      if (session != null && session.isExpired) {
+        final newToken = await _service.refreshAccessToken();
+        if (newToken != null) {
+          session =
+              await AuthStorageService.instance.loadSession(allowExpired: true);
+        }
+      }
+
+      if (session != null && session.accessToken.isNotEmpty) {
         options.headers['Authorization'] = 'Bearer ${session.accessToken}';
       }
     }

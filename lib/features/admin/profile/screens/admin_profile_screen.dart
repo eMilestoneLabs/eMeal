@@ -8,8 +8,11 @@ import 'package:smart_meal_management/app/router/route_names.dart';
 import 'package:smart_meal_management/core/constants/app_constants.dart';
 import 'package:smart_meal_management/core/theme/app_colors.dart';
 import 'package:smart_meal_management/core/theme/app_typography.dart';
+import 'package:smart_meal_management/data/repositories/group_repository.dart';
 import 'package:smart_meal_management/features/auth/providers/auth_provider.dart';
+import 'package:smart_meal_management/shared/models/result.dart';
 import 'package:smart_meal_management/shared/models/user_model.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 /// Admin profile screen.
 ///
@@ -24,6 +27,44 @@ class AdminProfileScreen extends StatefulWidget {
 
 class _AdminProfileScreenState extends State<AdminProfileScreen> {
   bool _uploadingAvatar = false;
+
+  // #2: human-readable default-group name (never the raw org/group ID).
+  String? _defaultGroupName;
+  bool _loadedGroup = false;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_loadedGroup) return;
+    _loadedGroup = true;
+    _loadDefaultGroupName();
+  }
+
+  /// Loads the admin's groups and resolves the persisted default group's NAME
+  /// (key shared with the dashboard). Falls back to the first group.
+  Future<void> _loadDefaultGroupName() async {
+    final user = AuthProviderScope.of(context).currentUser;
+    if (user == null || user.organizationId.isEmpty) return;
+    final result = await GroupRepository().getUserGroups(
+      userId: user.id,
+      organizationId: user.organizationId,
+    );
+    if (!mounted) return;
+    switch (result) {
+      case Ok(:final value):
+        if (value.isEmpty) return;
+        final prefs = await SharedPreferences.getInstance();
+        final defId = prefs.getString('admin_default_group_id');
+        final group = value.firstWhere(
+          (g) => g.id == defId,
+          orElse: () => value.first,
+        );
+        if (!mounted) return;
+        setState(() => _defaultGroupName = group.name);
+      case Err():
+        break;
+    }
+  }
 
   Future<void> _pickProfileImage() async {
     final picker = ImagePicker();
@@ -48,6 +89,112 @@ class _AdminProfileScreenState extends State<AdminProfileScreen> {
       compressed.isEmpty ? rawBytes : compressed,
     );
     setState(() => _uploadingAvatar = false);
+  }
+
+  /// Issue #2: real admin profile editing. Opens a sheet bound to the live
+  /// `PATCH /users/me` flow via [AuthProvider.updateProfile]; only reports
+  /// success when the backend actually confirms the update.
+  Future<void> _editProfile(UserModel user) async {
+    final auth = AuthProviderScope.of(context);
+    final nameCtrl = TextEditingController(text: user.name);
+    final phoneCtrl = TextEditingController(text: user.phone ?? '');
+
+    final saved = await showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Theme.of(context).brightness == Brightness.dark
+          ? AppColors.surfaceDark
+          : AppColors.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) {
+        bool saving = false;
+        return StatefulBuilder(
+          builder: (ctx, setSheet) => Padding(
+            padding: EdgeInsets.only(
+              left: AppConstants.space20,
+              right: AppConstants.space20,
+              top: AppConstants.space20,
+              bottom: MediaQuery.of(ctx).viewInsets.bottom + AppConstants.space20,
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Edit Profile', style: AppTypography.titleLarge),
+                const SizedBox(height: AppConstants.space16),
+                TextField(
+                  controller: nameCtrl,
+                  textCapitalization: TextCapitalization.words,
+                  decoration: const InputDecoration(
+                    labelText: 'Full name',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+                const SizedBox(height: AppConstants.space12),
+                TextField(
+                  controller: phoneCtrl,
+                  keyboardType: TextInputType.phone,
+                  decoration: const InputDecoration(
+                    labelText: 'Phone',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+                const SizedBox(height: AppConstants.space20),
+                SizedBox(
+                  width: double.infinity,
+                  height: 48,
+                  child: FilledButton(
+                    onPressed: saving
+                        ? null
+                        : () async {
+                            setSheet(() => saving = true);
+                            final ok = await auth.updateProfile(
+                              user.copyWith(
+                                name: nameCtrl.text.trim(),
+                                phone: phoneCtrl.text.trim(),
+                              ),
+                            );
+                            if (ctx.mounted) Navigator.of(ctx).pop(ok);
+                          },
+                    style: FilledButton.styleFrom(
+                      backgroundColor: AppColors.primary,
+                      shape: RoundedRectangleBorder(
+                        borderRadius:
+                            BorderRadius.circular(AppConstants.buttonRadius),
+                      ),
+                    ),
+                    child: saving
+                        ? const SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: CircularProgressIndicator(
+                                strokeWidth: 2, color: Colors.white),
+                          )
+                        : const Text('Save'),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+
+    nameCtrl.dispose();
+    phoneCtrl.dispose();
+    if (!mounted || saved == null) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(saved
+            ? 'Profile updated'
+            : (auth.session == null
+                ? 'Session expired — please sign in again'
+                : 'Could not update profile. Please try again.')),
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
   }
 
   @override
@@ -104,33 +251,22 @@ class _AdminProfileScreenState extends State<AdminProfileScreen> {
               value: user?.email ?? '',
               isDark: isDark,
             ),
+            // Issue #2/#4: show the default-group NAME, never the raw org ID.
             _InfoTile(
-              icon: Icons.business_rounded,
-              label: 'Organization ID',
-              value: user?.organizationId ?? '—',
+              icon: Icons.apartment_rounded,
+              label: 'Organization',
+              value: _defaultGroupName ?? 'Not set',
               isDark: isDark,
             ),
 
             const SizedBox(height: AppConstants.space24),
 
-            // ── Edit profile (coming Phase B6) ───────────────────────────────
+            // ── Edit profile ─────────────────────────────────────────────────
             SizedBox(
               width: double.infinity,
               height: 48,
               child: OutlinedButton.icon(
-                onPressed: () {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: const Text(
-                        'Profile editing will be available after backend integration.',
-                      ),
-                      behavior: SnackBarBehavior.floating,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                    ),
-                  );
-                },
+                onPressed: user == null ? null : () => _editProfile(user),
                 icon: const Icon(
                   Icons.edit_rounded,
                   size: 18,

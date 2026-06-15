@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart';
+import 'package:smart_meal_management/shared/enums/user_role.dart';
 import 'package:smart_meal_management/data/repositories/group_repository.dart';
 import 'package:smart_meal_management/data/repositories/meal_repository.dart';
 import 'package:smart_meal_management/shared/models/group_model.dart';
@@ -180,6 +181,7 @@ class AdminGroupProvider extends ChangeNotifier {
     String? description,
     int? maxMembers,
     GroupMealConfig? mealConfig,
+    UserRole? functionalRole,
   }) async {
     _isCreating = true;
     _error = null;
@@ -192,6 +194,7 @@ class AdminGroupProvider extends ChangeNotifier {
       description: description,
       maxMembers: maxMembers,
       mealConfig: mealConfig,
+      functionalRole: functionalRole,
     );
 
     switch (result) {
@@ -216,6 +219,7 @@ class AdminGroupProvider extends ChangeNotifier {
     String? description,
     GroupMealConfig? mealConfig,
     int? maxMembers,
+    UserRole? functionalRole,
   }) async {
     final result = await _groupRepo.updateGroup(
       organizationId: organizationId,
@@ -225,6 +229,7 @@ class AdminGroupProvider extends ChangeNotifier {
       description: description,
       mealConfig: mealConfig,
       maxMembers: maxMembers,
+      functionalRole: functionalRole,
     );
 
     switch (result) {

@@ -1117,7 +1117,11 @@ class _SettingsTabState extends State<_SettingsTab> {
     setState(() => _updatingPrefTypes = false);
     if (!ok) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Failed to update preference types')),
+        SnackBar(
+          content: Text(
+            widget.provider.error ?? 'Failed to update preference types',
+          ),
+        ),
       );
     }
   }

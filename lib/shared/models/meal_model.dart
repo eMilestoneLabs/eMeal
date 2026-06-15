@@ -26,6 +26,7 @@ class MealModel {
     this.preferencesEnabled = false,
     this.enabledPreferences = const [],
     this.createdAt,
+    this.isGeneralAttendance = false,
   });
 
   final String id;
@@ -46,6 +47,10 @@ class MealModel {
   final bool preferencesEnabled;
   final List<String> enabledPreferences;
   final DateTime? createdAt;
+
+  /// #9/#10: true for the implicit per-group general-attendance slot returned by
+  /// /meals/today for attendance-only groups (render a day-level Mark card).
+  final bool isGeneralAttendance;
 
   /// True if at least one local image has been attached.
   bool get hasImages => imageBytes.isNotEmpty;
@@ -133,6 +138,7 @@ class MealModel {
             List<String>.from(j['enabledPreferences'] ?? []),
         createdAt:
             j['createdAt'] != null ? DateTime.parse(j['createdAt']) : null,
+        isGeneralAttendance: j['isGeneralAttendance'] == true,
       );
 
   Map<String, dynamic> toJson() => {
@@ -149,6 +155,7 @@ class MealModel {
         'imageUrl': imageUrl,
         'preferencesEnabled': preferencesEnabled,
         'enabledPreferences': enabledPreferences,
+        'isGeneralAttendance': isGeneralAttendance,
       };
 
   MealModel copyWith({
@@ -163,6 +170,7 @@ class MealModel {
     List<Uint8List>? imageBytes,
     bool? preferencesEnabled,
     List<String>? enabledPreferences,
+    bool? isGeneralAttendance,
   }) =>
       MealModel(
         id: id,
@@ -180,5 +188,6 @@ class MealModel {
         preferencesEnabled: preferencesEnabled ?? this.preferencesEnabled,
         enabledPreferences: enabledPreferences ?? this.enabledPreferences,
         createdAt: createdAt,
+        isGeneralAttendance: isGeneralAttendance ?? this.isGeneralAttendance,
       );
 }

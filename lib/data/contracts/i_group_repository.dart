@@ -2,6 +2,7 @@ import 'package:smart_meal_management/shared/models/group_model.dart';
 import 'package:smart_meal_management/shared/models/paginated_response.dart';
 import 'package:smart_meal_management/shared/models/result.dart';
 import 'package:smart_meal_management/shared/models/user_model.dart';
+import 'package:smart_meal_management/shared/enums/user_role.dart';
 
 /// Abstract contract for group management operations.
 abstract interface class IGroupRepository {
@@ -30,6 +31,7 @@ abstract interface class IGroupRepository {
     String? description,
     int? maxMembers,
     GroupMealConfig? mealConfig,
+    UserRole? functionalRole,
   });
 
   /// Update group metadata / meal config.
@@ -41,6 +43,7 @@ abstract interface class IGroupRepository {
     String? description,
     GroupMealConfig? mealConfig,
     int? maxMembers,
+    UserRole? functionalRole,
   });
 
   /// Soft-archive a group (sets isActive = false).

@@ -32,6 +32,8 @@ class AttendanceModel {
     this.preference,
     this.note,
     this.mealName,
+    this.userName,
+    this.userPhone,
   });
 
   final String id;
@@ -45,6 +47,13 @@ class AttendanceModel {
   final String? preference;
   final String? note;
   final String? mealName;
+
+  /// Joined member display name (admin-facing lists/exports). Null for a
+  /// student's own records. Issues #4/#7/#11.
+  final String? userName;
+
+  /// Joined member phone (admin-facing). Null when not included.
+  final String? userPhone;
 
   factory AttendanceModel.fromJson(Map<String, dynamic> j) => AttendanceModel(
         id: j['id'] ?? '',
@@ -62,6 +71,8 @@ class AttendanceModel {
         preference: j['preference'],
         note: j['note'],
         mealName: j['mealName'],
+        userName: j['userName'],
+        userPhone: j['userPhone'],
       );
 
   Map<String, dynamic> toJson() => {
@@ -76,6 +87,8 @@ class AttendanceModel {
         'preference': preference,
         'note': note,
         'mealName': mealName,
+        'userName': userName,
+        'userPhone': userPhone,
       };
 
   AttendanceModel copyWith({
@@ -97,6 +110,8 @@ class AttendanceModel {
         preference: preference ?? this.preference,
         note: note ?? this.note,
         mealName: mealName ?? this.mealName,
+        userName: userName,
+        userPhone: userPhone,
       );
 }
 

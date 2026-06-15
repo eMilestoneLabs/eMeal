@@ -20,7 +20,9 @@ class MemberAttendanceRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final name = memberName ?? _initials(record.userId);
+    // Issue #7: prefer the joined member name from the record; fall back to any
+    // explicitly supplied name, then to initials only as a last resort.
+    final name = record.userName ?? memberName ?? _initials(record.userId);
     final statusColor = _statusColor(record.status);
     final statusLabel = _statusLabel(record.status);
 

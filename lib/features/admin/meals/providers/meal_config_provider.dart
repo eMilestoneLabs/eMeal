@@ -376,6 +376,36 @@ class MealConfigProvider extends ChangeNotifier {
 
   // ── Schedule ──────────────────────────────────────────────────────────────
 
+  /// Persists the current draft to the backend (create if new, else update),
+  /// keeping [_weekSchedule] in sync with the real server id. Returns the
+  /// persisted schedule id, or null on failure. Issue #12.
+  Future<String?> saveDraft({
+    required String organizationId,
+    required String groupId,
+  }) async {
+    if (_weekSchedule == null) return null;
+    _isSaving = true;
+    notifyListeners();
+
+    final result = await _mealRepo.saveSchedule(
+      organizationId: organizationId,
+      groupId: groupId,
+      schedule: _weekSchedule!,
+    );
+    switch (result) {
+      case Ok(:final value):
+        _weekSchedule = value;
+        _isSaving = false;
+        notifyListeners();
+        return value.id;
+      case Err(:final failure):
+        _error = failure.message;
+        _isSaving = false;
+        notifyListeners();
+        return null;
+    }
+  }
+
   Future<bool> publishSchedule({
     required String organizationId,
     required String groupId,
@@ -384,10 +414,36 @@ class MealConfigProvider extends ChangeNotifier {
     _isSaving = true;
     notifyListeners();
 
+    // Issue #12: a locally-built draft has an empty id. Persist it first (create
+    // or update) so publish targets a real /schedules/:id — never the broken
+    // /schedules//publish that produced "Cannot POST /api/v1/schedules/publish".
+    final saveResult = await _mealRepo.saveSchedule(
+      organizationId: organizationId,
+      groupId: groupId,
+      schedule: _weekSchedule!,
+    );
+    final String scheduleId;
+    switch (saveResult) {
+      case Ok(:final value):
+        _weekSchedule = value;
+        scheduleId = value.id;
+      case Err(:final failure):
+        _error = failure.message;
+        _isSaving = false;
+        notifyListeners();
+        return false;
+    }
+    if (scheduleId.isEmpty) {
+      _error = 'Could not create schedule. Add meals first, then publish.';
+      _isSaving = false;
+      notifyListeners();
+      return false;
+    }
+
     final result = await _mealRepo.publishSchedule(
       organizationId: organizationId,
       groupId: groupId,
-      scheduleId: _weekSchedule!.id,
+      scheduleId: scheduleId,
     );
 
     switch (result) {

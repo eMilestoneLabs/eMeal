@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:smart_meal_management/data/repositories/attendance_repository.dart';
 import 'package:smart_meal_management/data/repositories/group_repository.dart';
 import 'package:smart_meal_management/data/repositories/meal_repository.dart';
@@ -43,6 +44,16 @@ class AdminDashboardProvider extends ChangeNotifier {
   String _adminName = 'Admin';
   String _orgName = 'Your Organisation';
 
+  // ── Per-group counts (Issue #5) ─────────────────────────────────────────────
+  // Keyed by groupId so the dashboard can show stats for one selected group.
+  final Map<String, int> _presentByGroup = {};
+  final Map<String, int> _absentByGroup = {};
+  final Map<String, int> _totalByGroup = {};
+
+  /// The group whose stats are shown. Null = "All groups" (aggregate).
+  /// Acts as the admin's default group (Issue #8); persisted client-side.
+  String? _selectedGroupId;
+
   /// Last 5 attendance records across all groups — used for the activity feed.
   List<AttendanceModel> _recentActivity = [];
 
@@ -84,15 +95,64 @@ class AdminDashboardProvider extends ChangeNotifier {
   String get adminName => _adminName;
   String get orgName => _orgName;
 
-  int get totalMembers => _groups.fold(0, (s, g) => s + g.memberCount);
   int get groupCount => _groups.length;
-  int get presentToday => _presentToday;
-  int get absentToday => _absentToday;
+
+  /// The currently selected group (null when showing all groups).
+  String? get selectedGroupId => _selectedGroupId;
+  GroupModel? get selectedGroup {
+    for (final g in _groups) {
+      if (g.id == _selectedGroupId) return g;
+    }
+    return null;
+  }
+
+  /// Members for the selected group, or all groups combined when none selected.
+  int get totalMembers => _selectedGroupId == null
+      ? _groups.fold(0, (s, g) => s + g.memberCount)
+      : (selectedGroup?.memberCount ?? 0);
+
+  /// Present/absent/total respect the selected group (Issue #5).
+  int get presentToday =>
+      _selectedGroupId == null ? _presentToday : (_presentByGroup[_selectedGroupId] ?? 0);
+  int get absentToday =>
+      _selectedGroupId == null ? _absentToday : (_absentByGroup[_selectedGroupId] ?? 0);
+
+  int get _selectedTotal =>
+      _selectedGroupId == null ? _todayTotal : (_totalByGroup[_selectedGroupId] ?? 0);
 
   double get attendanceRate =>
-      _todayTotal == 0 ? 0.0 : _presentToday / _todayTotal;
+      _selectedTotal == 0 ? 0.0 : presentToday / _selectedTotal;
 
-  List<AttendanceModel> get recentActivity => _recentActivity;
+  /// Recent activity, filtered to the selected group when one is chosen.
+  List<AttendanceModel> get recentActivity => _selectedGroupId == null
+      ? _recentActivity
+      : _recentActivity.where((r) => r.groupId == _selectedGroupId).toList();
+
+  /// Switch the active/default group and refresh derived stats. Persisted so it
+  /// becomes the admin's default group across sessions (Issue #8).
+  void selectGroup(String? groupId) {
+    if (_selectedGroupId == groupId) return;
+    _selectedGroupId = groupId;
+    notifyListeners();
+    _persistDefaultGroup(groupId);
+  }
+
+  // ── Default group persistence (Issue #8, client-side MVP) ───────────────────
+  static const String _kDefaultGroupKey = 'admin_default_group_id';
+
+  Future<void> _persistDefaultGroup(String? groupId) async {
+    final prefs = await SharedPreferences.getInstance();
+    if (groupId == null) {
+      await prefs.remove(_kDefaultGroupKey);
+    } else {
+      await prefs.setString(_kDefaultGroupKey, groupId);
+    }
+  }
+
+  Future<String?> _loadDefaultGroup() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getString(_kDefaultGroupKey);
+  }
 
   // ── Load ───────────────────────────────────────────────────────────────────
 
@@ -180,16 +240,35 @@ class AdminDashboardProvider extends ChangeNotifier {
       int present = 0;
       int absent = 0;
       int total = 0;
-      for (final result in summaryResults) {
-        if (result case Ok(:final value)) {
+      _presentByGroup.clear();
+      _absentByGroup.clear();
+      _totalByGroup.clear();
+      for (var i = 0; i < summaryResults.length; i++) {
+        final groupId = _groups[i].id;
+        if (summaryResults[i] case Ok(:final value)) {
+          final gTotal =
+              value.presentCount + value.absentCount + value.pendingCount;
+          _presentByGroup[groupId] = value.presentCount;
+          _absentByGroup[groupId] = value.absentCount;
+          _totalByGroup[groupId] = gTotal;
           present += value.presentCount;
           absent += value.absentCount;
-          total += value.presentCount + value.absentCount + value.pendingCount;
+          total += gTotal;
         }
       }
       _presentToday = present;
       _absentToday = absent;
       _todayTotal = total;
+
+      // Issue #8: restore the saved default group, or default to the first one
+      // so the dashboard opens on a concrete group rather than a vague total.
+      if (_selectedGroupId == null ||
+          !_groups.any((g) => g.id == _selectedGroupId)) {
+        final saved = await _loadDefaultGroup();
+        _selectedGroupId = (saved != null && _groups.any((g) => g.id == saved))
+            ? saved
+            : _groups.first.id;
+      }
 
       // 3b. Recent activity feed — fetch from all groups, merge, sort, cap at 5
       final historyFutures = _groups.map(

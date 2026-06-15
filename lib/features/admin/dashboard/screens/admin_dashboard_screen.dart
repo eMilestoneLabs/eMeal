@@ -102,6 +102,8 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                 AdminGreetingCard(
                   adminName: _provider.adminName,
                   orgName: _provider.orgName,
+                  // #8: show the selected/default group's functional role.
+                  roleLabel: _provider.selectedGroup?.functionalRole?.label,
                 ),
 
                 // ── Alert card (meal window closing) ─────────────────────────
@@ -112,9 +114,14 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                 // ── Stats row ────────────────────────────────────────────────
                 const AppSectionTitle(
                   title: 'Overview',
-                  subtitle: 'Live attendance for your groups',
+                  subtitle: 'Live attendance for the selected group',
                 ),
                 const SizedBox(height: 12),
+                // Issue #5/#8: per-group stats with a group switcher (default group).
+                if (_provider.groups.length > 1) ...[
+                  _GroupSelector(provider: _provider),
+                  const SizedBox(height: 12),
+                ],
                 StatsSummaryRow(
                   totalMembers: _provider.totalMembers,
                   presentToday: _provider.presentToday,
@@ -442,14 +449,15 @@ class _ActivityRow extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  record.mealName ?? record.mealId,
+                  // Issue #4: show the member name, never the raw user id.
+                  record.userName ?? 'Member',
                   style: AppTypography.labelMedium.copyWith(
                       fontWeight: FontWeight.w600),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                 ),
                 Text(
-                  record.userId,
+                  record.mealName ?? 'Attendance',
                   style: AppTypography.bodySmall.copyWith(
                       color: AppColors.textSecondary),
                   maxLines: 1,
@@ -548,6 +556,56 @@ class _EmptyGroups extends StatelessWidget {
               style: TextStyle(
                   fontSize: 12,
                   color: secondaryText.withValues(alpha: 0.7))),
+        ],
+      ),
+    );
+  }
+}
+
+// ── Group selector (Issue #5/#8) ────────────────────────────────────────────────
+
+class _GroupSelector extends StatelessWidget {
+  const _GroupSelector({required this.provider});
+  final AdminDashboardProvider provider;
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
+      decoration: BoxDecoration(
+        color: isDark ? AppColors.surfaceDark : AppColors.surface,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: isDark ? AppColors.borderDark : AppColors.border,
+        ),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.groups_rounded, size: 18, color: AppColors.primary),
+          const SizedBox(width: 10),
+          Expanded(
+            child: DropdownButtonHideUnderline(
+              child: DropdownButton<String?>(
+                isExpanded: true,
+                value: provider.selectedGroupId,
+                hint: const Text('All groups'),
+                items: [
+                  const DropdownMenuItem<String?>(
+                    value: null,
+                    child: Text('All groups'),
+                  ),
+                  ...provider.groups.map(
+                    (g) => DropdownMenuItem<String?>(
+                      value: g.id,
+                      child: Text(g.name, overflow: TextOverflow.ellipsis),
+                    ),
+                  ),
+                ],
+                onChanged: provider.selectGroup,
+              ),
+            ),
+          ),
         ],
       ),
     );

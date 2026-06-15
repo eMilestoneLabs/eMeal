@@ -15,6 +15,7 @@ import 'package:smart_meal_management/features/student/dashboard/widgets/student
 // StudentShell and accessed only via StudentDashboardProvider.
 import 'package:smart_meal_management/shared/enums/user_role.dart';
 import 'package:smart_meal_management/shared/models/attendance_model.dart';
+import 'package:smart_meal_management/shared/models/meal_model.dart';
 import 'package:smart_meal_management/shared/models/user_model.dart';
 import 'package:smart_meal_management/shared/widgets/app_glass_card.dart';
 
@@ -121,6 +122,58 @@ class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
     if (user != null) {
       final provider = StudentDashboardScope.of(context);
       await provider.load(user: _userWithActiveGroup(user));
+    }
+  }
+
+  /// Issue #1: marks the current meal Present directly from the dashboard.
+  /// If the group requires a meal preference, routes to the attendance screen
+  /// so the student can choose a tag (Issue #6) instead of marking blindly.
+  Future<void> _markPresentFromDashboard(
+    StudentDashboardProvider provider,
+    MealModel meal,
+  ) async {
+    if (provider.preferencesEnabled && provider.enabledPreferences.isNotEmpty) {
+      context.go(RouteNames.studentAttendance);
+      return;
+    }
+    final user = _authProvider?.currentUser;
+    if (user == null) return;
+    final ok = await provider.markStatus(
+      user: _userWithActiveGroup(user),
+      meal: meal,
+      status: AttendanceStatus.present,
+    );
+    if (!mounted) return;
+    if (!ok) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(provider.error ?? 'Could not mark attendance'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
+  }
+
+  /// Issue #1: skips the current meal directly from the dashboard.
+  Future<void> _skipFromDashboard(
+    StudentDashboardProvider provider,
+    MealModel meal,
+  ) async {
+    final user = _authProvider?.currentUser;
+    if (user == null) return;
+    final ok = await provider.markStatus(
+      user: _userWithActiveGroup(user),
+      meal: meal,
+      status: AttendanceStatus.skipped,
+    );
+    if (!mounted) return;
+    if (!ok) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(provider.error ?? 'Could not update attendance'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
     }
   }
 
@@ -253,6 +306,17 @@ class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
                               .isWindowOpen(provider.currentOrNextMeal!),
                           isWindowPast: provider
                               .isWindowPast(provider.currentOrNextMeal!),
+                          // Issue #1: mark in place so the card flips to Present.
+                          // When preferences are required, route to the
+                          // attendance screen so the student picks a tag first.
+                          onMarkPresent: () => _markPresentFromDashboard(
+                            provider,
+                            provider.currentOrNextMeal!,
+                          ),
+                          onSkip: () => _skipFromDashboard(
+                            provider,
+                            provider.currentOrNextMeal!,
+                          ),
                           onMarkAttendance: () =>
                               context.go(RouteNames.studentAttendance),
                         ),
@@ -805,9 +869,10 @@ class _ErrorView extends StatelessWidget {
   }
 }
 
-// ── Group Switcher Row ─────────────────────────────────────────────────────────
+// ── Group Switcher Row ──────────────────────────────────────────────────────
 
-/// Horizontal chip row shown when the student belongs to more than one group.
+/// Horizontal chip row letting a multi-group student switch their active group.
+/// Labels are positional ("Group N") — raw group IDs are never shown.
 class _GroupSwitcherRow extends StatelessWidget {
   const _GroupSwitcherRow({
     required this.groupIds,
@@ -821,51 +886,33 @@ class _GroupSwitcherRow extends StatelessWidget {
   final ValueChanged<String> onSwitch;
   final bool isDark;
 
-  String _label(String groupId) {
-    final clean = groupId.replaceAll(RegExp(r'^grp_|^group_'), '');
-    final parts = clean.split(RegExp(r'[-_]'));
-    return parts.map((p) => p.isEmpty ? '' : p[0].toUpperCase() + p.substring(1)).join(' ');
-  }
-
   @override
   Widget build(BuildContext context) {
     return SizedBox(
       height: 40,
       child: ListView.separated(
         scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.symmetric(
-          horizontal: AppConstants.space20,
-        ),
+        padding:
+            const EdgeInsets.symmetric(horizontal: AppConstants.space16),
         itemCount: groupIds.length,
-        separatorBuilder: (_, _) => const SizedBox(width: AppConstants.space8),
-        itemBuilder: (context, index) {
-          final id = groupIds[index];
-          final isActive = id == activeGroupId;
+        separatorBuilder: (_, _) =>
+            const SizedBox(width: AppConstants.space8),
+        itemBuilder: (context, i) {
+          final id = groupIds[i];
+          final selected = id == activeGroupId;
           return ChoiceChip(
-            label: Text(_label(id)),
-            selected: isActive,
+            label: Text('Group ${i + 1}'),
+            selected: selected,
             onSelected: (_) => onSwitch(id),
-            selectedColor: AppColors.primary,
-            backgroundColor: isDark ? AppColors.surfaceDark : AppColors.surface,
-            labelStyle: AppTypography.labelSmall.copyWith(
-              color: isActive
-                  ? Colors.white
-                  : isDark
-                      ? AppColors.textSecondaryDark
-                      : AppColors.textSecondary,
-              fontWeight: isActive ? FontWeight.w600 : FontWeight.w400,
-            ),
-            side: BorderSide(
-              color: isActive
-                  ? AppColors.primary
-                  : isDark
-                      ? AppColors.borderDark
-                      : AppColors.border,
+            selectedColor: AppColors.primary.withValues(alpha: 0.15),
+            labelStyle: TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+              color: selected ? AppColors.primary : null,
             ),
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(AppConstants.chipRadius),
             ),
-            padding: const EdgeInsets.symmetric(horizontal: AppConstants.space8),
           );
         },
       ),

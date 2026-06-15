@@ -94,6 +94,16 @@ enum UserRole {
   /// Alias for [label] — used by screens that call `.displayName`.
   String get displayName => label;
 
+  /// Resolve a [UserRole] from its `.name` string (e.g. backend payloads).
+  /// Returns null for null/unknown values (#8 per-group functionalRole).
+  static UserRole? fromName(String? name) {
+    if (name == null || name.isEmpty) return null;
+    for (final r in UserRole.values) {
+      if (r.name == name) return r;
+    }
+    return null;
+  }
+
   // ── Group membership ──────────────────────────────────────────────────────
 
   /// True for student, member, guest — routed to StudentShell.

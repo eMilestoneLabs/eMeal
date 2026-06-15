@@ -459,7 +459,12 @@ class AuthRepository implements IAuthRepository {
         '/users/me',
         body: {
           'name': user.name,
-          if (user.phone != null) 'phone': user.phone,
+          // Issue #2: persist email edits (backend UpdateUserDto accepts it).
+          if (user.email.trim().isNotEmpty) 'email': user.email.trim(),
+          // Only send phone when non-empty — the backend regex rejects '' and
+          // would turn a valid name/email edit into a false 422 failure.
+          if (user.phone != null && user.phone!.trim().isNotEmpty)
+            'phone': user.phone!.trim(),
           if (user.gender != null) 'gender': user.gender,
           if (user.age != null) 'age': user.age,
           if (user.avatarUrl != null) 'avatarUrl': user.avatarUrl,
@@ -494,7 +499,10 @@ class AuthRepository implements IAuthRepository {
   @override
   Future<Result<AuthSession?>> restoreSession() async {
     try {
-      final stored = await _storage.loadSession();
+      // allowExpired: a cold start after the 15-min access token lapsed must NOT
+      // force re-login while the refresh token is still valid — GET /auth/me
+      // below triggers the interceptor's transparent refresh.
+      final stored = await _storage.loadSession(allowExpired: true);
       if (stored == null) return const Ok(null);
       if (!_isMock) {
         // B10 LIVE: validate the stored token against GET /auth/me.

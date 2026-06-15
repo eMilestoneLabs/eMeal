@@ -3,6 +3,7 @@ import 'package:go_router/go_router.dart';
 import 'package:smart_meal_management/core/theme/app_colors.dart';
 import 'package:smart_meal_management/features/admin/groups/providers/admin_group_provider.dart';
 import 'package:smart_meal_management/shared/models/group_model.dart';
+import 'package:smart_meal_management/shared/enums/user_role.dart';
 import 'package:smart_meal_management/shared/widgets/app_glass_card.dart';
 import 'package:smart_meal_management/shared/widgets/app_primary_button.dart';
 import 'package:smart_meal_management/shared/widgets/app_status_chip.dart';
@@ -28,6 +29,9 @@ class _GroupCreateScreenState extends State<GroupCreateScreen> {
   final _nameCtrl = TextEditingController();
   final _descCtrl = TextEditingController();
   GroupType _groupType = GroupType.hostel;
+  // #8: the admin's explicitly-chosen functional role FOR THIS group.
+  UserRole _functionalRole = UserRole.hostelAdmin;
+  bool _roleManuallySet = false;
   bool _mealsEnabled = true;
   bool _preferencesEnabled = false;
   final Set<MealPreferenceOption> _selectedPrefs = {};
@@ -58,6 +62,37 @@ class _GroupCreateScreenState extends State<GroupCreateScreen> {
     super.dispose();
   }
 
+  static const List<UserRole> _roleOptions = [
+    UserRole.hostelAdmin,
+    UserRole.hostelManager,
+    UserRole.messManager,
+    UserRole.organizationManager,
+    UserRole.eventAdmin,
+  ];
+
+  UserRole _defaultRoleForType(GroupType t) {
+    switch (t) {
+      case GroupType.mess:
+      case GroupType.cafeteria:
+        return UserRole.messManager;
+      case GroupType.hostel:
+      case GroupType.pg:
+        return UserRole.hostelAdmin;
+      case GroupType.event:
+        return UserRole.eventAdmin;
+      default:
+        return UserRole.organizationManager;
+    }
+  }
+
+  void _onTypeChanged(GroupType t) {
+    setState(() {
+      _groupType = t;
+      // Seed a sensible default role from the type until the admin overrides it.
+      if (!_roleManuallySet) _functionalRole = _defaultRoleForType(t);
+    });
+  }
+
   void _nextStep() {
     if (_currentStep < _totalSteps - 1) {
       setState(() => _currentStep++);
@@ -83,6 +118,7 @@ class _GroupCreateScreenState extends State<GroupCreateScreen> {
       organizationId: _orgId,
       name: _nameCtrl.text.trim(),
       type: _groupType,
+      functionalRole: _functionalRole,
       description: _descCtrl.text.trim().isEmpty
           ? null
           : _descCtrl.text.trim(),
@@ -182,7 +218,13 @@ class _GroupCreateScreenState extends State<GroupCreateScreen> {
                   nameCtrl: _nameCtrl,
                   descCtrl: _descCtrl,
                   groupType: _groupType,
-                  onTypeChanged: (t) => setState(() => _groupType = t),
+                  onTypeChanged: _onTypeChanged,
+                  roleOptions: _roleOptions,
+                  functionalRole: _functionalRole,
+                  onRoleChanged: (r) => setState(() {
+                    _functionalRole = r;
+                    _roleManuallySet = true;
+                  }),
                   onNext: _nextStep,
                 ),
                 _Step2MealToggle(
@@ -214,6 +256,7 @@ class _GroupCreateScreenState extends State<GroupCreateScreen> {
                   name: _nameCtrl.text,
                   desc: _descCtrl.text,
                   groupType: _groupType,
+                  functionalRole: _functionalRole,
                   mealsEnabled: _mealsEnabled,
                   preferencesEnabled: _preferencesEnabled,
                   selectedPrefs: _selectedPrefs,
@@ -247,6 +290,9 @@ class _Step1NameType extends StatelessWidget {
     required this.descCtrl,
     required this.groupType,
     required this.onTypeChanged,
+    required this.roleOptions,
+    required this.functionalRole,
+    required this.onRoleChanged,
     required this.onNext,
   });
 
@@ -254,6 +300,9 @@ class _Step1NameType extends StatelessWidget {
   final TextEditingController descCtrl;
   final GroupType groupType;
   final ValueChanged<GroupType> onTypeChanged;
+  final List<UserRole> roleOptions;
+  final UserRole functionalRole;
+  final ValueChanged<UserRole> onRoleChanged;
   final VoidCallback onNext;
 
   @override
@@ -341,6 +390,52 @@ class _Step1NameType extends StatelessWidget {
                     color: selected
                         ? Colors.white
                         : colorScheme.onSurface,
+                  ),
+                ),
+              ),
+            );
+          }).toList(),
+        ),
+        const SizedBox(height: 24),
+        const Text(
+          'Your Role in this Group',
+          style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          'You can hold a different role in each group you manage.',
+          style: TextStyle(fontSize: 12, color: colorScheme.onSurfaceVariant),
+        ),
+        const SizedBox(height: 12),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: roleOptions.map((r) {
+            final selected = functionalRole == r;
+            return GestureDetector(
+              onTap: () => onRoleChanged(r),
+              child: Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 14,
+                  vertical: 8,
+                ),
+                decoration: BoxDecoration(
+                  color: selected
+                      ? AppColors.primary
+                      : colorScheme.surfaceContainerHighest,
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(
+                    color: selected
+                        ? AppColors.primary
+                        : colorScheme.outlineVariant.withValues(alpha: 0.4),
+                  ),
+                ),
+                child: Text(
+                  r.label,
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: selected ? Colors.white : colorScheme.onSurface,
                   ),
                 ),
               ),
@@ -780,6 +875,7 @@ class _Step5Review extends StatelessWidget {
     required this.name,
     required this.desc,
     required this.groupType,
+    required this.functionalRole,
     required this.mealsEnabled,
     required this.preferencesEnabled,
     required this.selectedPrefs,
@@ -792,6 +888,7 @@ class _Step5Review extends StatelessWidget {
   final String name;
   final String desc;
   final GroupType groupType;
+  final UserRole functionalRole;
   final bool mealsEnabled;
   final bool preferencesEnabled;
   final Set<MealPreferenceOption> selectedPrefs;
@@ -828,6 +925,7 @@ class _Step5Review extends StatelessWidget {
               _ReviewRow('Name', name),
               if (desc.isNotEmpty) _ReviewRow('Description', desc),
               _ReviewRow('Type', groupType.label),
+              _ReviewRow('Your Role', functionalRole.label),
               _ReviewRow(
                 'Meal System',
                 mealsEnabled ? 'Meals + Attendance' : 'Attendance Only',

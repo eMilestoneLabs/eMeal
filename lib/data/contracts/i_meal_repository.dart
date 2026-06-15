@@ -60,6 +60,17 @@ abstract interface class IMealRepository {
     required String groupId,
   });
 
+  /// Create or update a draft schedule for the current week from [schedule].
+  ///
+  /// When [schedule.id] is empty a new draft is created (POST /schedules);
+  /// otherwise the existing draft is replaced (PATCH /schedules/:id). Returns
+  /// the persisted schedule (with a real id) so the caller can publish it.
+  Future<Result<MealScheduleModel>> saveSchedule({
+    required String organizationId,
+    required String groupId,
+    required MealScheduleModel schedule,
+  });
+
   /// Publish a draft schedule, making it visible to members.
   Future<Result<MealScheduleModel>> publishSchedule({
     required String organizationId,

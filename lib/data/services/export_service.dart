@@ -52,19 +52,24 @@ class ExportService {
         ),
         build: (context) => [
           pw.TableHelper.fromTextArray(
+            // Issue #11: every record carries Student + Group + Meal identity.
             headers: const [
-              'Date',
+              'Student',
+              'Group',
               'Meal',
               'Status',
-              'Marked At',
               'Preference',
+              'Date',
+              'Marked Time',
             ],
             data: records.map((r) => [
-              _formatDate(r.date),
-              r.mealName ?? r.mealId,
+              r.userName ?? r.userId,
+              groupName,
+              r.mealName ?? '—',
               _statusLabel(r.status),
-              r.markedAt != null ? _formatDateTime(r.markedAt!) : '—',
               r.preference ?? '—',
+              _formatDate(r.date),
+              r.markedAt != null ? _formatDateTime(r.markedAt!) : '—',
             ]).toList(),
             headerStyle: pw.TextStyle(
               fontWeight: pw.FontWeight.bold,
@@ -110,19 +115,19 @@ class ExportService {
   }) async {
     final buffer = StringBuffer();
 
-    // Header
-    buffer.writeln('Date,Meal,Status,Marked At,Preference,Note,User ID,Meal ID');
+    // Header — Issue #11: human-readable identity columns.
+    buffer.writeln(
+        'Student Name,Group Name,Meal Name,Status,Preference,Date,Marked Time');
 
     for (final r in records) {
       buffer.writeln([
-        _formatDate(r.date),
-        _csvEscape(r.mealName ?? r.mealId),
-        r.status.name,
-        r.markedAt != null ? _formatDateTime(r.markedAt!) : '',
+        _csvEscape(r.userName ?? r.userId),
+        _csvEscape(groupName),
+        _csvEscape(r.mealName ?? ''),
+        _statusLabel(r.status),
         _csvEscape(r.preference ?? ''),
-        _csvEscape(r.note ?? ''),
-        r.userId,
-        r.mealId,
+        _formatDate(r.date),
+        r.markedAt != null ? _formatDateTime(r.markedAt!) : '',
       ].join(','));
     }
 

@@ -11,10 +11,15 @@ class AdminGreetingCard extends StatelessWidget {
     super.key,
     required this.adminName,
     required this.orgName,
+    this.roleLabel,
   });
 
   final String adminName;
   final String orgName;
+
+  /// #8: per-group functional role label for the selected group
+  /// (e.g. "Hostel Admin"). null -> shows the generic "Admin" badge.
+  final String? roleLabel;
 
   @override
   Widget build(BuildContext context) {
@@ -85,18 +90,18 @@ class AdminGreetingCard extends StatelessWidget {
                     border: Border.all(
                         color: Colors.white.withValues(alpha: 0.3)),
                   ),
-                  child: const Row(
+                  child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Icon(
+                      const Icon(
                         Icons.admin_panel_settings_rounded,
                         size: 13,
                         color: Colors.white,
                       ),
-                      SizedBox(width: 5),
+                      const SizedBox(width: 5),
                       Text(
-                        'Admin',
-                        style: TextStyle(
+                        roleLabel ?? 'Admin',
+                        style: const TextStyle(
                           fontSize: 11,
                           fontWeight: FontWeight.w600,
                           color: Colors.white,

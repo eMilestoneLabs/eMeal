@@ -967,14 +967,28 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
       email: _emailCtrl.text.trim(),
     );
 
-    await widget.authProvider.updateProfile(updated);
+    // Issue #2: report the real backend result — no more unconditional success.
+    final ok = await widget.authProvider.updateProfile(updated);
+    if (!mounted) return;
+    setState(() => _saving = false);
 
-    if (mounted) {
+    if (ok) {
       Navigator.of(context).pop();
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: const Text('Profile updated'),
           backgroundColor: AppColors.secondary,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(AppConstants.buttonRadius),
+          ),
+        ),
+      );
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text('Could not update profile. Please try again.'),
+          backgroundColor: AppColors.error,
           behavior: SnackBarBehavior.floating,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(AppConstants.buttonRadius),

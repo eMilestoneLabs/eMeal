@@ -549,7 +549,7 @@ class _NoMealsView extends StatelessWidget {
             ),
             const SizedBox(height: AppConstants.space20),
             Text(
-              'No meals today',
+              'Attendance not open yet',
               style: AppTypography.titleMedium.copyWith(
                 color: isDark ? AppColors.textPrimaryDark : AppColors.textPrimary,
                 fontWeight: FontWeight.w700,
@@ -557,7 +557,8 @@ class _NoMealsView extends StatelessWidget {
             ),
             const SizedBox(height: AppConstants.space8),
             Text(
-              'Your group has no meals scheduled for today.\nCheck back tomorrow.',
+              "Your group hasn't set up an attendance slot yet.\n"
+              'Once your admin adds one, you can mark attendance here.',
               style: AppTypography.bodySmall.copyWith(
                 color: isDark
                     ? AppColors.textSecondaryDark
