@@ -10,6 +10,7 @@ import 'package:smart_meal_management/features/student/attendance/widgets/attend
 import 'package:smart_meal_management/features/student/dashboard/providers/student_dashboard_provider.dart';
 import 'package:smart_meal_management/features/student/providers/group_config_provider.dart';
 import 'package:smart_meal_management/shared/models/attendance_model.dart';
+import 'package:smart_meal_management/shared/models/group_model.dart';
 
 /// Student attendance screen — today's meals with per-meal action cards.
 ///
@@ -220,10 +221,23 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
                               final isDefaultAttend = user?.isDefaultAttendance ?? false;
                               // Read group config from shell scope (set by dashboard load).
                               final groupConfig = GroupConfigScope.maybeOf(context);
-                              final prefsEnabled = groupConfig?.preferencesEnabled
-                                  ?? dashProvider.preferencesEnabled;
-                              final enabledPrefs = groupConfig?.enabledPreferences
-                                  ?? dashProvider.enabledPreferences;
+                              final groupPrefsEnabled =
+                                  groupConfig?.preferencesEnabled
+                                      ?? dashProvider.preferencesEnabled;
+                              final groupEnabledPrefs =
+                                  groupConfig?.enabledPreferences
+                                      ?? dashProvider.enabledPreferences;
+                              // Per-day / per-meal config (overlaid by the backend
+                              // onto /meals/today in Weekly & Day-Wise modes) takes
+                              // precedence; fall back to the group-level setting
+                              // when the meal does not specify its own.
+                              final mealPrefs = MealPreferenceOption.parseList(
+                                  meal.enabledPreferences);
+                              final prefsEnabled =
+                                  meal.preferencesEnabled || groupPrefsEnabled;
+                              final enabledPrefs = mealPrefs.isNotEmpty
+                                  ? mealPrefs
+                                  : groupEnabledPrefs;
                               return AttendanceActionCard(
                                 meal: meal,
                                 status: _attendanceProvider.statusForMeal(meal.id),

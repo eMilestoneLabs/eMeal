@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter_image_compress/flutter_image_compress.dart';
 import 'package:smart_meal_management/core/constants/app_constants.dart';
@@ -8,6 +10,7 @@ import 'package:smart_meal_management/shared/models/group_model.dart';
 import 'package:smart_meal_management/shared/models/meal_model.dart';
 import 'package:smart_meal_management/shared/models/meal_schedule_model.dart';
 import 'package:smart_meal_management/shared/models/result.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 /// Default preference tags used when enabling preferences globally.
 /// Mirrors the same constant in [MealConfigForm] to keep them in sync.
@@ -47,6 +50,8 @@ class MealConfigProvider extends ChangeNotifier {
 
   bool _mealsEnabled = true;
   bool _preferencesEnabled = false;
+  // Enhancement 3: per-group 'Continue Recurring Weekly Menu' toggle.
+  bool _autoContinueLastWeek = false;
 
   // ── Getters ───────────────────────────────────────────────────────────────
 
@@ -59,6 +64,7 @@ class MealConfigProvider extends ChangeNotifier {
   MealScheduleModel? get weekSchedule => _weekSchedule;
   bool get mealsEnabled => _mealsEnabled;
   bool get preferencesEnabled => _preferencesEnabled;
+  bool get autoContinueLastWeek => _autoContinueLastWeek;
 
   // ── Load ──────────────────────────────────────────────────────────────────
 
@@ -98,6 +104,7 @@ class MealConfigProvider extends ChangeNotifier {
       organizationId: organizationId,
       groupId: group.id,
     );
+    await _loadRecurringFlag(group.id);
   }
 
   Future<void> _loadForGroup(
@@ -111,6 +118,7 @@ class MealConfigProvider extends ChangeNotifier {
       organizationId: organizationId,
       groupId: group.id,
     );
+    await _loadRecurringFlag(group.id);
   }
 
   Future<void> _loadMeals({
@@ -148,7 +156,119 @@ class MealConfigProvider extends ChangeNotifier {
       case Err(:final failure):
         _error = failure.message;
     }
+    // Issue 1 (#2): a freshly-loaded DRAFT must already contain every enabled
+    // meal on all 7 weekdays so the admin can immediately configure each day,
+    // and so per-day toggles always apply. Never touches a published plan or a
+    // draft the admin has already started configuring.
+    await _ensureWeekdaysPopulated(groupId);
     notifyListeners();
+  }
+
+  /// Additive (Issue 1 #2): auto-populate an EMPTY draft with all active meals
+  /// on every weekday. No-op when published, when there are no active meals, or
+  /// when the draft already has at least one configured day.
+  Future<void> _ensureWeekdaysPopulated(String groupId) async {
+    final sched = _weekSchedule;
+    if (sched == null) return;
+    if (sched.isPublished) return;
+    if (!_meals.any((m) => m.isActive)) return;
+    final allEmpty =
+        sched.days.isEmpty || sched.days.every((d) => d.meals.isEmpty);
+    if (!allEmpty) return;
+    // Enhancement 3: when recurring is ON and we cached the last published
+    // week's per-day config, carry it forward; otherwise default-populate (#2).
+    if (_autoContinueLastWeek && await _restoreRecurringTemplate(groupId)) {
+      return;
+    }
+    // copyFromPreviousWeek builds all 7 days with every active meal enabled.
+    copyFromPreviousWeek();
+  }
+
+  // ── Enhancement 3: Continue Recurring Weekly Menu (frontend MVP) ───────────
+
+  static String _recurringFlagKey(String groupId) => 'meal_recurring_$groupId';
+  static String _recurringTemplateKey(String groupId) =>
+      'meal_recurring_template_$groupId';
+
+  Future<void> _loadRecurringFlag(String groupId) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      _autoContinueLastWeek = prefs.getBool(_recurringFlagKey(groupId)) ?? false;
+    } catch (_) {
+      _autoContinueLastWeek = false;
+    }
+    notifyListeners();
+  }
+
+  /// Enables/disables 'Continue Recurring Weekly Menu' for [groupId] and
+  /// persists it. When turned ON it immediately carries the most-recent
+  /// per-day config into the current EMPTY draft.
+  Future<void> setAutoContinueLastWeek(
+    bool value, {
+    required String groupId,
+  }) async {
+    _autoContinueLastWeek = value;
+    notifyListeners();
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool(_recurringFlagKey(groupId), value);
+    } catch (_) {}
+    final sched = _weekSchedule;
+    final emptyDraft = sched != null &&
+        !sched.isPublished &&
+        _meals.any((m) => m.isActive) &&
+        (sched.days.isEmpty || sched.days.every((d) => d.meals.isEmpty));
+    if (value && emptyDraft) {
+      if (!await _restoreRecurringTemplate(groupId)) {
+        copyFromPreviousWeek();
+      }
+    }
+  }
+
+  /// Caches a published schedule so recurring can carry it forward later.
+  Future<void> _saveRecurringTemplate(
+    String groupId,
+    MealScheduleModel schedule,
+  ) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(
+        _recurringTemplateKey(groupId),
+        jsonEncode(schedule.toJson()),
+      );
+    } catch (_) {}
+  }
+
+  /// Restores the cached recurring template into the current (empty) draft.
+  /// Returns true when a non-empty template was applied.
+  Future<bool> _restoreRecurringTemplate(String groupId) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getString(_recurringTemplateKey(groupId));
+      if (raw == null || raw.isEmpty) return false;
+      final tmpl = MealScheduleModel.fromJson(
+        jsonDecode(raw) as Map<String, dynamic>,
+      );
+      if (tmpl.days.isEmpty || tmpl.days.every((d) => d.meals.isEmpty)) {
+        return false;
+      }
+      final cur = _weekSchedule;
+      if (cur == null) return false;
+      // Carry per-day config forward as a NEW DRAFT for the current week.
+      _weekSchedule = MealScheduleModel(
+        id: cur.id,
+        groupId: cur.groupId,
+        organizationId: cur.organizationId,
+        days: tmpl.days,
+        isPublished: false,
+        publishedAt: cur.publishedAt,
+        createdAt: cur.createdAt,
+      );
+      notifyListeners();
+      return true;
+    } catch (_) {
+      return false;
+    }
   }
 
   // ── Meal CRUD ─────────────────────────────────────────────────────────────
@@ -449,6 +569,41 @@ class MealConfigProvider extends ChangeNotifier {
     switch (result) {
       case Ok(:final value):
         _weekSchedule = value;
+        // Enhancement 3: remember this published week so recurring can carry
+        // its per-day config forward into the next empty week.
+        if (_autoContinueLastWeek) {
+          await _saveRecurringTemplate(groupId, value);
+        }
+        _isSaving = false;
+        notifyListeners();
+        return true;
+      case Err(:final failure):
+        _error = failure.message;
+        _isSaving = false;
+        notifyListeners();
+        return false;
+    }
+  }
+
+  /// Issue 2: revert a PUBLISHED schedule back to draft so the admin can edit
+  /// and re-publish. No-op when there is no persisted schedule (empty id).
+  Future<bool> revertToDraft({
+    required String organizationId,
+    required String groupId,
+  }) async {
+    final scheduleId = _weekSchedule?.id ?? '';
+    if (scheduleId.isEmpty) return false;
+    _isSaving = true;
+    notifyListeners();
+
+    final result = await _mealRepo.revertSchedule(
+      organizationId: organizationId,
+      groupId: groupId,
+      scheduleId: scheduleId,
+    );
+    switch (result) {
+      case Ok(:final value):
+        _weekSchedule = value;
         _isSaving = false;
         notifyListeners();
         return true;
@@ -497,6 +652,8 @@ class MealConfigProvider extends ChangeNotifier {
                 slotKey: m.slotKey,
                 order: m.order,
                 menuItems: m.menuItems,
+                preferencesEnabled: m.preferencesEnabled,
+                enabledPreferences: m.enabledPreferences,
               ))
           .toList()
         ..sort((a, b) => a.order.compareTo(b.order));
@@ -529,6 +686,8 @@ class MealConfigProvider extends ChangeNotifier {
     List<String>? menuItems,
     String? openTime,
     String? closeTime,
+    bool? preferencesEnabled,
+    List<String>? enabledPreferences,
   }) {
     if (_weekSchedule == null) return;
 
@@ -546,6 +705,8 @@ class MealConfigProvider extends ChangeNotifier {
           imageUrl: entry.imageUrl,
           openTime: openTime ?? entry.openTime,
           closeTime: closeTime ?? entry.closeTime,
+          preferencesEnabled: preferencesEnabled ?? entry.preferencesEnabled,
+          enabledPreferences: enabledPreferences ?? entry.enabledPreferences,
         );
       }).toList();
 
@@ -646,6 +807,8 @@ class MealConfigProvider extends ChangeNotifier {
             // Copy menu items from the template so the newly-enabled day
             // entry starts with the same content as the shared meal.
             menuItems: List<String>.from(meal.menuItems),
+            preferencesEnabled: meal.preferencesEnabled,
+            enabledPreferences: meal.enabledPreferences,
           ));
           entries.sort((a, b) => a.order.compareTo(b.order));
         }
@@ -690,6 +853,8 @@ class MealConfigProvider extends ChangeNotifier {
               imageUrl: e.imageUrl,
               openTime: e.openTime,
               closeTime: e.closeTime,
+              preferencesEnabled: e.preferencesEnabled,
+              enabledPreferences: e.enabledPreferences,
             ))
         .toList();
 

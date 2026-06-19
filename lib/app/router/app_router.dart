@@ -273,7 +273,9 @@ GoRouter buildRouter(AuthProvider auth) {
             routes: [
               GoRoute(
                 path: 'schedule',
-                builder: (context, state) => const MealScheduleScreen(),
+                builder: (context, state) => MealScheduleScreen(
+                  initialGroupId: state.uri.queryParameters['groupId'],
+                ),
               ),
             ],
           ),

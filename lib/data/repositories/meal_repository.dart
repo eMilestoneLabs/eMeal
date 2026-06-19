@@ -305,6 +305,8 @@ class MealRepository implements IMealRepository {
                 'openTime': e.openTime,
                 'closeTime': e.closeTime,
               },
+            'preferencesEnabled': e.preferencesEnabled,
+            'enabledPreferences': e.enabledPreferences,
           });
         }
       }
@@ -364,6 +366,30 @@ class MealRepository implements IMealRepository {
       isPublished: true,
       publishedAt: DateTime.now(),
     );
+    return Ok(_schedule!);
+  }
+
+  @override
+  Future<Result<MealScheduleModel>> revertSchedule({
+    required String organizationId,
+    required String groupId,
+    required String scheduleId,
+  }) async {
+    if (!_isMock) {
+      // Issue 2 LIVE: POST /schedules/:id/revert — admin only (unpublish).
+      final result = await DioApiService.instance.post<Map<String, dynamic>>(
+        '/schedules/$scheduleId/revert',
+      );
+      return switch (result) {
+        Err(:final failure) => Err(failure),
+        Ok(:final value) => Ok(MealScheduleModel.fromJson(value)),
+      };
+    }
+    await _delay();
+    if (_schedule == null) {
+      return const Err(NetworkFailure(message: 'No schedule found.', statusCode: 404));
+    }
+    _schedule = _schedule!.copyWith(isPublished: false);
     return Ok(_schedule!);
   }
 }

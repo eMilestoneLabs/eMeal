@@ -4,6 +4,7 @@ import 'package:smart_meal_management/core/theme/app_colors.dart';
 import 'package:smart_meal_management/core/theme/app_typography.dart';
 import 'package:smart_meal_management/features/admin/meals/providers/meal_config_provider.dart';
 import 'package:smart_meal_management/shared/models/meal_model.dart';
+import 'package:smart_meal_management/shared/models/group_model.dart';
 import 'package:smart_meal_management/shared/models/meal_schedule_model.dart';
 import 'package:smart_meal_management/shared/widgets/app_empty_state.dart';
 import 'package:smart_meal_management/shared/widgets/app_loading_indicator.dart';
@@ -20,7 +21,11 @@ import 'package:smart_meal_management/features/auth/providers/auth_provider.dart
 /// Publish FAB: visible when schedule is in Draft state.
 /// Preview mode: read-only student-facing view of the same data.
 class MealScheduleScreen extends StatefulWidget {
-  const MealScheduleScreen({super.key});
+  const MealScheduleScreen({super.key, this.initialGroupId});
+
+  /// Group whose weekly schedule to open — carried from Meal Config so the
+  /// planner edits the SAME group the admin selected. Null -> first group.
+  final String? initialGroupId;
 
   @override
   State<MealScheduleScreen> createState() => _MealScheduleScreenState();
@@ -53,12 +58,27 @@ class _MealScheduleScreenState extends State<MealScheduleScreen>
       final user = auth.currentUser;
       if (user == null) return;
       final orgId = user.organizationId;
-      _provider.loadGroups(organizationId: orgId).then((_) {
-        if (_provider.selectedGroup != null) {
-          _provider.loadSchedule(
-            organizationId: orgId,
-            groupId: _provider.selectedGroup!.id,
-          );
+      _provider.loadGroups(organizationId: orgId).then((_) async {
+        // Issue 1: edit the SAME group selected in Meal Config (carried as
+        // ?groupId=). Fall back to the auto-selected first group otherwise.
+        final wanted = widget.initialGroupId;
+        if (wanted != null &&
+            wanted.isNotEmpty &&
+            _provider.selectedGroup?.id != wanted) {
+          GroupModel? target;
+          for (final g in _provider.groups) {
+            if (g.id == wanted) {
+              target = g;
+              break;
+            }
+          }
+          if (target != null) {
+            await _provider.selectGroup(target, organizationId: orgId);
+          }
+        }
+        final sel = _provider.selectedGroup;
+        if (sel != null) {
+          await _provider.loadSchedule(organizationId: orgId, groupId: sel.id);
         }
       });
     }
@@ -77,6 +97,19 @@ class _MealScheduleScreenState extends State<MealScheduleScreen>
   }
 
   void _togglePreview() => setState(() => _previewMode = !_previewMode);
+
+  /// Switch the planner to another group (group selector). Loads that group's
+  /// meals + weekly schedule. Additive (Issue 1) — lets the admin pick which
+  /// group's schedule to edit without leaving the planner.
+  Future<void> _selectPlannerGroup(GroupModel group) async {
+    if (_provider.selectedGroup?.id == group.id) return;
+    final auth = AuthProviderScope.of(context);
+    final user = auth.currentUser;
+    if (user == null) return;
+    final orgId = user.organizationId;
+    await _provider.selectGroup(group, organizationId: orgId);
+    await _provider.loadSchedule(organizationId: orgId, groupId: group.id);
+  }
 
   Future<void> _copyFromPreviousWeek() async {
     final confirmed = await showDialog<bool>(
@@ -110,6 +143,28 @@ class _MealScheduleScreenState extends State<MealScheduleScreen>
     }
   }
 
+  /// Enhancement 3: toggle 'Continue Recurring Weekly Menu' for the selected
+  /// group. When ON, an empty week auto-fills from the last published week.
+  Future<void> _toggleRecurring() async {
+    final g = _provider.selectedGroup;
+    if (g == null) return;
+    final next = !_provider.autoContinueLastWeek;
+    await _provider.setAutoContinueLastWeek(next, groupId: g.id);
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            next
+                ? 'Recurring weekly menu ON — an empty week auto-fills from the last published week'
+                : 'Recurring weekly menu OFF',
+          ),
+          behavior: SnackBarBehavior.floating,
+          backgroundColor: next ? AppColors.present : null,
+        ),
+      );
+    }
+  }
+
   Future<void> _publishSchedule() async {
     if (_provider.selectedGroup == null) return;
     final auth = AuthProviderScope.of(context);
@@ -130,6 +185,34 @@ class _MealScheduleScreenState extends State<MealScheduleScreen>
           ),
           behavior: SnackBarBehavior.floating,
           backgroundColor: ok ? AppColors.present : AppColors.error,
+        ),
+      );
+    }
+  }
+
+  /// Issue 2: revert a published schedule back to draft so it can be edited and
+  /// re-published. After success the schedule is unpublished and the Publish
+  /// FAB reappears.
+  Future<void> _revertSchedule() async {
+    if (_provider.selectedGroup == null) return;
+    final auth = AuthProviderScope.of(context);
+    final user = auth.currentUser;
+    if (user == null) return;
+    final orgId = user.organizationId;
+    final ok = await _provider.revertToDraft(
+      organizationId: orgId,
+      groupId: _provider.selectedGroup!.id,
+    );
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            ok
+                ? 'Reverted to draft — edit each day, then publish again'
+                : _provider.error ?? 'Failed to revert',
+          ),
+          behavior: SnackBarBehavior.floating,
+          backgroundColor: ok ? AppColors.warning : AppColors.error,
         ),
       );
     }
@@ -167,11 +250,16 @@ class _MealScheduleScreenState extends State<MealScheduleScreen>
         templateMenuItems: template.menuItems,
         templateOpenTime: template.attendanceWindow.openTime,
         templateCloseTime: template.attendanceWindow.closeTime,
+        templatePreferenceOptions: template.enabledPreferences.isNotEmpty
+            ? template.enabledPreferences
+            : const ['Veg', 'Non-Veg', 'Egg', 'Fish', 'Chicken', 'Jain'],
         onSave: ({
           required String name,
           required List<String> menuItems,
           String? openTime,
           String? closeTime,
+          required bool preferencesEnabled,
+          required List<String> enabledPreferences,
         }) {
           _provider.updateDayMealEntry(
             day,
@@ -180,6 +268,8 @@ class _MealScheduleScreenState extends State<MealScheduleScreen>
             menuItems: menuItems,
             openTime: openTime,
             closeTime: closeTime,
+            preferencesEnabled: preferencesEnabled,
+            enabledPreferences: enabledPreferences,
           );
         },
       ),
@@ -262,15 +352,38 @@ class _MealScheduleScreenState extends State<MealScheduleScreen>
                   ],
                 ),
               ),
+              PopupMenuItem(
+                value: _ScheduleAction.toggleRecurring,
+                child: Row(
+                  children: [
+                    Icon(
+                      _provider.autoContinueLastWeek
+                          ? Icons.event_repeat_rounded
+                          : Icons.event_repeat_outlined,
+                      size: 18,
+                      color: _provider.autoContinueLastWeek
+                          ? AppColors.present
+                          : null,
+                    ),
+                    const SizedBox(width: 10),
+                    const Expanded(
+                      child: Text('Continue Recurring Weekly Menu'),
+                    ),
+                    if (_provider.autoContinueLastWeek)
+                      const Icon(Icons.check_rounded,
+                          size: 16, color: AppColors.present),
+                  ],
+                ),
+              ),
               if (isPublished)
                 const PopupMenuItem(
-                  enabled: false,
+                  value: _ScheduleAction.revertToDraft,
                   child: Row(
                     children: [
-                      Icon(Icons.check_circle_rounded,
-                          size: 18, color: AppColors.present),
+                      Icon(Icons.undo_rounded,
+                          size: 18, color: AppColors.warning),
                       SizedBox(width: 10),
-                      Text('Published'),
+                      Text('Revert to Draft'),
                     ],
                   ),
                 ),
@@ -279,6 +392,10 @@ class _MealScheduleScreenState extends State<MealScheduleScreen>
               switch (action) {
                 case _ScheduleAction.copyPrevious:
                   _copyFromPreviousWeek();
+                case _ScheduleAction.revertToDraft:
+                  _revertSchedule();
+                case _ScheduleAction.toggleRecurring:
+                  _toggleRecurring();
               }
             },
           ),
@@ -328,6 +445,12 @@ class _MealScheduleScreenState extends State<MealScheduleScreen>
                 )
               : Column(
                   children: [
+                    if (_provider.groups.length > 1 && !_previewMode)
+                      _PlannerGroupSelector(
+                        groups: _provider.groups,
+                        selectedId: _provider.selectedGroup?.id,
+                        onSelect: _selectPlannerGroup,
+                      ),
                     _StatusBanner(
                       isPublished: isPublished,
                       isPreview: _previewMode,
@@ -882,6 +1005,7 @@ class _DayMealEditSheet extends StatefulWidget {
     required this.templateMenuItems,
     required this.templateOpenTime,
     required this.templateCloseTime,
+    required this.templatePreferenceOptions,
     required this.onSave,
   });
 
@@ -891,11 +1015,14 @@ class _DayMealEditSheet extends StatefulWidget {
   final List<String> templateMenuItems;
   final String templateOpenTime;
   final String templateCloseTime;
+  final List<String> templatePreferenceOptions;
   final void Function({
     required String name,
     required List<String> menuItems,
     String? openTime,
     String? closeTime,
+    required bool preferencesEnabled,
+    required List<String> enabledPreferences,
   }) onSave;
 
   @override
@@ -909,6 +1036,8 @@ class _DayMealEditSheetState extends State<_DayMealEditSheet> {
   late final TextEditingController _closeCtrl;
   late List<String> _menuItems;
   bool _useCustomTiming = false;
+  bool _prefsEnabled = false;
+  late List<String> _selectedPrefs;
 
   @override
   void initState() {
@@ -923,6 +1052,8 @@ class _DayMealEditSheetState extends State<_DayMealEditSheet> {
       text: widget.entry.closeTime ?? widget.templateCloseTime,
     );
     _menuItems = List<String>.from(widget.entry.menuItems);
+    _prefsEnabled = widget.entry.preferencesEnabled;
+    _selectedPrefs = List<String>.from(widget.entry.enabledPreferences);
   }
 
   @override
@@ -955,6 +1086,9 @@ class _DayMealEditSheetState extends State<_DayMealEditSheet> {
       menuItems: List<String>.from(_menuItems),
       openTime: _useCustomTiming ? _openCtrl.text.trim() : null,
       closeTime: _useCustomTiming ? _closeCtrl.text.trim() : null,
+      preferencesEnabled: _prefsEnabled,
+      enabledPreferences:
+          _prefsEnabled ? List<String>.from(_selectedPrefs) : <String>[],
     );
     Navigator.of(context).pop();
   }
@@ -1207,6 +1341,89 @@ class _DayMealEditSheetState extends State<_DayMealEditSheet> {
               ),
             ],
 
+            const SizedBox(height: 16),
+
+            // ── Per-day meal preference (#6) ─────────────────────────────────
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    'Meal preferences this day',
+                    style: AppTypography.labelMedium.copyWith(
+                      color: isDark
+                          ? AppColors.textPrimaryDark
+                          : AppColors.textPrimary,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+                Switch(
+                  value: _prefsEnabled,
+                  onChanged: (v) => setState(() => _prefsEnabled = v),
+                  activeThumbColor: Colors.white,
+                  activeTrackColor: AppColors.primary,
+                ),
+              ],
+            ),
+            if (_prefsEnabled) ...[
+              const SizedBox(height: 4),
+              Text(
+                'Independent from other days. Choose which tags members pick.',
+                style: AppTypography.bodySmall.copyWith(
+                  color: isDark
+                      ? AppColors.textSecondaryDark
+                      : AppColors.textSecondary,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 6,
+                runSpacing: 6,
+                children: widget.templatePreferenceOptions.map((opt) {
+                  final selected = _selectedPrefs.contains(opt);
+                  return GestureDetector(
+                    onTap: () => setState(() {
+                      if (selected) {
+                        _selectedPrefs.remove(opt);
+                      } else {
+                        _selectedPrefs.add(opt);
+                      }
+                    }),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 12, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: selected
+                            ? AppColors.primary.withValues(alpha: 0.12)
+                            : (isDark
+                                ? AppColors.surfaceVariantDark
+                                : AppColors.surfaceVariant),
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(
+                          color: selected
+                              ? AppColors.primary
+                              : (isDark
+                                  ? AppColors.borderDark
+                                  : AppColors.border),
+                        ),
+                      ),
+                      child: Text(
+                        opt,
+                        style: AppTypography.labelSmall.copyWith(
+                          fontSize: 12,
+                          color: selected
+                              ? AppColors.primary
+                              : (isDark
+                                  ? AppColors.textPrimaryDark
+                                  : AppColors.textPrimary),
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  );
+                }).toList(),
+              ),
+            ],
             const SizedBox(height: 20),
 
             // ── Save button ──────────────────────────────────────────────────
@@ -1241,4 +1458,62 @@ class _DayMealEditSheetState extends State<_DayMealEditSheet> {
 
 // ── Enum ─────────────────────────────────────────────────────────
 
-enum _ScheduleAction { copyPrevious }
+/// Horizontal group chips so the admin can pick which group's weekly schedule
+/// to edit — mirrors the Meal Config selector. Additive (Issue 1).
+class _PlannerGroupSelector extends StatelessWidget {
+  const _PlannerGroupSelector({
+    required this.groups,
+    required this.selectedId,
+    required this.onSelect,
+  });
+
+  final List<GroupModel> groups;
+  final String? selectedId;
+  final Future<void> Function(GroupModel) onSelect;
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+      color: colorScheme.surface,
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: Row(
+          children: groups.map((g) {
+            final selected = g.id == selectedId;
+            return GestureDetector(
+              onTap: () => onSelect(g),
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 200),
+                margin: const EdgeInsets.only(right: 8),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                decoration: BoxDecoration(
+                  color: selected ? AppColors.primary : colorScheme.surface,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color: selected
+                        ? AppColors.primary
+                        : colorScheme.outlineVariant.withValues(alpha: 0.4),
+                  ),
+                ),
+                child: Text(
+                  g.name,
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: selected ? Colors.white : null,
+                  ),
+                ),
+              ),
+            );
+          }).toList(),
+        ),
+      ),
+    );
+  }
+}
+
+enum _ScheduleAction { copyPrevious, revertToDraft, toggleRecurring }

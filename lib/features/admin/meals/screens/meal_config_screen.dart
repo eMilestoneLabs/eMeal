@@ -70,7 +70,7 @@ class _MealConfigScreenState extends State<MealConfigScreen> {
         actions: [
           if (_provider.selectedGroup != null)
             TextButton.icon(
-              onPressed: () => context.push(RouteNames.adminMealSchedule),
+              onPressed: () => context.push('${RouteNames.adminMealSchedule}?groupId=${_provider.selectedGroup!.id}'),
               icon: const Icon(Icons.calendar_month_rounded, size: 16),
               label: const Text('Schedule'),
             ),
@@ -197,7 +197,7 @@ class _MealConfigScreenState extends State<MealConfigScreen> {
                       subtitle: '${_provider.meals.length} meals',
                       actionLabel: 'Schedule →',
                       onActionTap: () =>
-                          context.push(RouteNames.adminMealSchedule),
+                          context.push('${RouteNames.adminMealSchedule}?groupId=${_provider.selectedGroup!.id}'),
                     ),
                     const SizedBox(height: 12),
                     if (_provider.meals.isEmpty)

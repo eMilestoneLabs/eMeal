@@ -1030,14 +1030,22 @@ class _SettingsTab extends StatefulWidget {
 class _SettingsTabState extends State<_SettingsTab> {
   bool _togglingMeals = false;
   bool _togglingWeeklyMenu = false;
+  bool _togglingDayWise = false;
   bool _togglingPrefs = false;
   bool _updatingPrefTypes = false;
   bool _archiving = false;
 
   Future<void> _toggleMeals(bool newValue) async {
     setState(() => _togglingMeals = true);
-    final newConfig =
-        widget.group.mealConfig.copyWith(mealsEnabled: newValue);
+    final mc = widget.group.mealConfig;
+    // Enabling the meal system must activate a delivery mode if none is set
+    // (truth table: Meals ON requires exactly one of Weekly / Day-Wise ON).
+    final needsMode =
+        newValue && !mc.weeklyMenuEnabled && !mc.dayWiseMealsEnabled;
+    final newConfig = mc.copyWith(
+      mealsEnabled: newValue,
+      weeklyMenuEnabled: needsMode ? true : mc.weeklyMenuEnabled,
+    );
     final ok = await widget.provider.updateGroup(
       organizationId: widget.organizationId,
       groupId: widget.group.id,
@@ -1056,8 +1064,12 @@ class _SettingsTabState extends State<_SettingsTab> {
 
   Future<void> _toggleWeeklyMenu(bool newValue) async {
     setState(() => _togglingWeeklyMenu = true);
-    final newConfig =
-        widget.group.mealConfig.copyWith(weeklyMenuEnabled: newValue);
+    final newConfig = widget.group.mealConfig.copyWith(
+      weeklyMenuEnabled: newValue,
+      // Strict one-of-two: Weekly ON disables Day-Wise; Weekly OFF enables
+      // Day-Wise (the meal system always keeps exactly one delivery mode).
+      dayWiseMealsEnabled: !newValue,
+    );
     final ok = await widget.provider.updateGroup(
       organizationId: widget.organizationId,
       groupId: widget.group.id,
@@ -1070,6 +1082,32 @@ class _SettingsTabState extends State<_SettingsTab> {
         content: Text(ok
             ? (newValue ? 'Weekly menu enabled' : 'Weekly menu disabled')
             : 'Failed to update weekly menu setting'),
+      ),
+    );
+  }
+
+  Future<void> _toggleDayWiseMeals(bool newValue) async {
+    setState(() => _togglingDayWise = true);
+    final newConfig = widget.group.mealConfig.copyWith(
+      dayWiseMealsEnabled: newValue,
+      // Strict one-of-two: Day-Wise ON disables Weekly Menu; Day-Wise OFF
+      // re-enables Weekly (the meal system always keeps exactly one mode).
+      weeklyMenuEnabled: !newValue,
+    );
+    final ok = await widget.provider.updateGroup(
+      organizationId: widget.organizationId,
+      groupId: widget.group.id,
+      mealConfig: newConfig,
+    );
+    if (!mounted) return;
+    setState(() => _togglingDayWise = false);
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(ok
+            ? (newValue
+                ? 'Day-Wise meal mode enabled'
+                : 'Day-Wise meal mode disabled')
+            : 'Failed to update day-wise setting'),
       ),
     );
   }
@@ -1281,6 +1319,32 @@ class _SettingsTabState extends State<_SettingsTab> {
                       child: CircularProgressIndicator(strokeWidth: 2),
                     )
                   : const Icon(Icons.calendar_month_rounded,
+                      color: AppColors.primary, size: 20),
+            ),
+          ),
+          const SizedBox(height: 10),
+          // Day-Wise Meals toggle (mutually exclusive with Weekly Menu)
+          Card(
+            margin: EdgeInsets.zero,
+            child: SwitchListTile(
+              title: const Text('Day-Wise Meals',
+                  style: TextStyle(fontWeight: FontWeight.w600)),
+              subtitle: Text(
+                group.mealConfig.dayWiseMealsEnabled
+                    ? 'Members see only the meals configured for today. Weekly Menu is hidden.'
+                    : 'Disabled — enable to run meals per calendar day instead of a weekly plan.',
+                style: TextStyle(
+                    fontSize: 12, color: colorScheme.onSurfaceVariant),
+              ),
+              value: group.mealConfig.dayWiseMealsEnabled,
+              onChanged: _togglingDayWise ? null : _toggleDayWiseMeals,
+              secondary: _togglingDayWise
+                  ? const SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.today_rounded,
                       color: AppColors.primary, size: 20),
             ),
           ),

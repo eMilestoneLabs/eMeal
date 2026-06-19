@@ -77,4 +77,12 @@ abstract interface class IMealRepository {
     required String groupId,
     required String scheduleId,
   });
+
+  /// Issue 2: revert a published schedule back to draft (unpublish) so the
+  /// admin can edit and re-publish.
+  Future<Result<MealScheduleModel>> revertSchedule({
+    required String organizationId,
+    required String groupId,
+    required String scheduleId,
+  });
 }

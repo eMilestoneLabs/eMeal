@@ -104,6 +104,21 @@ enum MealPreferenceOption {
   /// Whether this option is vegetarian (for veg/non-veg count reporting).
   bool get isVegetarian =>
       this == MealPreferenceOption.veg || this == MealPreferenceOption.jain;
+
+  /// Parse a list of lowercase preference keys (as sent by the backend on a
+  /// meal's enabledPreferences) into options, dropping any unknown keys.
+  static List<MealPreferenceOption> parseList(List<String> names) {
+    final out = <MealPreferenceOption>[];
+    for (final n in names) {
+      for (final p in MealPreferenceOption.values) {
+        if (p.name == n) {
+          out.add(p);
+          break;
+        }
+      }
+    }
+    return out;
+  }
 }
 
 // ── GroupMealConfig ────────────────────────────────────────────────────────────
@@ -115,6 +130,7 @@ class GroupMealConfig extends Equatable {
   const GroupMealConfig({
     this.mealsEnabled = true,
     this.weeklyMenuEnabled = true,
+    this.dayWiseMealsEnabled = false,
     this.preferencesEnabled = false,
     this.enabledPreferences = const [],
     this.vacationModeEnabled = false,
@@ -125,6 +141,11 @@ class GroupMealConfig extends Equatable {
   /// When false, the Weekly Menu tab and any menu-related UI are hidden.
   final bool weeklyMenuEnabled;
 
+  /// Day-Wise Meal Mode — mutually exclusive with [weeklyMenuEnabled].
+  /// When true, students see only today's configured meals and the Weekly
+  /// Menu tab is hidden.
+  final bool dayWiseMealsEnabled;
+
   final bool preferencesEnabled;
   final List<MealPreferenceOption> enabledPreferences;
   final bool vacationModeEnabled;
@@ -132,6 +153,7 @@ class GroupMealConfig extends Equatable {
   factory GroupMealConfig.fromJson(Map<String, dynamic> j) => GroupMealConfig(
         mealsEnabled: j['mealsEnabled'] ?? true,
         weeklyMenuEnabled: j['weeklyMenuEnabled'] ?? true,
+        dayWiseMealsEnabled: j['dayWiseMealsEnabled'] ?? false,
         preferencesEnabled: j['preferencesEnabled'] ?? false,
         enabledPreferences: (j['enabledPreferences'] as List? ?? [])
             .map((e) => MealPreferenceOption.values.firstWhere(
@@ -145,6 +167,7 @@ class GroupMealConfig extends Equatable {
   Map<String, dynamic> toJson() => {
         'mealsEnabled': mealsEnabled,
         'weeklyMenuEnabled': weeklyMenuEnabled,
+        'dayWiseMealsEnabled': dayWiseMealsEnabled,
         'preferencesEnabled': preferencesEnabled,
         'enabledPreferences': enabledPreferences.map((e) => e.name).toList(),
         'vacationModeEnabled': vacationModeEnabled,
@@ -153,6 +176,7 @@ class GroupMealConfig extends Equatable {
   GroupMealConfig copyWith({
     bool? mealsEnabled,
     bool? weeklyMenuEnabled,
+    bool? dayWiseMealsEnabled,
     bool? preferencesEnabled,
     List<MealPreferenceOption>? enabledPreferences,
     bool? vacationModeEnabled,
@@ -160,6 +184,7 @@ class GroupMealConfig extends Equatable {
       GroupMealConfig(
         mealsEnabled: mealsEnabled ?? this.mealsEnabled,
         weeklyMenuEnabled: weeklyMenuEnabled ?? this.weeklyMenuEnabled,
+        dayWiseMealsEnabled: dayWiseMealsEnabled ?? this.dayWiseMealsEnabled,
         preferencesEnabled: preferencesEnabled ?? this.preferencesEnabled,
         enabledPreferences: enabledPreferences ?? this.enabledPreferences,
         vacationModeEnabled: vacationModeEnabled ?? this.vacationModeEnabled,
@@ -169,6 +194,7 @@ class GroupMealConfig extends Equatable {
   List<Object?> get props => [
         mealsEnabled,
         weeklyMenuEnabled,
+        dayWiseMealsEnabled,
         preferencesEnabled,
         enabledPreferences,
         vacationModeEnabled,

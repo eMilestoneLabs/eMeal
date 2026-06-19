@@ -204,10 +204,13 @@ class _TodayMealsScreenState extends State<TodayMealsScreen> {
                                 isWindowPast: isPast,
                                 isVacationMode: isVacation,
                                 isDefaultAttend: isDefaultAttend,
-                                preferencesEnabled:
+                                preferencesEnabled: meal.preferencesEnabled ||
                                     dashboardProvider.preferencesEnabled,
                                 enabledPreferences:
-                                    dashboardProvider.enabledPreferences,
+                                    meal.enabledPreferences.isNotEmpty
+                                        ? MealPreferenceOption.parseList(
+                                            meal.enabledPreferences)
+                                        : dashboardProvider.enabledPreferences,
                                 onMark: (s, pref) =>
                                     _mark(meal.id, s, preference: pref),
                               );
@@ -697,6 +700,9 @@ class _AttendActions extends StatelessWidget {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final showPrefs =
         preferencesEnabled && enabledPreferences.isNotEmpty;
+    // Spec gating: Present stays disabled until a preference is picked when
+    // preferences are required; Skip / Absent remain enabled regardless.
+    final canMarkPresent = canMark && (!showPrefs || preference != null);
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(
@@ -793,7 +799,7 @@ class _AttendActions extends StatelessWidget {
                 flex: 3,
                 child: FilledButton.icon(
                   onPressed:
-                      canMark ? () => onMark(AttendanceStatus.present) : null,
+                      canMarkPresent ? () => onMark(AttendanceStatus.present) : null,
                   icon: const Icon(Icons.check_rounded, size: 16),
                   label: const Text('Present'),
                   style: FilledButton.styleFrom(

@@ -73,6 +73,8 @@ class DayMealEntry {
     this.imageUrl,
     this.openTime,
     this.closeTime,
+    this.preferencesEnabled = false,
+    this.enabledPreferences = const [],
   });
 
   final String mealId;
@@ -90,6 +92,10 @@ class DayMealEntry {
   /// Null means use the parent [MealModel] template window.
   final String? closeTime;
 
+  /// Per-day meal preference (#6) — independent from every other day.
+  final bool preferencesEnabled;
+  final List<String> enabledPreferences;
+
   /// True when this entry carries its own time window (overrides template).
   bool get hasCustomTiming => openTime != null && closeTime != null;
 
@@ -102,6 +108,8 @@ class DayMealEntry {
         imageUrl: j['imageUrl'],
         openTime: j['openTime'] as String?,
         closeTime: j['closeTime'] as String?,
+        preferencesEnabled: j['preferencesEnabled'] ?? false,
+        enabledPreferences: List<String>.from(j['enabledPreferences'] ?? []),
       );
 
   Map<String, dynamic> toJson() => {
@@ -113,6 +121,8 @@ class DayMealEntry {
         'imageUrl': imageUrl,
         if (openTime != null) 'openTime': openTime,
         if (closeTime != null) 'closeTime': closeTime,
+        'preferencesEnabled': preferencesEnabled,
+        'enabledPreferences': enabledPreferences,
       };
 
   DayMealEntry copyWith({
@@ -121,6 +131,8 @@ class DayMealEntry {
     String? imageUrl,
     String? openTime,
     String? closeTime,
+    bool? preferencesEnabled,
+    List<String>? enabledPreferences,
   }) =>
       DayMealEntry(
         mealId: mealId,
@@ -131,6 +143,8 @@ class DayMealEntry {
         imageUrl: imageUrl ?? this.imageUrl,
         openTime: openTime ?? this.openTime,
         closeTime: closeTime ?? this.closeTime,
+        preferencesEnabled: preferencesEnabled ?? this.preferencesEnabled,
+        enabledPreferences: enabledPreferences ?? this.enabledPreferences,
       );
 }
 

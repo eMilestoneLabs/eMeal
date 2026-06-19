@@ -64,6 +64,16 @@ class _AttendanceActionCardState extends State<AttendanceActionCard> {
       !widget.isLoading &&
       _isPending;
 
+  /// Spec gating: when meal preferences are enabled for this meal, the
+  /// Present action stays disabled until the student picks a preference
+  /// (Absent / Skip remain enabled — a preference is only needed to consume
+  /// the meal). When preferences are off, Present behaves like _canMark.
+  bool get _canMarkPresent =>
+      _canMark &&
+      (!widget.preferencesEnabled ||
+          widget.enabledPreferences.isEmpty ||
+          _selectedPreference != null);
+
   void _markWithPreference(AttendanceStatus status) {
     widget.onMark(
       status,
@@ -310,7 +320,7 @@ class _AttendanceActionCardState extends State<AttendanceActionCard> {
                   Expanded(
                     flex: 3,
                     child: FilledButton.icon(
-                      onPressed: _canMark
+                      onPressed: _canMarkPresent
                           ? () => _markWithPreference(AttendanceStatus.present)
                           : null,
                       icon: widget.isLoading
