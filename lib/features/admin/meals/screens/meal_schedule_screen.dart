@@ -252,7 +252,7 @@ class _MealScheduleScreenState extends State<MealScheduleScreen>
         templateCloseTime: template.attendanceWindow.closeTime,
         templatePreferenceOptions: template.enabledPreferences.isNotEmpty
             ? template.enabledPreferences
-            : const ['Veg', 'Non-Veg', 'Egg', 'Fish', 'Chicken', 'Jain'],
+            : const ['veg', 'chicken', 'fish', 'mutton', 'egg', 'jain'],
         onSave: ({
           required String name,
           required List<String> menuItems,
@@ -1078,14 +1078,31 @@ class _DayMealEditSheetState extends State<_DayMealEditSheet> {
     setState(() => _menuItems.removeAt(index));
   }
 
+  /// Issue 5: pad a time string to strict HH:mm so it passes the backend regex
+  /// (^([01]\d|2[0-3]):[0-5]\d$) — e.g. "9:0" -> "09:00". Prevents the
+  /// "Validation failed" publish error when a single-digit hour is entered.
+  String? _normalizeHHmm(String raw) {
+    final s = raw.trim();
+    if (s.isEmpty) return null;
+    final parts = s.split(':');
+    if (parts.length != 2) return s;
+    final h = parts[0].trim().padLeft(2, '0');
+    final m = parts[1].trim().padLeft(2, '0');
+    return '$h:$m';
+  }
+
+  /// Display label for a lowercase preference key (e.g. "veg" -> "Veg").
+  String _prefLabel(String key) =>
+      key.isEmpty ? key : key[0].toUpperCase() + key.substring(1);
+
   void _save() {
     final name = _nameCtrl.text.trim();
     if (name.isEmpty) return;
     widget.onSave(
       name: name,
       menuItems: List<String>.from(_menuItems),
-      openTime: _useCustomTiming ? _openCtrl.text.trim() : null,
-      closeTime: _useCustomTiming ? _closeCtrl.text.trim() : null,
+      openTime: _useCustomTiming ? _normalizeHHmm(_openCtrl.text) : null,
+      closeTime: _useCustomTiming ? _normalizeHHmm(_closeCtrl.text) : null,
       preferencesEnabled: _prefsEnabled,
       enabledPreferences:
           _prefsEnabled ? List<String>.from(_selectedPrefs) : <String>[],
@@ -1408,7 +1425,7 @@ class _DayMealEditSheetState extends State<_DayMealEditSheet> {
                         ),
                       ),
                       child: Text(
-                        opt,
+                        _prefLabel(opt),
                         style: AppTypography.labelSmall.copyWith(
                           fontSize: 12,
                           color: selected

@@ -50,6 +50,9 @@ class StudentDashboardProvider extends ChangeNotifier {
 
   bool _isLoading = false;
   String? _error;
+  // Issue 2: a failed quick-action (mark/skip) must NOT blank the whole
+  // dashboard — it surfaces here for a snackbar, separate from load _error.
+  String? _actionError;
 
   List<MealModel> _todayMeals = [];
   List<AttendanceModel> _todayAttendance = [];
@@ -82,6 +85,7 @@ class StudentDashboardProvider extends ChangeNotifier {
 
   bool get isLoading => _isLoading;
   String? get error => _error;
+  String? get actionError => _actionError;
   List<MealModel> get todayMeals => _todayMeals;
   List<AttendanceModel> get todayAttendance => _todayAttendance;
   AttendanceSummary? get summary => _summary;
@@ -313,7 +317,9 @@ class StudentDashboardProvider extends ChangeNotifier {
         return true;
       case Err(:final failure):
         _todayAttendance = snapshot;
-        _error = failure.message;
+        // Issue 2: surface as an action error (snackbar) — do NOT set _error,
+        // which would replace the whole dashboard with the error screen.
+        _actionError = failure.message;
         notifyListeners();
         return false;
     }

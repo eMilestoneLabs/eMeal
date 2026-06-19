@@ -30,7 +30,9 @@ class StudentMealProvider extends ChangeNotifier {
   DayOfWeek get selectedDay => _selectedDay;
   bool get isLoading => _isLoading;
   String? get error => _error;
-  bool get hasSchedule => _schedule != null;
+  // Issue 3: a placeholder schedule (id '') is "nothing published", not a real
+  // schedule — so the menu shows the empty state until the admin publishes.
+  bool get hasSchedule => _schedule != null && _schedule!.id.isNotEmpty;
 
   /// The [DaySchedule] for the currently selected day, or null.
   DaySchedule? get mealsForSelectedDay => _schedule?.scheduleFor(_selectedDay);
@@ -54,7 +56,9 @@ class StudentMealProvider extends ChangeNotifier {
     bool forceRefresh = false,
   }) async {
     if (_isLoading) return;
-    if (!forceRefresh && _schedule != null) return;
+    // Issue 3: an empty placeholder schedule (id '') means "nothing published
+    // yet" — never cache it, so the menu refreshes once the admin publishes.
+    if (!forceRefresh && _schedule != null && _schedule!.id.isNotEmpty) return;
 
     _organizationId = organizationId;
     _groupId = groupId;

@@ -132,7 +132,14 @@ class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
     StudentDashboardProvider provider,
     MealModel meal,
   ) async {
-    if (provider.preferencesEnabled && provider.enabledPreferences.isNotEmpty) {
+    // Issue 1: honor per-day/meal-level preference (overlaid by the backend on
+    // /meals/today), not just the group-level flag. If this meal requires a
+    // preference, route to the attendance screen so the student picks a tag.
+    final requiresPreference =
+        (meal.preferencesEnabled || provider.preferencesEnabled) &&
+            (meal.enabledPreferences.isNotEmpty ||
+                provider.enabledPreferences.isNotEmpty);
+    if (requiresPreference) {
       context.go(RouteNames.studentAttendance);
       return;
     }
@@ -147,7 +154,7 @@ class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
     if (!ok) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(provider.error ?? 'Could not mark attendance'),
+          content: Text(provider.actionError ?? 'Could not mark attendance'),
           behavior: SnackBarBehavior.floating,
         ),
       );

@@ -145,6 +145,11 @@ class MealConfigProvider extends ChangeNotifier {
     required String organizationId,
     required String groupId,
   }) async {
+    // Issue 4: keep the loading state on until the draft is populated, so the
+    // planner shows a spinner instead of flashing "No schedule yet" before the
+    // master meals auto-fill the week.
+    _isLoading = true;
+    notifyListeners();
     final result = await _mealRepo.getCurrentWeekSchedule(
       organizationId: organizationId,
       groupId: groupId,
@@ -161,6 +166,7 @@ class MealConfigProvider extends ChangeNotifier {
     // and so per-day toggles always apply. Never touches a published plan or a
     // draft the admin has already started configuring.
     await _ensureWeekdaysPopulated(groupId);
+    _isLoading = false;
     notifyListeners();
   }
 
