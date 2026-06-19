@@ -16,6 +16,8 @@ import 'package:smart_meal_management/features/student/dashboard/widgets/student
 import 'package:smart_meal_management/shared/enums/user_role.dart';
 import 'package:smart_meal_management/shared/models/attendance_model.dart';
 import 'package:smart_meal_management/shared/models/meal_model.dart';
+import 'package:smart_meal_management/shared/models/meal_schedule_model.dart';
+import 'package:smart_meal_management/features/student/meals/screens/meal_detail_screen.dart';
 import 'package:smart_meal_management/shared/models/user_model.dart';
 import 'package:smart_meal_management/shared/widgets/app_glass_card.dart';
 
@@ -123,6 +125,42 @@ class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
       final provider = StudentDashboardScope.of(context);
       await provider.load(user: _userWithActiveGroup(user));
     }
+  }
+
+  /// Issue 3: open the Meal Detail screen (name, menu, attendance window,
+  /// preference info) for a tapped today-meal card. Builds a DayMealEntry from
+  /// the overlaid MealModel so the per-day menu/window/preference are shown.
+  void _openMealDetail(
+    BuildContext context,
+    MealModel meal,
+    AttendanceStatus? status,
+  ) {
+    final statusLabel = switch (status) {
+      AttendanceStatus.present => 'Present',
+      AttendanceStatus.absent => 'Absent',
+      AttendanceStatus.skipped => 'Skipped',
+      _ => null,
+    };
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => MealDetailScreen(
+          entry: DayMealEntry(
+            mealId: meal.id,
+            name: meal.name,
+            slotKey: meal.slotKey,
+            order: meal.order,
+            menuItems: meal.menuItems,
+            imageUrl: meal.imageUrl,
+            openTime: meal.attendanceWindow.openTime,
+            closeTime: meal.attendanceWindow.closeTime,
+            preferencesEnabled: meal.preferencesEnabled,
+            enabledPreferences: meal.enabledPreferences,
+          ),
+          isToday: true,
+          statusLabel: statusLabel,
+        ),
+      ),
+    );
   }
 
   /// Issue #1: marks the current meal Present directly from the dashboard.
@@ -355,8 +393,8 @@ class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
                         child: MealTimelineCard(
                           meals: provider.todayMeals,
                           provider: provider,
-                          onMealTap: (_) =>
-                              context.go(RouteNames.studentAttendance),
+                          onMealTap: (meal) => _openMealDetail(
+                              context, meal, provider.statusForMeal(meal.id)),
                         ),
                       ),
                       const SliverToBoxAdapter(

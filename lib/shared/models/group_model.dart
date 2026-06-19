@@ -105,13 +105,18 @@ enum MealPreferenceOption {
   bool get isVegetarian =>
       this == MealPreferenceOption.veg || this == MealPreferenceOption.jain;
 
-  /// Parse a list of lowercase preference keys (as sent by the backend on a
-  /// meal's enabledPreferences) into options, dropping any unknown keys.
+  /// Parse a list of preference keys (as sent by the backend on a meal's
+  /// enabledPreferences) into options, dropping any unknown keys.
+  ///
+  /// Case-INSENSITIVE: tolerates legacy capitalized values ("Veg", "Egg") that
+  /// older app builds saved, as well as the current lowercase keys, so existing
+  /// published schedules keep working without a re-save.
   static List<MealPreferenceOption> parseList(List<String> names) {
     final out = <MealPreferenceOption>[];
     for (final n in names) {
+      final key = n.trim().toLowerCase();
       for (final p in MealPreferenceOption.values) {
-        if (p.name == n) {
+        if (p.name == key) {
           out.add(p);
           break;
         }
@@ -155,12 +160,11 @@ class GroupMealConfig extends Equatable {
         weeklyMenuEnabled: j['weeklyMenuEnabled'] ?? true,
         dayWiseMealsEnabled: j['dayWiseMealsEnabled'] ?? false,
         preferencesEnabled: j['preferencesEnabled'] ?? false,
-        enabledPreferences: (j['enabledPreferences'] as List? ?? [])
-            .map((e) => MealPreferenceOption.values.firstWhere(
-                  (p) => p.name == e,
-                  orElse: () => MealPreferenceOption.veg,
-                ))
-            .toList(),
+        enabledPreferences: MealPreferenceOption.parseList(
+          (j['enabledPreferences'] as List? ?? [])
+              .map((e) => e.toString())
+              .toList(),
+        ),
         vacationModeEnabled: j['vacationModeEnabled'] ?? false,
       );
 

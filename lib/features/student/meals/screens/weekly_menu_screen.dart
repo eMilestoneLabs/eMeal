@@ -329,10 +329,15 @@ class MealDetailScreen extends StatelessWidget {
     super.key,
     required this.entry,
     this.isToday = false,
+    this.statusLabel,
   });
 
   final DayMealEntry entry;
   final bool isToday;
+
+  /// Issue 3: current attendance status for this meal (e.g. "Present"),
+  /// shown when the detail is opened from today's dashboard. Null = not today.
+  final String? statusLabel;
 
   @override
   Widget build(BuildContext context) {
@@ -441,6 +446,69 @@ class MealDetailScreen extends StatelessWidget {
                     ],
                   ),
                 ),
+              ),
+              const SizedBox(height: AppConstants.space20),
+            ],
+
+            // ── Attendance window (Issue 3) ────────────────────────────
+            if (entry.openTime != null && entry.closeTime != null) ...[
+              _InfoRow(
+                icon: Icons.access_time_rounded,
+                label: 'Attendance Window',
+                value: '${entry.openTime} – ${entry.closeTime}',
+                isDark: isDark,
+              ),
+              const SizedBox(height: AppConstants.space20),
+            ],
+
+            // ── Meal preference (Issue 3) ──────────────────────────────
+            _InfoRow(
+              icon: Icons.tune_rounded,
+              label: 'Meal Preference',
+              value:
+                  entry.preferencesEnabled && entry.enabledPreferences.isNotEmpty
+                      ? 'Required'
+                      : 'Not required',
+              isDark: isDark,
+            ),
+            if (entry.preferencesEnabled &&
+                entry.enabledPreferences.isNotEmpty) ...[
+              const SizedBox(height: AppConstants.space12),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: entry.enabledPreferences.map((t) {
+                  final label = t.isEmpty
+                      ? t
+                      : t[0].toUpperCase() + t.substring(1).toLowerCase();
+                  return Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 12, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: AppColors.primary.withValues(alpha: 0.10),
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(
+                          color: AppColors.primary.withValues(alpha: 0.3)),
+                    ),
+                    child: Text(
+                      label,
+                      style: AppTypography.labelSmall.copyWith(
+                          color: AppColors.primary,
+                          fontWeight: FontWeight.w600),
+                    ),
+                  );
+                }).toList(),
+              ),
+            ],
+            const SizedBox(height: AppConstants.space20),
+
+            // ── Current attendance status (Issue 3) ────────────────────
+            if (statusLabel != null) ...[
+              _InfoRow(
+                icon: Icons.check_circle_outline_rounded,
+                label: 'Your Attendance',
+                value: statusLabel!,
+                isDark: isDark,
               ),
               const SizedBox(height: AppConstants.space20),
             ],

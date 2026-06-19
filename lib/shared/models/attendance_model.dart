@@ -66,8 +66,12 @@ class AttendanceModel {
           orElse: () => AttendanceStatus.pending,
         ),
         date: j['date'] != null ? DateTime.parse(j['date']) : DateTime.now(),
-        markedAt:
-            j['markedAt'] != null ? DateTime.parse(j['markedAt']) : null,
+        // Issue 5: backend stores markedAt in UTC (ISO 'Z'). Convert to the
+        // device's local time so every screen (recent activity, history,
+        // exports) shows the actual submission time (e.g. 23:00, not 17:30).
+        markedAt: j['markedAt'] != null
+            ? DateTime.parse(j['markedAt']).toLocal()
+            : null,
         preference: j['preference'],
         note: j['note'],
         mealName: j['mealName'],

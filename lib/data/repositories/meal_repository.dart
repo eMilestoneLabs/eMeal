@@ -307,6 +307,9 @@ class MealRepository implements IMealRepository {
               },
             'preferencesEnabled': e.preferencesEnabled,
             'enabledPreferences': e.enabledPreferences,
+            // Issue 2: persist per-day menu items so they survive publish and
+            // show to students + admin (independent of the master meal menu).
+            'menuItems': e.menuItems,
           });
         }
       }
