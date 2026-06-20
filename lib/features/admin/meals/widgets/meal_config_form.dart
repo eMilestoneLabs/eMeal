@@ -19,6 +19,7 @@ class MealConfigForm extends StatefulWidget {
     required this.onSave,
     this.isSaving = false,
     this.initialPreferencesEnabled = false,
+    this.pricingEnabled = false,
   });
 
   /// If non-null, pre-populates the form for editing.
@@ -30,6 +31,9 @@ class MealConfigForm extends StatefulWidget {
   /// group-level global preference state so new meals inherit it by default.
   /// Admins can still toggle the per-meal switch off before saving.
   final bool initialPreferencesEnabled;
+
+  /// Additive: when true (group meal pricing ON), a Meal Price (₹) field shows.
+  final bool pricingEnabled;
 
   @override
   State<MealConfigForm> createState() => _MealConfigFormState();
@@ -51,6 +55,7 @@ class _MealConfigFormState extends State<MealConfigForm> {
   final _slotKeyCtrl = TextEditingController();
   final _menuItemCtrl = TextEditingController();
   final _tagCtrl = TextEditingController();
+  final _priceCtrl = TextEditingController();
 
   int _order = 0;
   TimeOfDay _openTime = const TimeOfDay(hour: 7, minute: 0);
@@ -85,6 +90,7 @@ class _MealConfigFormState extends State<MealConfigForm> {
       _preferenceTags = m.enabledPreferences.isNotEmpty
           ? List.of(m.enabledPreferences)
           : List.of(_kDefaultPreferenceTags);
+      _priceCtrl.text = m.price?.toString() ?? '';
       // Restore compressed bytes if editing
       if (m.imageBytes.isNotEmpty) {
         _imageBytesList.addAll(m.imageBytes);
@@ -121,6 +127,7 @@ class _MealConfigFormState extends State<MealConfigForm> {
     _slotKeyCtrl.dispose();
     _menuItemCtrl.dispose();
     _tagCtrl.dispose();
+    _priceCtrl.dispose();
     super.dispose();
   }
 
@@ -144,10 +151,27 @@ class _MealConfigFormState extends State<MealConfigForm> {
     }
   }
 
+  /// When group pricing is ON, a valid (>= 0) price is mandatory before saving.
+  bool get _priceValid =>
+      !widget.pricingEnabled ||
+      (int.tryParse(_priceCtrl.text.trim()) != null &&
+          int.parse(_priceCtrl.text.trim()) >= 0);
+
+  /// Issue 3: once today's attendance window has opened, the price is locked so
+  /// a later edit can't change what members were already shown / billed. Only
+  /// applies when editing an EXISTING meal (new meals are always editable). The
+  /// backend enforces the same rule; this just disables the field early.
+  bool get _priceLocked {
+    if (widget.initialMeal == null || !widget.pricingEnabled) return false;
+    final now = TimeOfDay.now();
+    return now.hour * 60 + now.minute >= _toMinutes(_openTime);
+  }
+
   bool get _canSave =>
       !widget.isSaving &&
       _nameCtrl.text.trim().isNotEmpty &&
-      _windowError == null;
+      _windowError == null &&
+      _priceValid;
 
   int get _totalImageBytes =>
       _imageBytesList.fold(0, (sum, b) => sum + b.length);
@@ -443,6 +467,38 @@ class _MealConfigFormState extends State<MealConfigForm> {
         ),
         const SizedBox(height: 16),
 
+        // ── Meal price (when group pricing enabled) ───────────────────────
+        if (widget.pricingEnabled) ...[
+          TextField(
+            controller: _priceCtrl,
+            enabled: !_priceLocked,
+            keyboardType: TextInputType.number,
+            onChanged: (_) => setState(() {}),
+            decoration: InputDecoration(
+              labelText: 'Meal Price (₹) *',
+              hintText: 'e.g. 75',
+              prefixText: '₹ ',
+              suffixIcon: _priceLocked
+                  ? const Icon(Icons.lock_rounded,
+                      size: 18, color: AppColors.textTertiary)
+                  : null,
+              helperText: _priceLocked
+                  ? 'Price locked — attendance window has started.'
+                  : 'Required while meal pricing is enabled.',
+              helperStyle: _priceLocked
+                  ? const TextStyle(color: AppColors.warning)
+                  : null,
+              errorText: _priceValid ? null : 'Enter a valid price',
+              filled: true,
+              fillColor: colorScheme.surface,
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(AppConstants.inputRadius),
+              ),
+            ),
+          ),
+          const SizedBox(height: 16),
+        ],
+
         // ── Meal images ───────────────────────────────────────────────────
         _buildImageSection(colorScheme),
         const SizedBox(height: 16),
@@ -557,6 +613,9 @@ class _MealConfigFormState extends State<MealConfigForm> {
                           ? List.of(_preferenceTags)
                           : const [],
                       imageBytes: List.of(_imageBytesList),
+                      price: widget.pricingEnabled
+                          ? int.tryParse(_priceCtrl.text.trim())
+                          : null,
                     ));
                   }
                 : null,
@@ -1258,6 +1317,7 @@ class MealFormData {
     this.menuItems = const [],
     this.enablePreferences = const [],
     this.imageBytes = const [],
+    this.price,
   });
 
   final String name;
@@ -1270,4 +1330,7 @@ class MealFormData {
   final List<String> enablePreferences;
   /// Compressed image bytes ready for storage. Empty list = no images.
   final List<Uint8List> imageBytes;
+
+  /// Additive: ₹ meal price (null when pricing disabled or left blank).
+  final int? price;
 }

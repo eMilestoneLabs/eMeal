@@ -34,6 +34,7 @@ class AttendanceModel {
     this.mealName,
     this.userName,
     this.userPhone,
+    this.price,
   });
 
   final String id;
@@ -54,6 +55,10 @@ class AttendanceModel {
 
   /// Joined member phone (admin-facing). Null when not included.
   final String? userPhone;
+
+  /// Additive: ₹ price snapshot at mark time (per-day override or master).
+  /// Null for pre-pricing records — billing falls back to the master meal price.
+  final int? price;
 
   factory AttendanceModel.fromJson(Map<String, dynamic> j) => AttendanceModel(
         id: j['id'] ?? '',
@@ -77,6 +82,11 @@ class AttendanceModel {
         mealName: j['mealName'],
         userName: j['userName'],
         userPhone: j['userPhone'],
+        price: j['price'] is int
+            ? j['price'] as int
+            : (j['price'] != null
+                ? int.tryParse(j['price'].toString())
+                : null),
       );
 
   Map<String, dynamic> toJson() => {
@@ -93,6 +103,7 @@ class AttendanceModel {
         'mealName': mealName,
         'userName': userName,
         'userPhone': userPhone,
+        'price': price,
       };
 
   AttendanceModel copyWith({
@@ -101,6 +112,7 @@ class AttendanceModel {
     String? preference,
     String? note,
     String? mealName,
+    int? price,
   }) =>
       AttendanceModel(
         id: id,
@@ -116,6 +128,7 @@ class AttendanceModel {
         mealName: mealName ?? this.mealName,
         userName: userName,
         userPhone: userPhone,
+        price: price ?? this.price,
       );
 }
 

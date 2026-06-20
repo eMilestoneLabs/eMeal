@@ -7,6 +7,7 @@ import 'package:smart_meal_management/data/repositories/group_repository.dart';
 import 'package:smart_meal_management/data/repositories/meal_repository.dart';
 import 'package:smart_meal_management/shared/models/group_model.dart';
 import 'package:smart_meal_management/shared/models/attendance_model.dart';
+import 'package:smart_meal_management/shared/models/meal_attendance_summary.dart';
 import 'package:smart_meal_management/shared/models/meal_model.dart';
 import 'package:smart_meal_management/shared/models/paginated_response.dart';
 import 'package:smart_meal_management/shared/models/result.dart';
@@ -49,6 +50,11 @@ class AdminDashboardProvider extends ChangeNotifier {
   final Map<String, int> _presentByGroup = {};
   final Map<String, int> _absentByGroup = {};
   final Map<String, int> _totalByGroup = {};
+
+  // ── Meal-wise summaries (Issue 1 + Issue 5) ─────────────────────────────────
+  // mealId -> per-meal present/absent/skipped + preference breakdown, fetched
+  // from the existing GET /attendance/meal-summary endpoint.
+  final Map<String, MealAttendanceSummary> _mealSummaries = {};
 
   /// The group whose stats are shown. Null = "All groups" (aggregate).
   /// Acts as the admin's default group (Issue #8); persisted client-side.
@@ -122,6 +128,20 @@ class AdminDashboardProvider extends ChangeNotifier {
 
   double get attendanceRate =>
       _selectedTotal == 0 ? 0.0 : presentToday / _selectedTotal;
+
+  /// Today's active meals for the selected group, sorted by admin order.
+  /// Powers the meal-wise attendance + preference breakdown (Issue 5).
+  List<MealModel> get selectedGroupTodayMeals {
+    final gid = _selectedGroupId;
+    final list = _todayMeals
+        .where((m) => gid == null || m.groupId == gid)
+        .toList()
+      ..sort((a, b) => a.order.compareTo(b.order));
+    return list;
+  }
+
+  /// Per-meal attendance + preference summary for [mealId] (null until loaded).
+  MealAttendanceSummary? mealSummary(String mealId) => _mealSummaries[mealId];
 
   /// Recent activity, filtered to the selected group when one is chosen.
   List<AttendanceModel> get recentActivity => _selectedGroupId == null
@@ -226,35 +246,45 @@ class AdminDashboardProvider extends ChangeNotifier {
       final today = _today();
       final now = DateTime.now();
 
-      // 3a. Attendance summaries — parallel fetch, sum counts
-      final summaryFutures = _groups.map(
-        (g) => _attendanceRepo.getGroupAttendanceSummary(
-          groupId: g.id,
-          organizationId: organizationId,
-          from: today,
-          to: now,
-        ),
-      );
-      final summaryResults = await Future.wait(summaryFutures);
+      // 3a. Meal-wise attendance summaries — reuse GET /attendance/meal-summary
+      // for each active meal today. Fixes Issue 1 (the group /attendance/summary
+      // endpoint resolved userId to the admin's OWN id -> always 0) and powers
+      // meal-wise present/absent + preference breakdown (Issue 5).
+      _mealSummaries.clear();
+      final mealSummaryFutures = _todayMeals
+          .map((m) => _attendanceRepo.getMealAttendanceSummary(
+                organizationId: organizationId,
+                mealId: m.id,
+                date: today,
+              ))
+          .toList();
+      final mealSummaryResults = await Future.wait(mealSummaryFutures);
+      for (var i = 0; i < _todayMeals.length; i++) {
+        if (mealSummaryResults[i] case Ok(:final value)) {
+          _mealSummaries[_todayMeals[i].id] = value;
+        }
+      }
 
+      // Derive per-group present/absent/total by summing meal-wise counts.
       int present = 0;
       int absent = 0;
       int total = 0;
       _presentByGroup.clear();
       _absentByGroup.clear();
       _totalByGroup.clear();
-      for (var i = 0; i < summaryResults.length; i++) {
-        final groupId = _groups[i].id;
-        if (summaryResults[i] case Ok(:final value)) {
-          final gTotal =
-              value.presentCount + value.absentCount + value.pendingCount;
-          _presentByGroup[groupId] = value.presentCount;
-          _absentByGroup[groupId] = value.absentCount;
-          _totalByGroup[groupId] = gTotal;
-          present += value.presentCount;
-          absent += value.absentCount;
-          total += gTotal;
-        }
+      for (final m in _todayMeals) {
+        final s = _mealSummaries[m.id];
+        if (s == null) continue;
+        final gTotal = s.presentCount + s.absentCount + s.skippedCount;
+        _presentByGroup[m.groupId] =
+            (_presentByGroup[m.groupId] ?? 0) + s.presentCount;
+        _absentByGroup[m.groupId] =
+            (_absentByGroup[m.groupId] ?? 0) + s.absentCount;
+        _totalByGroup[m.groupId] =
+            (_totalByGroup[m.groupId] ?? 0) + gTotal;
+        present += s.presentCount;
+        absent += s.absentCount;
+        total += gTotal;
       }
       _presentToday = present;
       _absentToday = absent;

@@ -50,6 +50,8 @@ class MealConfigProvider extends ChangeNotifier {
 
   bool _mealsEnabled = true;
   bool _preferencesEnabled = false;
+  // Additive: per-group meal pricing toggle.
+  bool _mealPricingEnabled = false;
   // Enhancement 3: per-group 'Continue Recurring Weekly Menu' toggle.
   bool _autoContinueLastWeek = false;
 
@@ -64,6 +66,7 @@ class MealConfigProvider extends ChangeNotifier {
   MealScheduleModel? get weekSchedule => _weekSchedule;
   bool get mealsEnabled => _mealsEnabled;
   bool get preferencesEnabled => _preferencesEnabled;
+  bool get mealPricingEnabled => _mealPricingEnabled;
   bool get autoContinueLastWeek => _autoContinueLastWeek;
 
   // ── Load ──────────────────────────────────────────────────────────────────
@@ -99,6 +102,7 @@ class MealConfigProvider extends ChangeNotifier {
     _selectedGroup = group;
     _mealsEnabled = group.mealConfig.mealsEnabled;
     _preferencesEnabled = group.mealConfig.preferencesEnabled;
+    _mealPricingEnabled = group.mealConfig.mealPricingEnabled;
     notifyListeners();
     await _loadMeals(
       organizationId: organizationId,
@@ -114,6 +118,7 @@ class MealConfigProvider extends ChangeNotifier {
     _selectedGroup = group;
     _mealsEnabled = group.mealConfig.mealsEnabled;
     _preferencesEnabled = group.mealConfig.preferencesEnabled;
+    _mealPricingEnabled = group.mealConfig.mealPricingEnabled;
     await _loadMeals(
       organizationId: organizationId,
       groupId: group.id,
@@ -290,6 +295,7 @@ class MealConfigProvider extends ChangeNotifier {
     List<String> menuItems = const [],
     List<String> availablePreferences = const [],
     List<Uint8List> imageBytes = const [],
+    int? price,
   }) async {
     _isSaving = true;
     _error = null;
@@ -315,6 +321,7 @@ class MealConfigProvider extends ChangeNotifier {
       menuItems: menuItems,
       availablePreferences: availablePreferences,
       imageBytes: safeImages,
+      price: price,
     );
 
     switch (result) {
@@ -343,6 +350,7 @@ class MealConfigProvider extends ChangeNotifier {
     MealAttendanceWindow? attendanceWindow,
     bool? isActive,
     List<Uint8List>? imageBytes,
+    int? price,
   }) async {
     _isSaving = true;
     _error = null;
@@ -370,6 +378,7 @@ class MealConfigProvider extends ChangeNotifier {
       attendanceWindow: attendanceWindow,
       isActive: isActive,
       imageBytes: safeImages ?? imageBytes,
+      price: price,
     );
 
     switch (result) {
@@ -500,6 +509,42 @@ class MealConfigProvider extends ChangeNotifier {
     }
   }
 
+  /// Additive: toggle the per-group meal pricing setting. When OFF, price UI
+  /// disappears everywhere; when ON, price fields appear in master/planner/student.
+  Future<bool> toggleMealPricing({
+    required String organizationId,
+    required String groupId,
+    required bool enabled,
+  }) async {
+    if (_selectedGroup == null) return false;
+    _isSaving = true;
+    notifyListeners();
+
+    final updatedConfig = _selectedGroup!.mealConfig.copyWith(
+      mealPricingEnabled: enabled,
+    );
+
+    final result = await _groupRepo.updateGroup(
+      organizationId: organizationId,
+      groupId: groupId,
+      mealConfig: updatedConfig,
+    );
+
+    switch (result) {
+      case Ok(:final value):
+        _selectedGroup = value;
+        _mealPricingEnabled = enabled;
+        _isSaving = false;
+        notifyListeners();
+        return true;
+      case Err(:final failure):
+        _error = failure.message;
+        _isSaving = false;
+        notifyListeners();
+        return false;
+    }
+  }
+
   // ── Schedule ──────────────────────────────────────────────────────────────
 
   /// Persists the current draft to the backend (create if new, else update),
@@ -532,6 +577,19 @@ class MealConfigProvider extends ChangeNotifier {
     }
   }
 
+  /// Issue 2: when the backend rejects a publish/edit because the schedule is
+  /// ALREADY published (local state optimistically flipped to draft after an
+  /// edit, desyncing from the server), sync the local copy back to published.
+  /// This makes the green "Published" banner and the "Revert to Draft" menu
+  /// appear immediately, instead of needing a navigate-away-and-back reload.
+  void _syncPublishedIfServerRejected(String? message) {
+    final sched = _weekSchedule;
+    if (sched == null || sched.isPublished) return;
+    if ((message ?? '').toLowerCase().contains('publish')) {
+      _weekSchedule = sched.copyWith(isPublished: true);
+    }
+  }
+
   Future<bool> publishSchedule({
     required String organizationId,
     required String groupId,
@@ -555,6 +613,7 @@ class MealConfigProvider extends ChangeNotifier {
         scheduleId = value.id;
       case Err(:final failure):
         _error = failure.message;
+        _syncPublishedIfServerRejected(failure.message);
         _isSaving = false;
         notifyListeners();
         return false;
@@ -585,6 +644,7 @@ class MealConfigProvider extends ChangeNotifier {
         return true;
       case Err(:final failure):
         _error = failure.message;
+        _syncPublishedIfServerRejected(failure.message);
         _isSaving = false;
         notifyListeners();
         return false;
@@ -660,6 +720,7 @@ class MealConfigProvider extends ChangeNotifier {
                 menuItems: m.menuItems,
                 preferencesEnabled: m.preferencesEnabled,
                 enabledPreferences: m.enabledPreferences,
+                price: m.price,
               ))
           .toList()
         ..sort((a, b) => a.order.compareTo(b.order));
@@ -694,6 +755,8 @@ class MealConfigProvider extends ChangeNotifier {
     String? closeTime,
     bool? preferencesEnabled,
     List<String>? enabledPreferences,
+    int? price,
+    bool clearPrice = false,
   }) {
     if (_weekSchedule == null) return;
 
@@ -713,6 +776,7 @@ class MealConfigProvider extends ChangeNotifier {
           closeTime: closeTime ?? entry.closeTime,
           preferencesEnabled: preferencesEnabled ?? entry.preferencesEnabled,
           enabledPreferences: enabledPreferences ?? entry.enabledPreferences,
+          price: clearPrice ? null : (price ?? entry.price),
         );
       }).toList();
 
@@ -815,6 +879,7 @@ class MealConfigProvider extends ChangeNotifier {
             menuItems: List<String>.from(meal.menuItems),
             preferencesEnabled: meal.preferencesEnabled,
             enabledPreferences: meal.enabledPreferences,
+            price: meal.price,
           ));
           entries.sort((a, b) => a.order.compareTo(b.order));
         }
@@ -861,6 +926,7 @@ class MealConfigProvider extends ChangeNotifier {
               closeTime: e.closeTime,
               preferencesEnabled: e.preferencesEnabled,
               enabledPreferences: e.enabledPreferences,
+              price: e.price,
             ))
         .toList();
 

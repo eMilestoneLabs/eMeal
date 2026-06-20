@@ -40,6 +40,7 @@ abstract final class RouteNames {
   static const String adminGroups = '/admin/groups';
   static const String adminGroupDetail = '/admin/groups/:groupId';
   static const String adminExports = '/admin/exports';
+  static const String adminBilling = '/admin/billing';
   static const String adminSettings = '/admin/settings';
   static const String adminProfile = '/admin/profile';
   static const String adminMore = '/admin/more';

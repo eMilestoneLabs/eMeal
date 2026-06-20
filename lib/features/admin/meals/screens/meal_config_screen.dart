@@ -189,6 +189,24 @@ class _MealConfigScreenState extends State<MealConfigScreen> {
                                 enabled: v,
                               ),
                     ),
+                    const SizedBox(height: 12),
+
+                    // ── Meal pricing toggle ────────────────────────────────
+                    _ToggleTile(
+                      icon: Icons.payments_rounded,
+                      title: 'Enable Meal Pricing',
+                      subtitle: _provider.mealPricingEnabled
+                          ? 'Meals carry a ₹ price — shown to members & used for billing'
+                          : 'No pricing — members see meals without a price',
+                      value: _provider.mealPricingEnabled,
+                      onChanged: _provider.isSaving
+                          ? null
+                          : (v) => _provider.toggleMealPricing(
+                                organizationId: _orgId,
+                                groupId: _provider.selectedGroup!.id,
+                                enabled: v,
+                              ),
+                    ),
                     const SizedBox(height: 24),
 
                     // ── Meal list ──────────────────────────────────────────
@@ -305,6 +323,7 @@ class _MealConfigScreenState extends State<MealConfigScreen> {
                 // Inherit global preference state — new meals default ON
                 // when the group's preference toggle is already enabled.
                 initialPreferencesEnabled: _provider.preferencesEnabled,
+                pricingEnabled: _provider.mealPricingEnabled,
                 onSave: (data) async {
                   final group = _provider.selectedGroup;
                   if (group == null) return;
@@ -324,6 +343,7 @@ class _MealConfigScreenState extends State<MealConfigScreen> {
                     menuItems: data.menuItems,
                     availablePreferences: data.enablePreferences,
                     imageBytes: data.imageBytes,
+                    price: data.price,
                   );
                   if (mounted) nav.pop();
                 },
@@ -367,6 +387,7 @@ class _MealConfigScreenState extends State<MealConfigScreen> {
               MealConfigForm(
                 initialMeal: meal,
                 isSaving: _provider.isSaving,
+                pricingEnabled: _provider.mealPricingEnabled,
                 onSave: (data) async {
                   // Capture navigator before async gap.
                   final nav = Navigator.of(context);
@@ -385,6 +406,7 @@ class _MealConfigScreenState extends State<MealConfigScreen> {
                     imageBytes: data.imageBytes.isNotEmpty
                         ? data.imageBytes
                         : null,
+                    price: data.price,
                   );
                   if (mounted) nav.pop();
                 },
@@ -572,6 +594,17 @@ class _MealTile extends StatelessWidget {
                         style: TextStyle(
                           fontSize: 11,
                           color: colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ],
+                    if (meal.price != null) ...[
+                      const SizedBox(width: 8),
+                      Text(
+                        '₹${meal.price}',
+                        style: const TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w700,
+                          color: AppColors.primary,
                         ),
                       ),
                     ],

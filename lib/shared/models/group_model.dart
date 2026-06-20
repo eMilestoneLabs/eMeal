@@ -165,6 +165,7 @@ class GroupMealConfig extends Equatable {
     this.preferencesEnabled = false,
     this.enabledPreferences = const [],
     this.vacationModeEnabled = false,
+    this.mealPricingEnabled = false,
   });
 
   final bool mealsEnabled;
@@ -181,6 +182,10 @@ class GroupMealConfig extends Equatable {
   final List<MealPreferenceOption> enabledPreferences;
   final bool vacationModeEnabled;
 
+  /// Additive: when true, meals carry a ₹ price shown to students and used for
+  /// billing/exports. When false, no price UI appears anywhere.
+  final bool mealPricingEnabled;
+
   factory GroupMealConfig.fromJson(Map<String, dynamic> j) => GroupMealConfig(
         mealsEnabled: j['mealsEnabled'] ?? true,
         weeklyMenuEnabled: j['weeklyMenuEnabled'] ?? true,
@@ -192,6 +197,7 @@ class GroupMealConfig extends Equatable {
               .toList(),
         ),
         vacationModeEnabled: j['vacationModeEnabled'] ?? false,
+        mealPricingEnabled: j['mealPricingEnabled'] ?? false,
       );
 
   Map<String, dynamic> toJson() => {
@@ -201,6 +207,7 @@ class GroupMealConfig extends Equatable {
         'preferencesEnabled': preferencesEnabled,
         'enabledPreferences': enabledPreferences.map((e) => e.name).toList(),
         'vacationModeEnabled': vacationModeEnabled,
+        'mealPricingEnabled': mealPricingEnabled,
       };
 
   GroupMealConfig copyWith({
@@ -210,6 +217,7 @@ class GroupMealConfig extends Equatable {
     bool? preferencesEnabled,
     List<MealPreferenceOption>? enabledPreferences,
     bool? vacationModeEnabled,
+    bool? mealPricingEnabled,
   }) =>
       GroupMealConfig(
         mealsEnabled: mealsEnabled ?? this.mealsEnabled,
@@ -218,6 +226,7 @@ class GroupMealConfig extends Equatable {
         preferencesEnabled: preferencesEnabled ?? this.preferencesEnabled,
         enabledPreferences: enabledPreferences ?? this.enabledPreferences,
         vacationModeEnabled: vacationModeEnabled ?? this.vacationModeEnabled,
+        mealPricingEnabled: mealPricingEnabled ?? this.mealPricingEnabled,
       );
 
   @override
@@ -228,6 +237,7 @@ class GroupMealConfig extends Equatable {
         preferencesEnabled,
         enabledPreferences,
         vacationModeEnabled,
+        mealPricingEnabled,
       ];
 }
 

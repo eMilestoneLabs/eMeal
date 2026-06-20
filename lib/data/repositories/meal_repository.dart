@@ -113,6 +113,7 @@ class MealRepository implements IMealRepository {
     List<String> menuItems = const [],
     List<String> availablePreferences = const [],
     List<Uint8List> imageBytes = const [],
+    int? price,
   }) async {
     if (!_isMock) {
       // B10 LIVE: POST /meals — CreateMealDto whitelist only.
@@ -130,6 +131,7 @@ class MealRepository implements IMealRepository {
           'menuItems': menuItems,
           'preferencesEnabled': availablePreferences.isNotEmpty,
           'enabledPreferences': availablePreferences,
+          if (price != null) 'price': price,
         },
       );
       return switch (result) {
@@ -153,6 +155,7 @@ class MealRepository implements IMealRepository {
         imageBytes: imageBytes,
         enabledPreferences: availablePreferences,
         preferencesEnabled: availablePreferences.isNotEmpty,
+        price: price,
         createdAt: DateTime.now(),
       );
       _mealsStore.add(meal);
@@ -174,6 +177,7 @@ class MealRepository implements IMealRepository {
     MealAttendanceWindow? attendanceWindow,
     bool? isActive,
     List<Uint8List>? imageBytes,
+    int? price,
   }) async {
     if (!_isMock) {
       // B10 LIVE: PATCH /meals/:id — UpdateMealDto partial update.
@@ -191,6 +195,7 @@ class MealRepository implements IMealRepository {
             'enabledPreferences': availablePreferences,
             'preferencesEnabled': availablePreferences.isNotEmpty,
           },
+          if (price != null) 'price': price,
         },
       );
       return switch (result) {
@@ -211,6 +216,7 @@ class MealRepository implements IMealRepository {
       isActive: isActive,
       imageBytes: imageBytes,
       enabledPreferences: availablePreferences,
+      price: price,
     );
     _mealsStore[idx] = updated;
     return Ok(updated);
@@ -310,6 +316,8 @@ class MealRepository implements IMealRepository {
             // Issue 2: persist per-day menu items so they survive publish and
             // show to students + admin (independent of the master meal menu).
             'menuItems': e.menuItems,
+            // Additive: per-day ₹ price override (null = inherit master price).
+            if (e.price != null) 'price': e.price,
           });
         }
       }

@@ -9,6 +9,7 @@ import 'package:smart_meal_management/features/admin/dashboard/widgets/quick_act
 import 'package:smart_meal_management/features/admin/dashboard/widgets/stats_summary_row.dart';
 import 'package:smart_meal_management/shared/models/attendance_model.dart';
 import 'package:smart_meal_management/shared/models/group_model.dart';
+import 'package:smart_meal_management/shared/models/meal_attendance_summary.dart';
 import 'package:smart_meal_management/shared/models/meal_model.dart';
 import 'package:smart_meal_management/shared/widgets/app_section_title.dart';
 import 'package:smart_meal_management/features/auth/providers/auth_provider.dart';
@@ -129,6 +130,9 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                   attendanceRate: _provider.attendanceRate,
                 ),
 
+                // ── Meal-wise attendance + preference breakdown (Issue 5) ────
+                _MealWiseBreakdown(provider: _provider),
+
                 const SizedBox(height: 22),
 
                 // ── Quick actions ────────────────────────────────────────────
@@ -146,9 +150,6 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                   ),
                   const SizedBox(height: 12),
                   _RecentActivityCard(records: _provider.recentActivity),
-                  const SizedBox(height: 14),
-                  _PreferenceBreakdownCard(
-                      records: _provider.recentActivity),
                   const SizedBox(height: 22),
                 ],
 
@@ -242,46 +243,59 @@ class _MealWindowAlertCard extends StatelessWidget {
   }
 }
 
-// ── Preference breakdown card ─────────────────────────────────────────────────
+// ── Meal-wise breakdown (Issue 5) ───────────────────────────────────────────────
 
-/// Compact tag-wise attendance breakdown derived from [records].
+/// Per-meal-slot attendance + preference breakdown for the selected group.
 ///
-/// Only shows when at least one present record carries a preference tag.
-/// Aggregates counts per tag and renders horizontal scrolling chips.
-class _PreferenceBreakdownCard extends StatelessWidget {
-  const _PreferenceBreakdownCard({required this.records});
-  final List<AttendanceModel> records;
-
-  Map<String, int> _buildCounts() {
-    final counts = <String, int>{};
-    for (final r in records) {
-      if (r.status == AttendanceStatus.present &&
-          r.preference != null &&
-          r.preference!.isNotEmpty) {
-        counts[r.preference!] = (counts[r.preference!] ?? 0) + 1;
-      }
-    }
-    return counts;
-  }
+/// Each meal slot shows its OWN Present / Absent / Skipped counts and its OWN
+/// preference tags — counts reset for every slot so the admin can plan how much
+/// food to prepare per meal (not a combined daily total). Data comes from the
+/// existing GET /attendance/meal-summary endpoint via [AdminDashboardProvider].
+class _MealWiseBreakdown extends StatelessWidget {
+  const _MealWiseBreakdown({required this.provider});
+  final AdminDashboardProvider provider;
 
   @override
   Widget build(BuildContext context) {
-    final counts = _buildCounts();
-    if (counts.isEmpty) return const SizedBox.shrink();
+    final meals = provider.selectedGroupTodayMeals;
+    if (meals.isEmpty) return const SizedBox.shrink();
 
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const SizedBox(height: 22),
+        const AppSectionTitle(
+          title: 'Meal-wise Attendance',
+          subtitle: 'Present, absent & preferences per meal slot',
+        ),
+        const SizedBox(height: 12),
+        ...meals.map((m) {
+          final summary = provider.mealSummary(m.id);
+          return Padding(
+            padding: const EdgeInsets.only(bottom: 10),
+            child: _MealSummaryCard(meal: m, summary: summary),
+          );
+        }),
+      ],
+    );
+  }
+}
+
+class _MealSummaryCard extends StatelessWidget {
+  const _MealSummaryCard({required this.meal, required this.summary});
+  final MealModel meal;
+  final MealAttendanceSummary? summary;
+
+  @override
+  Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final sorted = counts.entries.toList()
-      ..sort((a, b) => b.value.compareTo(a.value));
+    final present = summary?.presentCount ?? 0;
+    final absent = summary?.absentCount ?? 0;
+    final skipped = summary?.skippedCount ?? 0;
+    final prefs = summary?.preferenceBreakdown ?? const <String, int>{};
 
-    // Cycle through accent colours for each tag
-    final palette = [
-      AppColors.primary,
-      AppColors.secondary,
-      AppColors.violet,
-      AppColors.warning,
-      AppColors.info,
-      AppColors.absent,
-    ];
+    final sortedPrefs = prefs.entries.toList()
+      ..sort((a, b) => b.value.compareTo(a.value));
 
     return Container(
       padding: const EdgeInsets.all(14),
@@ -295,66 +309,101 @@ class _PreferenceBreakdownCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          // Meal name
           Row(
             children: [
-              const Icon(Icons.local_offer_rounded,
-                  size: 15, color: AppColors.primary),
-              const SizedBox(width: 6),
-              Text(
-                'Preference Breakdown',
-                style: AppTypography.labelMedium
-                    .copyWith(fontWeight: FontWeight.w700),
+              Icon(MealModel.slotIcon(meal.slotKey),
+                  size: 16, color: AppColors.primary),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  meal.name,
+                  style: AppTypography.labelMedium
+                      .copyWith(fontWeight: FontWeight.w700),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
               ),
-              const Spacer(),
-              Text(
-                '${records.where((r) => r.status == AttendanceStatus.present && r.preference != null).length} tagged',
-                style: AppTypography.bodySmall
-                    .copyWith(color: AppColors.textTertiary),
-              ),
+              // Additive: effective (per-day) price when pricing is enabled.
+              if (meal.price != null)
+                Text(
+                  '₹${meal.price}',
+                  style: AppTypography.labelMedium.copyWith(
+                    fontWeight: FontWeight.w800,
+                    color: AppColors.primary,
+                  ),
+                ),
             ],
           ),
           const SizedBox(height: 10),
-          SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: Row(
-              children: sorted.indexed.map((entry) {
-                final (i, e) = entry;
-                final color = palette[i % palette.length];
+          // Present / Absent / Skipped counts
+          Row(
+            children: [
+              _CountPill(
+                  label: 'Present', value: present, color: AppColors.present),
+              const SizedBox(width: 8),
+              _CountPill(
+                  label: 'Absent', value: absent, color: AppColors.absent),
+              const SizedBox(width: 8),
+              _CountPill(
+                  label: 'Skipped', value: skipped, color: AppColors.skipped),
+            ],
+          ),
+          // Per-meal preference breakdown
+          if (sortedPrefs.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                const Icon(Icons.local_offer_rounded,
+                    size: 13, color: AppColors.primary),
+                const SizedBox(width: 5),
+                Text(
+                  'Preferences',
+                  style: AppTypography.labelSmall
+                      .copyWith(fontWeight: FontWeight.w700),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 6,
+              runSpacing: 6,
+              children: sortedPrefs.map((e) {
+                final disp = MealPreferenceOption.display(e.key);
+                final label =
+                    disp.emoji.isEmpty ? disp.label : '${disp.emoji} ${disp.label}';
                 return Container(
-                  margin: const EdgeInsets.only(right: 8),
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 12, vertical: 7),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                   decoration: BoxDecoration(
-                    color: color.withValues(alpha: 0.09),
+                    color: AppColors.primary.withValues(alpha: 0.08),
                     borderRadius: BorderRadius.circular(20),
                     border: Border.all(
-                        color: color.withValues(alpha: 0.25)),
+                        color: AppColors.primary.withValues(alpha: 0.2)),
                   ),
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       Text(
-                        e.key,
-                        style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w700,
-                          color: color,
+                        label,
+                        style: AppTypography.labelSmall.copyWith(
+                          fontWeight: FontWeight.w600,
+                          color: AppColors.primary,
                         ),
                       ),
                       const SizedBox(width: 6),
                       Container(
                         padding: const EdgeInsets.symmetric(
-                            horizontal: 6, vertical: 2),
+                            horizontal: 6, vertical: 1),
                         decoration: BoxDecoration(
-                          color: color.withValues(alpha: 0.15),
+                          color: AppColors.primary.withValues(alpha: 0.16),
                           borderRadius: BorderRadius.circular(10),
                         ),
                         child: Text(
                           '${e.value}',
-                          style: TextStyle(
-                            fontSize: 11,
+                          style: AppTypography.labelSmall.copyWith(
                             fontWeight: FontWeight.w800,
-                            color: color,
+                            color: AppColors.primary,
                           ),
                         ),
                       ),
@@ -363,8 +412,44 @@ class _PreferenceBreakdownCard extends StatelessWidget {
                 );
               }).toList(),
             ),
-          ),
+          ],
         ],
+      ),
+    );
+  }
+}
+
+class _CountPill extends StatelessWidget {
+  const _CountPill(
+      {required this.label, required this.value, required this.color});
+  final String label;
+  final int value;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Expanded(
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 8),
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: 0.09),
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: color.withValues(alpha: 0.2)),
+        ),
+        child: Column(
+          children: [
+            Text(
+              '$value',
+              style: AppTypography.titleSmall
+                  .copyWith(fontWeight: FontWeight.w800, color: color),
+            ),
+            const SizedBox(height: 2),
+            Text(
+              label,
+              style: AppTypography.labelSmall.copyWith(color: color),
+            ),
+          ],
+        ),
       ),
     );
   }

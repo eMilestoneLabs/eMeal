@@ -1,26 +1,75 @@
 import 'dart:io';
+import 'package:excel/excel.dart' as xls;
 import 'package:path_provider/path_provider.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:share_plus/share_plus.dart';
+import 'package:smart_meal_management/data/services/billing_service.dart';
 import 'package:smart_meal_management/features/events/models/event_guest_party.dart';
 import 'package:smart_meal_management/shared/models/attendance_model.dart';
+import 'package:smart_meal_management/shared/models/meal_model.dart';
 
-/// Service that builds PDF or CSV exports of attendance records and shares
-/// them via the platform share sheet ([share_plus]).
+/// Builds PDF / CSV / Excel exports of attendance + billing and shares them via
+/// the platform share sheet ([share_plus]).
+///
+/// Columns (req 5): Name | Group | Meal | Status | Preference | Price Tag |
+/// Date | Attendance Marked Time. A per-member billing summary (req 8) is
+/// appended. Un-marked closed windows appear as virtual Skipped @ closeTime
+/// (req 6) via [BillingService]. Excel writes datetime as text so it never
+/// renders as `#####` (req 9).
 class ExportService {
   ExportService._();
 
   static final ExportService instance = ExportService._();
 
+  // ── Shared row/column helpers ───────────────────────────────────────────────
+
+  List<String> _headers(bool pricingEnabled) => [
+        'Name',
+        'Group',
+        'Meal',
+        'Status',
+        'Preference',
+        if (pricingEnabled) 'Price Tag',
+        'Date',
+        'Attendance Marked Time',
+      ];
+
+  List<String> _rowCells(
+    BillingRow r,
+    String groupName,
+    bool pricingEnabled,
+  ) {
+    return [
+      r.userName,
+      groupName,
+      r.mealName,
+      _statusLabel(r.status),
+      r.preference ?? '',
+      if (pricingEnabled) (r.price != null ? '₹${r.price}' : ''),
+      _formatDate(r.date),
+      r.markedAt != null ? _formatDateTime(r.markedAt!) : '',
+    ];
+  }
+
   // ── PDF ────────────────────────────────────────────────────────────────────
 
-  /// Generates a PDF attendance report and opens the share sheet.
   Future<void> exportPdf({
     required List<AttendanceModel> records,
+    required List<MealModel> meals,
     required String groupName,
+    required bool pricingEnabled,
+    required DateTime from,
+    required DateTime to,
     String? dateRangeLabel,
   }) async {
+    final rows = BillingService.buildRows(
+      records: records,
+      meals: meals,
+      from: from,
+      to: to,
+    );
+    final summaries = BillingService.summarize(rows);
     final pdf = pw.Document();
 
     pdf.addPage(
@@ -32,10 +81,7 @@ class ExportService {
           children: [
             pw.Text(
               'MealAttend — Attendance Report',
-              style: pw.TextStyle(
-                fontSize: 18,
-                fontWeight: pw.FontWeight.bold,
-              ),
+              style: pw.TextStyle(fontSize: 18, fontWeight: pw.FontWeight.bold),
             ),
             pw.SizedBox(height: 4),
             pw.Text(
@@ -52,100 +98,190 @@ class ExportService {
         ),
         build: (context) => [
           pw.TableHelper.fromTextArray(
-            // Issue #11: every record carries Student + Group + Meal identity.
-            headers: const [
-              'Student',
-              'Group',
-              'Meal',
-              'Status',
-              'Preference',
-              'Date',
-              'Marked Time',
-            ],
-            data: records.map((r) => [
-              r.userName ?? r.userId,
-              groupName,
-              r.mealName ?? '—',
-              _statusLabel(r.status),
-              r.preference ?? '—',
-              _formatDate(r.date),
-              r.markedAt != null ? _formatDateTime(r.markedAt!) : '—',
-            ]).toList(),
-            headerStyle: pw.TextStyle(
-              fontWeight: pw.FontWeight.bold,
-              fontSize: 10,
-            ),
-            cellStyle: const pw.TextStyle(fontSize: 9),
-            headerDecoration: const pw.BoxDecoration(
-              color: PdfColors.indigo100,
-            ),
-            rowDecoration: const pw.BoxDecoration(),
-            oddRowDecoration: const pw.BoxDecoration(
-              color: PdfColors.grey100,
-            ),
-            border: pw.TableBorder.all(
-              color: PdfColors.grey400,
-              width: 0.5,
-            ),
+            headers: _headers(pricingEnabled),
+            data: rows
+                .map((r) => _rowCells(r, groupName, pricingEnabled))
+                .toList(),
+            headerStyle:
+                pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 9),
+            cellStyle: const pw.TextStyle(fontSize: 8),
+            headerDecoration:
+                const pw.BoxDecoration(color: PdfColors.indigo100),
+            oddRowDecoration:
+                const pw.BoxDecoration(color: PdfColors.grey100),
+            border: pw.TableBorder.all(color: PdfColors.grey400, width: 0.5),
           ),
+          pw.SizedBox(height: 18),
+          pw.Text(
+            'Billing Summary',
+            style: pw.TextStyle(fontSize: 14, fontWeight: pw.FontWeight.bold),
+          ),
+          pw.SizedBox(height: 8),
+          ...summaries.map((s) => _pdfSummaryBlock(s, pricingEnabled)),
         ],
       ),
     );
 
-    final bytes = await pdf.save();
-    final dir = await getTemporaryDirectory();
-    final fileName =
-        'attendance_${groupName.replaceAll(' ', '_')}_${DateTime.now().millisecondsSinceEpoch}.pdf';
-    final file = File('${dir.path}/$fileName');
-    await file.writeAsBytes(bytes);
+    await _shareBytes(
+      await pdf.save(),
+      'attendance_${_safe(groupName)}_${_stamp()}.pdf',
+      'Attendance Report — $groupName',
+    );
+  }
 
-    await Share.shareXFiles(
-      [XFile(file.path)],
-      subject: 'Attendance Report — $groupName',
+  pw.Widget _pdfSummaryBlock(BillingSummary s, bool pricingEnabled) {
+    final consumed = s.consumedByMeal.entries
+        .map((e) => '${e.key}: ${e.value}')
+        .join('   ·   ');
+    return pw.Container(
+      margin: const pw.EdgeInsets.only(bottom: 10),
+      padding: const pw.EdgeInsets.all(8),
+      decoration: pw.BoxDecoration(
+        border: pw.Border.all(color: PdfColors.grey400, width: 0.5),
+        borderRadius: pw.BorderRadius.circular(4),
+      ),
+      child: pw.Column(
+        crossAxisAlignment: pw.CrossAxisAlignment.start,
+        children: [
+          pw.Text(s.userName,
+              style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 11)),
+          pw.SizedBox(height: 2),
+          if (consumed.isNotEmpty)
+            pw.Text(consumed, style: const pw.TextStyle(fontSize: 9)),
+          pw.SizedBox(height: 2),
+          pw.Text(
+            'Present: ${s.present}   Skipped: ${s.skipped}   Absent: ${s.absent}   Total meals: ${s.totalMeals}',
+            style: const pw.TextStyle(fontSize: 9),
+          ),
+          if (pricingEnabled) ...[
+            pw.SizedBox(height: 2),
+            pw.Text(
+              'Total Bill: ₹${s.totalBill}',
+              style:
+                  pw.TextStyle(fontSize: 11, fontWeight: pw.FontWeight.bold),
+            ),
+          ],
+        ],
+      ),
     );
   }
 
   // ── CSV ────────────────────────────────────────────────────────────────────
 
-  /// Generates a CSV attendance export and opens the share sheet.
   Future<void> exportCsv({
     required List<AttendanceModel> records,
+    required List<MealModel> meals,
     required String groupName,
+    required bool pricingEnabled,
+    required DateTime from,
+    required DateTime to,
     String? dateRangeLabel,
   }) async {
+    final rows = BillingService.buildRows(
+        records: records, meals: meals, from: from, to: to);
+    final summaries = BillingService.summarize(rows);
     final buffer = StringBuffer();
 
-    // Header — Issue #11: human-readable identity columns.
-    buffer.writeln(
-        'Student Name,Group Name,Meal Name,Status,Preference,Date,Marked Time');
+    buffer.writeln(_headers(pricingEnabled).map(_csvEscape).join(','));
+    for (final r in rows) {
+      buffer.writeln(_rowCells(r, groupName, pricingEnabled)
+          .map(_csvEscape)
+          .join(','));
+    }
 
-    for (final r in records) {
-      buffer.writeln([
-        _csvEscape(r.userName ?? r.userId),
-        _csvEscape(groupName),
-        _csvEscape(r.mealName ?? ''),
-        _statusLabel(r.status),
-        _csvEscape(r.preference ?? ''),
-        _formatDate(r.date),
-        r.markedAt != null ? _formatDateTime(r.markedAt!) : '',
-      ].join(','));
+    buffer.writeln();
+    buffer.writeln('Billing Summary');
+    for (final s in summaries) {
+      buffer.writeln(_csvEscape(s.userName));
+      final consumed =
+          s.consumedByMeal.entries.map((e) => '${e.key}: ${e.value}');
+      for (final c in consumed) {
+        buffer.writeln(',${_csvEscape(c)}');
+      }
+      buffer.writeln(
+          ',Present: ${s.present},Skipped: ${s.skipped},Absent: ${s.absent},Total meals: ${s.totalMeals}');
+      if (pricingEnabled) buffer.writeln(',Total Bill: ₹${s.totalBill}');
     }
 
     final dir = await getTemporaryDirectory();
-    final fileName =
-        'attendance_${groupName.replaceAll(' ', '_')}_${DateTime.now().millisecondsSinceEpoch}.csv';
-    final file = File('${dir.path}/$fileName');
+    final file = File(
+        '${dir.path}/attendance_${_safe(groupName)}_${_stamp()}.csv');
     await file.writeAsString(buffer.toString());
+    await Share.shareXFiles([XFile(file.path, mimeType: 'text/csv')],
+        subject: 'Attendance Export — $groupName');
+  }
 
-    await Share.shareXFiles(
-      [XFile(file.path, mimeType: 'text/csv')],
-      subject: 'Attendance Export — $groupName',
+  // ── Excel (.xlsx) ────────────────────────────────────────────────────────────
+
+  /// Real .xlsx export. The Attendance Marked Time is written as TEXT so Excel
+  /// never reformats it to `#####` (req 9) — it shows exactly like the PDF.
+  Future<void> exportXlsx({
+    required List<AttendanceModel> records,
+    required List<MealModel> meals,
+    required String groupName,
+    required bool pricingEnabled,
+    required DateTime from,
+    required DateTime to,
+    String? dateRangeLabel,
+  }) async {
+    final rows = BillingService.buildRows(
+        records: records, meals: meals, from: from, to: to);
+    final summaries = BillingService.summarize(rows);
+
+    final book = xls.Excel.createExcel();
+    final sheetName = 'Attendance';
+    final sheet = book[sheetName];
+
+    sheet.appendRow(
+      _headers(pricingEnabled).map((h) => xls.TextCellValue(h)).toList(),
+    );
+    for (final r in rows) {
+      sheet.appendRow(
+        // All cells as text — keeps date/time human-readable, no #####.
+        _rowCells(r, groupName, pricingEnabled)
+            .map((c) => xls.TextCellValue(c))
+            .toList(),
+      );
+    }
+
+    // Billing summary sheet.
+    final sum = book['Billing Summary'];
+    sum.appendRow([
+      xls.TextCellValue('Name'),
+      xls.TextCellValue('Present'),
+      xls.TextCellValue('Skipped'),
+      xls.TextCellValue('Absent'),
+      xls.TextCellValue('Total Meals'),
+      if (pricingEnabled) xls.TextCellValue('Total Bill'),
+    ]);
+    for (final s in summaries) {
+      sum.appendRow([
+        xls.TextCellValue(s.userName),
+        xls.TextCellValue('${s.present}'),
+        xls.TextCellValue('${s.skipped}'),
+        xls.TextCellValue('${s.absent}'),
+        xls.TextCellValue('${s.totalMeals}'),
+        if (pricingEnabled) xls.TextCellValue('₹${s.totalBill}'),
+      ]);
+    }
+
+    // Remove the default empty sheet excel creates.
+    if (book.sheets.containsKey('Sheet1')) book.delete('Sheet1');
+    book.setDefaultSheet(sheetName);
+
+    final bytes = book.encode();
+    if (bytes == null) {
+      throw Exception('Failed to encode Excel file');
+    }
+    await _shareBytes(
+      bytes,
+      'attendance_${_safe(groupName)}_${_stamp()}.xlsx',
+      'Attendance Export — $groupName',
     );
   }
 
-  // ── Event Guest Export ─────────────────────────────────────────────────────
+  // ── Event Guest Export (unchanged) ──────────────────────────────────────────
 
-  /// Generates a PDF guest report for an event and opens the share sheet.
   Future<void> exportEventGuestsPdf({
     required List<EventGuestParty> parties,
     required String eventName,
@@ -153,7 +289,6 @@ class ExportService {
   }) async {
     final pdf = pw.Document();
 
-    // Flatten all persons for the detailed table
     final rows = <List<String>>[];
     for (final party in parties) {
       for (final person in party.persons) {
@@ -220,20 +355,13 @@ class ExportService {
       ),
     );
 
-    final bytes = await pdf.save();
-    final dir = await getTemporaryDirectory();
-    final fileName =
-        'event_guests_${eventName.replaceAll(' ', '_')}_${DateTime.now().millisecondsSinceEpoch}.pdf';
-    final file = File('${dir.path}/$fileName');
-    await file.writeAsBytes(bytes);
-
-    await Share.shareXFiles(
-      [XFile(file.path)],
-      subject: 'Guest Report — $eventName',
+    await _shareBytes(
+      await pdf.save(),
+      'event_guests_${_safe(eventName)}_${_stamp()}.pdf',
+      'Guest Report — $eventName',
     );
   }
 
-  /// Generates a CSV guest export for an event and opens the share sheet.
   Future<void> exportEventGuestsCsv({
     required List<EventGuestParty> parties,
     required String eventName,
@@ -257,18 +385,25 @@ class ExportService {
     }
 
     final dir = await getTemporaryDirectory();
-    final fileName =
-        'event_guests_${eventName.replaceAll(' ', '_')}_${DateTime.now().millisecondsSinceEpoch}.csv';
-    final file = File('${dir.path}/$fileName');
+    final file =
+        File('${dir.path}/event_guests_${_safe(eventName)}_${_stamp()}.csv');
     await file.writeAsString(buffer.toString());
-
-    await Share.shareXFiles(
-      [XFile(file.path, mimeType: 'text/csv')],
-      subject: 'Guest Export — $eventName',
-    );
+    await Share.shareXFiles([XFile(file.path, mimeType: 'text/csv')],
+        subject: 'Guest Export — $eventName');
   }
 
   // ── Helpers ────────────────────────────────────────────────────────────────
+
+  Future<void> _shareBytes(
+      List<int> bytes, String fileName, String subject) async {
+    final dir = await getTemporaryDirectory();
+    final file = File('${dir.path}/$fileName');
+    await file.writeAsBytes(bytes);
+    await Share.shareXFiles([XFile(file.path)], subject: subject);
+  }
+
+  String _safe(String s) => s.replaceAll(RegExp(r'[^A-Za-z0-9]+'), '_');
+  String _stamp() => DateTime.now().millisecondsSinceEpoch.toString();
 
   String _formatDate(DateTime dt) =>
       '${dt.day.toString().padLeft(2, '0')}/${dt.month.toString().padLeft(2, '0')}/${dt.year}';

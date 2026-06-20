@@ -31,6 +31,7 @@ abstract interface class IMealRepository {
     List<String> menuItems,
     List<String> availablePreferences,
     List<Uint8List> imageBytes,
+    int? price,
   });
 
   /// Update an existing meal.
@@ -45,6 +46,7 @@ abstract interface class IMealRepository {
     MealAttendanceWindow? attendanceWindow,
     bool? isActive,
     List<Uint8List>? imageBytes,
+    int? price,
   });
 
   /// Soft-delete a meal.

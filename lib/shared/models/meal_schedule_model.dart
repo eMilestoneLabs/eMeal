@@ -75,6 +75,7 @@ class DayMealEntry {
     this.closeTime,
     this.preferencesEnabled = false,
     this.enabledPreferences = const [],
+    this.price,
   });
 
   final String mealId;
@@ -96,6 +97,9 @@ class DayMealEntry {
   final bool preferencesEnabled;
   final List<String> enabledPreferences;
 
+  /// Additive: per-day ₹ price override. Null = inherit master meal price.
+  final int? price;
+
   /// True when this entry carries its own time window (overrides template).
   bool get hasCustomTiming => openTime != null && closeTime != null;
 
@@ -110,6 +114,11 @@ class DayMealEntry {
         closeTime: j['closeTime'] as String?,
         preferencesEnabled: j['preferencesEnabled'] ?? false,
         enabledPreferences: List<String>.from(j['enabledPreferences'] ?? []),
+        price: j['price'] is int
+            ? j['price'] as int
+            : (j['price'] != null
+                ? int.tryParse(j['price'].toString())
+                : null),
       );
 
   Map<String, dynamic> toJson() => {
@@ -123,6 +132,7 @@ class DayMealEntry {
         if (closeTime != null) 'closeTime': closeTime,
         'preferencesEnabled': preferencesEnabled,
         'enabledPreferences': enabledPreferences,
+        if (price != null) 'price': price,
       };
 
   DayMealEntry copyWith({
@@ -133,6 +143,7 @@ class DayMealEntry {
     String? closeTime,
     bool? preferencesEnabled,
     List<String>? enabledPreferences,
+    int? price,
   }) =>
       DayMealEntry(
         mealId: mealId,
@@ -145,6 +156,7 @@ class DayMealEntry {
         closeTime: closeTime ?? this.closeTime,
         preferencesEnabled: preferencesEnabled ?? this.preferencesEnabled,
         enabledPreferences: enabledPreferences ?? this.enabledPreferences,
+        price: price ?? this.price,
       );
 }
 

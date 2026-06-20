@@ -450,6 +450,17 @@ class _TodayMealCardState extends State<_TodayMealCard> {
                                   : AppColors.textSecondary,
                             ),
                           ),
+                          // Additive: show meal price before marking attendance.
+                          if (widget.meal.price != null) ...[
+                            const SizedBox(width: 8),
+                            Text(
+                              '• ₹${widget.meal.price}',
+                              style: AppTypography.bodySmall.copyWith(
+                                color: AppColors.primary,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ],
                         ],
                       ),
                     ],
@@ -485,8 +496,9 @@ class _TodayMealCardState extends State<_TodayMealCard> {
               child: Wrap(
                 spacing: AppConstants.space6,
                 runSpacing: 6,
+                // Issue 4: show ALL configured menu items (no 4-item cap) so the
+                // student sees every item the admin added for this meal/day.
                 children: widget.meal.menuItems
-                    .take(4)
                     .map(
                       (item) => Container(
                         padding: const EdgeInsets.symmetric(

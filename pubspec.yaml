@@ -37,6 +37,8 @@ dependencies:
   pdf: ^3.10.0
   path_provider: ^2.1.4
   share_plus: ^10.0.0
+  # Real .xlsx generation (Excel exports with text-formatted datetime)
+  excel: ^4.0.0
 
   # Local notifications — attendance reminders
   flutter_local_notifications: ^17.2.2

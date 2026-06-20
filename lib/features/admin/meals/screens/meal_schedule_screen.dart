@@ -253,6 +253,8 @@ class _MealScheduleScreenState extends State<MealScheduleScreen>
         templatePreferenceOptions: template.enabledPreferences.isNotEmpty
             ? template.enabledPreferences
             : const ['veg', 'chicken', 'fish', 'mutton', 'egg', 'jain'],
+        pricingEnabled: _provider.mealPricingEnabled,
+        templatePrice: template.price,
         onSave: ({
           required String name,
           required List<String> menuItems,
@@ -260,6 +262,7 @@ class _MealScheduleScreenState extends State<MealScheduleScreen>
           String? closeTime,
           required bool preferencesEnabled,
           required List<String> enabledPreferences,
+          int? price,
         }) {
           _provider.updateDayMealEntry(
             day,
@@ -270,6 +273,8 @@ class _MealScheduleScreenState extends State<MealScheduleScreen>
             closeTime: closeTime,
             preferencesEnabled: preferencesEnabled,
             enabledPreferences: enabledPreferences,
+            price: price,
+            clearPrice: price == null,
           );
         },
       ),
@@ -621,6 +626,8 @@ class _DayPlanView extends StatelessWidget {
           dayEntry: dayEntry,
           isEnabled: isEnabled,
           readOnly: readOnly,
+          day: day,
+          isPublished: schedule?.isPublished == true,
           onToggle: onToggle != null
               ? (v) => onToggle!(meal.id, v)
               : null,
@@ -648,6 +655,8 @@ class _MealSlotCard extends StatelessWidget {
     required this.dayEntry,
     required this.isEnabled,
     required this.readOnly,
+    required this.day,
+    required this.isPublished,
     this.onToggle,
     this.onEdit,
   });
@@ -658,6 +667,13 @@ class _MealSlotCard extends StatelessWidget {
   final DayMealEntry? dayEntry;
   final bool isEnabled;
   final bool readOnly;
+
+  /// The weekday this card represents — used for the price-lock indicator.
+  final DayOfWeek day;
+
+  /// Whether the parent schedule is published (prerequisite for a locked price).
+  final bool isPublished;
+
   final ValueChanged<bool>? onToggle;
   final VoidCallback? onEdit;
 
@@ -677,6 +693,29 @@ class _MealSlotCard extends StatelessWidget {
     final displayClose = isEnabled && dayEntry!.closeTime != null
         ? dayEntry!.closeTime!
         : meal.attendanceWindow.closeTime;
+    // Additive: per-day price override falls back to the master meal price.
+    final displayPrice =
+        isEnabled ? (dayEntry!.price ?? meal.price) : meal.price;
+
+    // Issue 3: the price is locked (no longer changeable) once the schedule is
+    // published AND this day's attendance window has opened — past days this
+    // week, or today after its open time. Future days stay editable. The
+    // backend enforces the same rule; this is the visual padlock indicator.
+    bool computePriceLocked() {
+      if (!isPublished || displayPrice == null) return false;
+      final todayIndex =
+          DayOfWeek.fromWeekday(DateTime.now().weekday).index;
+      if (day.index < todayIndex) return true; // earlier this week → closed
+      if (day.index > todayIndex) return false; // upcoming day → editable
+      final parts = displayOpen.split(':'); // today → locked once window opens
+      if (parts.length < 2) return false;
+      final openMinutes = (int.tryParse(parts[0]) ?? 0) * 60 +
+          (int.tryParse(parts[1]) ?? 0);
+      final now = TimeOfDay.now();
+      return now.hour * 60 + now.minute >= openMinutes;
+    }
+
+    final priceLocked = computePriceLocked();
 
     final cardBg = isDark ? AppColors.surfaceDark : AppColors.surface;
     final borderColor = isEnabled
@@ -814,6 +853,24 @@ class _MealSlotCard extends StatelessWidget {
             Row(
               children: [
                 _StatusLabel(isEnabled: isEnabled, isDark: isDark),
+                if (displayPrice != null) ...[
+                  const SizedBox(width: 8),
+                  Text(
+                    '₹$displayPrice',
+                    style: AppTypography.labelSmall.copyWith(
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.primary,
+                    ),
+                  ),
+                  if (priceLocked) ...[
+                    const SizedBox(width: 4),
+                    Icon(
+                      Icons.lock_rounded,
+                      size: 12,
+                      color: AppColors.primary.withValues(alpha: 0.7),
+                    ),
+                  ],
+                ],
                 if (displayItems.isNotEmpty) ...[
                   const Spacer(),
                   Text(
@@ -919,7 +976,7 @@ class _StatusDot extends StatelessWidget {
 
 // ── Menu items preview ─────────────────────────────────────────────────────────
 
-class _MenuItemsPreview extends StatelessWidget {
+class _MenuItemsPreview extends StatefulWidget {
   const _MenuItemsPreview({
     required this.items,
     required this.isDark,
@@ -930,12 +987,24 @@ class _MenuItemsPreview extends StatelessWidget {
   final bool isDark;
   final bool isEnabled;
 
+  @override
+  State<_MenuItemsPreview> createState() => _MenuItemsPreviewState();
+}
+
+class _MenuItemsPreviewState extends State<_MenuItemsPreview> {
   static const _maxVisible = 4;
+
+  // Issue 3: tapping "+X more" expands to show every item (and "Show less"
+  // collapses again). Previously the chip was inert.
+  bool _expanded = false;
 
   @override
   Widget build(BuildContext context) {
-    final visible = items.take(_maxVisible).toList();
-    final overflow = items.length - visible.length;
+    final isDark = widget.isDark;
+    final items = widget.items;
+    final visible =
+        _expanded ? items : items.take(_maxVisible).toList();
+    final overflow = items.length - items.take(_maxVisible).length;
 
     final chipBg = isDark
         ? AppColors.surfaceVariantDark
@@ -970,18 +1039,21 @@ class _MenuItemsPreview extends StatelessWidget {
           ),
         ),
         if (overflow > 0)
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-            decoration: BoxDecoration(
-              color: AppColors.primary.withValues(alpha: 0.1),
-              borderRadius: BorderRadius.circular(20),
-            ),
-            child: Text(
-              '+$overflow more',
-              style: AppTypography.labelSmall.copyWith(
-                fontSize: 11,
-                color: AppColors.primary,
-                fontWeight: FontWeight.w600,
+          GestureDetector(
+            onTap: () => setState(() => _expanded = !_expanded),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(
+                color: AppColors.primary.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: Text(
+                _expanded ? 'Show less' : '+$overflow more',
+                style: AppTypography.labelSmall.copyWith(
+                  fontSize: 11,
+                  color: AppColors.primary,
+                  fontWeight: FontWeight.w600,
+                ),
               ),
             ),
           ),
@@ -1006,6 +1078,8 @@ class _DayMealEditSheet extends StatefulWidget {
     required this.templateOpenTime,
     required this.templateCloseTime,
     required this.templatePreferenceOptions,
+    required this.pricingEnabled,
+    this.templatePrice,
     required this.onSave,
   });
 
@@ -1016,6 +1090,13 @@ class _DayMealEditSheet extends StatefulWidget {
   final String templateOpenTime;
   final String templateCloseTime;
   final List<String> templatePreferenceOptions;
+
+  /// Additive: when true (group pricing ON), a per-day Price (₹) field shows.
+  final bool pricingEnabled;
+
+  /// Master meal price used as the placeholder when no per-day override is set.
+  final int? templatePrice;
+
   final void Function({
     required String name,
     required List<String> menuItems,
@@ -1023,6 +1104,7 @@ class _DayMealEditSheet extends StatefulWidget {
     String? closeTime,
     required bool preferencesEnabled,
     required List<String> enabledPreferences,
+    int? price,
   }) onSave;
 
   @override
@@ -1034,6 +1116,7 @@ class _DayMealEditSheetState extends State<_DayMealEditSheet> {
   late final TextEditingController _itemCtrl;
   late final TextEditingController _openCtrl;
   late final TextEditingController _closeCtrl;
+  late final TextEditingController _priceCtrl;
   late List<String> _menuItems;
   bool _useCustomTiming = false;
   bool _prefsEnabled = false;
@@ -1054,6 +1137,9 @@ class _DayMealEditSheetState extends State<_DayMealEditSheet> {
     _menuItems = List<String>.from(widget.entry.menuItems);
     _prefsEnabled = widget.entry.preferencesEnabled;
     _selectedPrefs = List<String>.from(widget.entry.enabledPreferences);
+    _priceCtrl = TextEditingController(
+      text: widget.entry.price?.toString() ?? '',
+    );
   }
 
   @override
@@ -1062,6 +1148,7 @@ class _DayMealEditSheetState extends State<_DayMealEditSheet> {
     _itemCtrl.dispose();
     _openCtrl.dispose();
     _closeCtrl.dispose();
+    _priceCtrl.dispose();
     super.dispose();
   }
 
@@ -1106,6 +1193,9 @@ class _DayMealEditSheetState extends State<_DayMealEditSheet> {
       preferencesEnabled: _prefsEnabled,
       enabledPreferences:
           _prefsEnabled ? List<String>.from(_selectedPrefs) : <String>[],
+      price: widget.pricingEnabled
+          ? int.tryParse(_priceCtrl.text.trim())
+          : widget.entry.price,
     );
     Navigator.of(context).pop();
   }
@@ -1359,6 +1449,36 @@ class _DayMealEditSheetState extends State<_DayMealEditSheet> {
             ],
 
             const SizedBox(height: 16),
+
+            // ── Per-day price (when group pricing enabled) ───────────────────
+            if (widget.pricingEnabled) ...[
+              Text(
+                'Price for this day (₹)',
+                style: AppTypography.labelMedium.copyWith(
+                  color: isDark
+                      ? AppColors.textPrimaryDark
+                      : AppColors.textPrimary,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(height: 6),
+              TextField(
+                controller: _priceCtrl,
+                keyboardType: TextInputType.number,
+                decoration: InputDecoration(
+                  prefixText: '₹ ',
+                  hintText: widget.templatePrice != null
+                      ? 'Default ₹${widget.templatePrice}'
+                      : 'e.g. 40',
+                  helperText: 'Leave blank to inherit the master meal price.',
+                  border: OutlineInputBorder(
+                    borderRadius:
+                        BorderRadius.circular(AppConstants.inputRadius),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+            ],
 
             // ── Per-day meal preference (#6) ─────────────────────────────────
             Row(

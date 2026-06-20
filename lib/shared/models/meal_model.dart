@@ -25,6 +25,7 @@ class MealModel {
     this.imageBytes = const [],
     this.preferencesEnabled = false,
     this.enabledPreferences = const [],
+    this.price,
     this.createdAt,
     this.isGeneralAttendance = false,
   });
@@ -46,6 +47,10 @@ class MealModel {
   final List<Uint8List> imageBytes;
   final bool preferencesEnabled;
   final List<String> enabledPreferences;
+
+  /// Additive: master ₹ meal price (integer). Null when pricing disabled/unset.
+  final int? price;
+
   final DateTime? createdAt;
 
   /// #9/#10: true for the implicit per-group general-attendance slot returned by
@@ -136,6 +141,11 @@ class MealModel {
         preferencesEnabled: j['preferencesEnabled'] ?? false,
         enabledPreferences:
             List<String>.from(j['enabledPreferences'] ?? []),
+        price: j['price'] is int
+            ? j['price'] as int
+            : (j['price'] != null
+                ? int.tryParse(j['price'].toString())
+                : null),
         createdAt:
             j['createdAt'] != null ? DateTime.parse(j['createdAt']) : null,
         isGeneralAttendance: j['isGeneralAttendance'] == true,
@@ -155,6 +165,7 @@ class MealModel {
         'imageUrl': imageUrl,
         'preferencesEnabled': preferencesEnabled,
         'enabledPreferences': enabledPreferences,
+        'price': price,
         'isGeneralAttendance': isGeneralAttendance,
       };
 
@@ -170,6 +181,7 @@ class MealModel {
     List<Uint8List>? imageBytes,
     bool? preferencesEnabled,
     List<String>? enabledPreferences,
+    int? price,
     bool? isGeneralAttendance,
   }) =>
       MealModel(
@@ -187,6 +199,7 @@ class MealModel {
         imageBytes: imageBytes ?? this.imageBytes,
         preferencesEnabled: preferencesEnabled ?? this.preferencesEnabled,
         enabledPreferences: enabledPreferences ?? this.enabledPreferences,
+        price: price ?? this.price,
         createdAt: createdAt,
         isGeneralAttendance: isGeneralAttendance ?? this.isGeneralAttendance,
       );

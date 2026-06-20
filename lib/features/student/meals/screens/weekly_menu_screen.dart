@@ -409,6 +409,17 @@ class MealDetailScreen extends StatelessWidget {
             ),
             const SizedBox(height: AppConstants.space20),
 
+            // ── Price (additive) ───────────────────────────────────────
+            if (entry.price != null) ...[
+              _InfoRow(
+                icon: Icons.payments_rounded,
+                label: 'Price',
+                value: '₹${entry.price}',
+                isDark: isDark,
+              ),
+              const SizedBox(height: AppConstants.space20),
+            ],
+
             // ── Menu items ─────────────────────────────────────────────
             if (entry.menuItems.isNotEmpty) ...[
               Text(

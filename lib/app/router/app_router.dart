@@ -6,6 +6,7 @@ import 'package:smart_meal_management/features/admin/admin_shell.dart';
 import 'package:smart_meal_management/features/admin/attendance/screens/admin_attendance_screen.dart';
 import 'package:smart_meal_management/features/admin/dashboard/screens/admin_dashboard_screen.dart';
 import 'package:smart_meal_management/features/admin/exports/screens/export_screen.dart';
+import 'package:smart_meal_management/features/admin/billing/screens/billing_screen.dart';
 import 'package:smart_meal_management/features/admin/groups/screens/admin_groups_screen.dart';
 import 'package:smart_meal_management/features/admin/groups/screens/admin_group_detail_screen.dart';
 import 'package:smart_meal_management/features/admin/meals/screens/meal_config_screen.dart';
@@ -305,6 +306,10 @@ GoRouter buildRouter(AuthProvider auth) {
           GoRoute(
             path: RouteNames.adminExports,
             builder: (context, state) => const ExportScreen(),
+          ),
+          GoRoute(
+            path: RouteNames.adminBilling,
+            builder: (context, state) => const BillingScreen(),
           ),
           GoRoute(
             path: RouteNames.adminSettings,

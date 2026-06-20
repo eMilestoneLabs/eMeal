@@ -37,6 +37,12 @@ class QuickActionGrid extends StatelessWidget {
         color: AppColors.present,
         route: RouteNames.adminAttendance,
       ),
+      _ActionItem(
+        icon: Icons.receipt_long_rounded,
+        label: 'Member Billing',
+        color: AppColors.info,
+        route: RouteNames.adminBilling,
+      ),
     ];
 
     return GridView.count(

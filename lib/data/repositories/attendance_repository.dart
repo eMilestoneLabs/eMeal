@@ -5,6 +5,7 @@ import 'package:smart_meal_management/data/mock/mock_attendance_data.dart';
 import 'package:smart_meal_management/data/repositories/group_repository.dart';
 import 'package:smart_meal_management/data/services/dio_api_service.dart';
 import 'package:smart_meal_management/shared/models/attendance_model.dart';
+import 'package:smart_meal_management/shared/models/meal_attendance_summary.dart';
 import 'package:smart_meal_management/shared/models/paginated_response.dart';
 import 'package:smart_meal_management/shared/models/result.dart';
 
@@ -93,6 +94,11 @@ class AttendanceRepository implements IAttendanceRepository {
       preference: j['preference'] ?? record.preference,
       note: record.note,
       mealName: record.mealName,
+      price: j['price'] is int
+          ? j['price'] as int
+          : (j['price'] != null
+              ? int.tryParse(j['price'].toString())
+              : record.price),
     );
   }
 
@@ -408,5 +414,73 @@ class AttendanceRepository implements IAttendanceRepository {
       from: start,
       to: end,
     );
+  }
+
+  /// Per-meal attendance + preference summary for a single date (admin).
+  ///
+  /// Reuses the EXISTING backend endpoint `GET /attendance/meal-summary`
+  /// (admin-only) which returns meal-wise present/absent/skipped counts plus a
+  /// per-meal preference breakdown — the source of truth for the meal-wise
+  /// admin dashboard. No new backend contract.
+  Future<Result<MealAttendanceSummary>> getMealAttendanceSummary({
+    required String organizationId,
+    required String mealId,
+    DateTime? date,
+  }) async {
+    final day = date ?? DateTime.now();
+    if (!_isMock) {
+      final result = await DioApiService.instance.get<Map<String, dynamic>>(
+        '/attendance/meal-summary',
+        queryParameters: {
+          'mealId': mealId,
+          'date': _dateOnly(day),
+        },
+      );
+      return switch (result) {
+        Err(:final failure) => Err(failure),
+        Ok(:final value) => Ok(MealAttendanceSummary.fromJson(value)),
+      };
+    }
+    await _delay();
+    try {
+      final records = _store.where((a) =>
+          a.mealId == mealId &&
+          a.organizationId == organizationId &&
+          a.date.year == day.year &&
+          a.date.month == day.month &&
+          a.date.day == day.day);
+      int present = 0, absent = 0, skipped = 0;
+      final breakdown = <String, int>{};
+      for (final r in records) {
+        switch (r.status) {
+          case AttendanceStatus.present:
+            present++;
+            final p = r.preference;
+            if (p != null && p.isNotEmpty) {
+              breakdown[p] = (breakdown[p] ?? 0) + 1;
+            }
+          case AttendanceStatus.absent:
+            absent++;
+          case AttendanceStatus.skipped:
+            skipped++;
+          default:
+            break;
+        }
+      }
+      return Ok(MealAttendanceSummary(
+        mealId: mealId,
+        slotKey: '',
+        mealName: '',
+        date: _dateOnly(day),
+        totalMembers: present + absent + skipped,
+        presentCount: present,
+        absentCount: absent,
+        skippedCount: skipped,
+        preferenceBreakdown: breakdown,
+      ));
+    } catch (e) {
+      return Err(UnexpectedFailure(
+          message: 'Failed to load meal summary: $e'));
+    }
   }
 }

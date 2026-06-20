@@ -4,9 +4,11 @@ import 'package:smart_meal_management/core/theme/app_colors.dart';
 import 'package:smart_meal_management/core/theme/app_typography.dart';
 import 'package:smart_meal_management/data/repositories/attendance_repository.dart';
 import 'package:smart_meal_management/data/repositories/group_repository.dart';
+import 'package:smart_meal_management/data/repositories/meal_repository.dart';
 import 'package:smart_meal_management/features/admin/exports/providers/export_provider.dart';
 import 'package:smart_meal_management/shared/models/attendance_model.dart';
 import 'package:smart_meal_management/shared/models/group_model.dart';
+import 'package:smart_meal_management/shared/models/meal_model.dart';
 import 'package:smart_meal_management/shared/models/paginated_response.dart';
 import 'package:smart_meal_management/shared/models/result.dart';
 import 'package:smart_meal_management/shared/widgets/app_primary_button.dart';
@@ -27,6 +29,7 @@ class _ExportScreenState extends State<ExportScreen> {
   DateTime _startDate = DateTime.now().subtract(const Duration(days: 30));
   DateTime _endDate = DateTime.now();
   List<AttendanceModel> _records = [];
+  List<MealModel> _meals = [];
   bool _loadingRecords = false;
   List<GroupModel> _groups = [];
   String? _selectedGroupId;
@@ -97,6 +100,18 @@ class _ExportScreenState extends State<ExportScreen> {
     if (picked != null) setState(() => _endDate = picked);
   }
 
+  bool get _pricingEnabled {
+    if (_selectedGroupId == null) return false;
+    try {
+      return _groups
+          .firstWhere((g) => g.id == _selectedGroupId)
+          .mealConfig
+          .mealPricingEnabled;
+    } catch (_) {
+      return false;
+    }
+  }
+
   Future<void> _loadAndExport() async {
     final auth = AuthProviderScope.of(context);
     final user = auth.currentUser;
@@ -112,10 +127,25 @@ class _ExportScreenState extends State<ExportScreen> {
     );
     List<AttendanceModel> records = [];
     if (result case Ok(:final value)) records = value.data;
-    setState(() { _records = records; _loadingRecords = false; });
+    // Load the group's meals (with prices + windows) for Price Tag + auto-skip.
+    final mealsResult = await MealRepository().getGroupMeals(
+      organizationId: orgId,
+      groupId: groupId,
+    );
+    List<MealModel> meals = [];
+    if (mealsResult case Ok(:final value)) meals = value;
+    setState(() {
+      _records = records;
+      _meals = meals;
+      _loadingRecords = false;
+    });
     await _provider.export(
       records: _records,
+      meals: _meals,
       groupName: _selectedGroupName,
+      pricingEnabled: _pricingEnabled,
+      from: _startDate,
+      to: _endDate,
       dateRangeLabel: '${_fmt(_startDate)} – ${_fmt(_endDate)}',
     );
     if (_provider.exportSuccess && mounted) {
@@ -160,9 +190,9 @@ class _ExportScreenState extends State<ExportScreen> {
                   selected: _provider.isPdf, color: AppColors.absent,
                   onTap: () => _provider.setFormat('pdf')),
               const SizedBox(width: 12),
-              _FormatTile(label: 'CSV Spreadsheet', icon: Icons.table_chart_rounded,
+              _FormatTile(label: 'Excel (.xlsx)', icon: Icons.table_chart_rounded,
                   selected: !_provider.isPdf, color: AppColors.secondary,
-                  onTap: () => _provider.setFormat('csv')),
+                  onTap: () => _provider.setFormat('xlsx')),
             ]),
             const SizedBox(height: AppConstants.space24),
             Text('Date Range', style: AppTypography.titleSmall),
