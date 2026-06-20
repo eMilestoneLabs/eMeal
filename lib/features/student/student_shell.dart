@@ -167,6 +167,15 @@ class _StudentShellState extends State<StudentShell> {
     // and leave the user stranded on Settings.
     setState(() => _currentIndex = index);
     context.go(routes[index]);
+    // Issue 4: returning to the Home tab reloads the dashboard so an attendance
+    // mark made on another tab is reflected immediately (the action card flips
+    // to the submitted status instead of still prompting "Mark Present").
+    if (index == 0) {
+      final user = AuthProviderScope.of(context).currentUser;
+      if (user != null) {
+        _dashboardProvider.load(user: user);
+      }
+    }
   }
 
   @override

@@ -10,7 +10,6 @@ import 'package:smart_meal_management/features/student/attendance/widgets/attend
 import 'package:smart_meal_management/features/student/dashboard/providers/student_dashboard_provider.dart';
 import 'package:smart_meal_management/features/student/providers/group_config_provider.dart';
 import 'package:smart_meal_management/shared/models/attendance_model.dart';
-import 'package:smart_meal_management/shared/models/group_model.dart';
 
 /// Student attendance screen — today's meals with per-meal action cards.
 ///
@@ -231,13 +230,16 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
                               // onto /meals/today in Weekly & Day-Wise modes) takes
                               // precedence; fall back to the group-level setting
                               // when the meal does not specify its own.
-                              final mealPrefs = MealPreferenceOption.parseList(
-                                  meal.enabledPreferences);
                               final prefsEnabled =
                                   meal.preferencesEnabled || groupPrefsEnabled;
-                              final enabledPrefs = mealPrefs.isNotEmpty
-                                  ? mealPrefs
-                                  : groupEnabledPrefs;
+                              // Raw tag strings so admin custom preference names
+                              // show exactly; fall back to group-level keys.
+                              final enabledPrefs =
+                                  meal.enabledPreferences.isNotEmpty
+                                      ? meal.enabledPreferences
+                                      : groupEnabledPrefs
+                                          .map((e) => e.name)
+                                          .toList();
                               return AttendanceActionCard(
                                 meal: meal,
                                 status: _attendanceProvider.statusForMeal(meal.id),

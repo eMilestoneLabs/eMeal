@@ -208,9 +208,10 @@ class _TodayMealsScreenState extends State<TodayMealsScreen> {
                                     dashboardProvider.preferencesEnabled,
                                 enabledPreferences:
                                     meal.enabledPreferences.isNotEmpty
-                                        ? MealPreferenceOption.parseList(
-                                            meal.enabledPreferences)
-                                        : dashboardProvider.enabledPreferences,
+                                        ? meal.enabledPreferences
+                                        : dashboardProvider.enabledPreferences
+                                            .map((e) => e.name)
+                                            .toList(),
                                 onMark: (s, pref) =>
                                     _mark(meal.id, s, preference: pref),
                               );
@@ -353,7 +354,7 @@ class _TodayMealCard extends StatefulWidget {
   final bool isVacationMode;
   final bool isDefaultAttend;
   final bool preferencesEnabled;
-  final List<MealPreferenceOption> enabledPreferences;
+  final List<String> enabledPreferences;
   final void Function(AttendanceStatus status, String? preference) onMark;
 
   @override
@@ -693,7 +694,7 @@ class _AttendActions extends StatelessWidget {
   final ValueChanged<String?> onPreferenceChanged;
   final void Function(AttendanceStatus) onMark;
   final bool preferencesEnabled;
-  final List<MealPreferenceOption> enabledPreferences;
+  final List<String> enabledPreferences;
 
   @override
   Widget build(BuildContext context) {
@@ -735,11 +736,12 @@ class _AttendActions extends StatelessWidget {
               spacing: AppConstants.space8,
               runSpacing: AppConstants.space6,
               children: enabledPreferences.map((pref) {
-                final isSelected = preference == pref.name;
+                final isSelected = preference == pref;
+                final disp = MealPreferenceOption.display(pref);
                 return GestureDetector(
                   onTap: canMark
                       ? () => onPreferenceChanged(
-                          isSelected ? null : pref.name)
+                          isSelected ? null : pref)
                       : null,
                   child: AnimatedContainer(
                     duration: const Duration(milliseconds: 180),
@@ -768,12 +770,12 @@ class _AttendActions extends StatelessWidget {
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         Text(
-                          pref.emoji,
+                          disp.emoji,
                           style: const TextStyle(fontSize: 13),
                         ),
                         const SizedBox(width: 5),
                         Text(
-                          pref.label,
+                          disp.label,
                           style: AppTypography.labelSmall.copyWith(
                             color: isSelected
                                 ? Colors.white

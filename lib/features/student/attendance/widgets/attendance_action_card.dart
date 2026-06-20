@@ -45,15 +45,15 @@ class AttendanceActionCard extends StatefulWidget {
   /// When true, a compact preference chip row is shown before the action buttons.
   final bool preferencesEnabled;
 
-  /// The subset of [MealPreferenceOption]s the admin has enabled.
-  final List<MealPreferenceOption> enabledPreferences;
+  /// Admin-configured preference tags (raw strings) — supports custom tags.
+  final List<String> enabledPreferences;
 
   @override
   State<AttendanceActionCard> createState() => _AttendanceActionCardState();
 }
 
 class _AttendanceActionCardState extends State<AttendanceActionCard> {
-  MealPreferenceOption? _selectedPreference;
+  String? _selectedPreference;
 
   bool get _isPending =>
       widget.status == null || widget.status == AttendanceStatus.pending;
@@ -77,9 +77,7 @@ class _AttendanceActionCardState extends State<AttendanceActionCard> {
   void _markWithPreference(AttendanceStatus status) {
     widget.onMark(
       status,
-      preference: widget.preferencesEnabled
-          ? _selectedPreference?.name
-          : null,
+      preference: widget.preferencesEnabled ? _selectedPreference : null,
     );
   }
 
@@ -402,9 +400,9 @@ class _PreferenceRow extends StatelessWidget {
     required this.isDark,
   });
 
-  final List<MealPreferenceOption> options;
-  final MealPreferenceOption? selected;
-  final ValueChanged<MealPreferenceOption> onSelect;
+  final List<String> options;
+  final String? selected;
+  final ValueChanged<String> onSelect;
   final bool isDark;
 
   @override
@@ -420,7 +418,7 @@ class _PreferenceRow extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            'Meal preference (optional)',
+            'Meal preference (required)',
             style: AppTypography.labelSmall.copyWith(
               color: isDark
                   ? AppColors.textSecondaryDark
@@ -434,6 +432,7 @@ class _PreferenceRow extends StatelessWidget {
             runSpacing: 8,
             children: options.map((opt) {
               final isSelected = selected == opt;
+              final disp = MealPreferenceOption.display(opt);
               return GestureDetector(
                 onTap: () => onSelect(opt),
                 child: AnimatedContainer(
@@ -461,10 +460,10 @@ class _PreferenceRow extends StatelessWidget {
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Text(opt.emoji, style: const TextStyle(fontSize: 13)),
+                      Text(disp.emoji, style: const TextStyle(fontSize: 13)),
                       const SizedBox(width: 5),
                       Text(
-                        opt.label,
+                        disp.label,
                         style: AppTypography.labelSmall.copyWith(
                           color: isSelected
                               ? Colors.white

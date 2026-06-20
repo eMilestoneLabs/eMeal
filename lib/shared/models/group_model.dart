@@ -105,6 +105,32 @@ enum MealPreferenceOption {
   bool get isVegetarian =>
       this == MealPreferenceOption.veg || this == MealPreferenceOption.jain;
 
+  /// SINGLE SOURCE OF TRUTH for preference-tag display across the whole app
+  /// (Meal Config, Planner, Daily Overrides, Student Attendance, Reports).
+  /// Case-insensitive emoji for known standard tags; ANY custom tag is allowed
+  /// and shown with its exact name and no emoji. No fixed 6-value restriction.
+  static const Map<String, String> standardEmoji = {
+    'veg': '🥗',
+    'non-veg': '🍖',
+    'nonveg': '🍖',
+    'egg': '🥚',
+    'fish': '🐟',
+    'chicken': '🍗',
+    'mutton': '🥩',
+    'jain': '🌱',
+    'vegan': '🥬',
+  };
+
+  /// Display (emoji, label) for ANY preference key — standard or custom.
+  /// Emoji is auto-assigned when the (case-insensitive) name matches a known
+  /// standard tag; unknown custom tags get an empty emoji (name only).
+  static ({String emoji, String label}) display(String key) {
+    final t = key.trim();
+    final emoji = standardEmoji[t.toLowerCase()] ?? '';
+    final label = t.isEmpty ? t : t[0].toUpperCase() + t.substring(1);
+    return (emoji: emoji, label: label);
+  }
+
   /// Parse a list of preference keys (as sent by the backend on a meal's
   /// enabledPreferences) into options, dropping any unknown keys.
   ///
