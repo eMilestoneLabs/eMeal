@@ -22,6 +22,7 @@ class NextMealCard extends StatelessWidget {
     this.onMarkPresent,
     this.onMarkAttendance,
     this.onSkip,
+    this.onTap,
   });
 
   final MealModel? meal;
@@ -33,6 +34,10 @@ class NextMealCard extends StatelessWidget {
   /// Alias for [onMarkPresent] — used by dashboard screen.
   final VoidCallback? onMarkAttendance;
   final VoidCallback? onSkip;
+
+  /// Issue 3: tapping the card body (anywhere except the action buttons) opens
+  /// the meal's detail screen. Null disables the tap.
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
@@ -54,9 +59,17 @@ class NextMealCard extends StatelessWidget {
         ? AppColors.secondary
         : (isDark ? AppColors.borderDark : AppColors.border);
 
-    return Container(
+    final menu = meal!.menuItems.where((e) => e.trim().isNotEmpty).toList();
+    final price = meal!.price;
+
+    // Issue 3: compact, content-sized card. The carousel previously forced a
+    // tall fixed height that left large empty space when the meal was already
+    // marked. This layout is single-row + optional menu/CTA so it stays short
+    // and responsive, and shows price + menu (but NOT meal preferences — those
+    // live on the meal detail screen).
+    final card = Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(AppConstants.space20),
+      padding: const EdgeInsets.all(AppConstants.space16),
       decoration: BoxDecoration(
         color: Theme.of(context).colorScheme.surface,
         borderRadius: BorderRadius.circular(AppConstants.cardRadius),
@@ -67,64 +80,79 @@ class NextMealCard extends StatelessWidget {
         boxShadow: isWindowOpen
             ? [
                 BoxShadow(
-                  color: AppColors.secondary.withValues(alpha: 0.12),
-                  blurRadius: 14,
+                  color: AppColors.secondary.withValues(alpha: 0.10),
+                  blurRadius: 12,
                   offset: const Offset(0, 4),
                 ),
               ]
             : null,
       ),
       child: Column(
+        mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // ── Status label ─────────────────────────────────────────────────
           Row(
             children: [
               Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                decoration: BoxDecoration(
-                  color: isWindowOpen
-                      ? AppColors.secondary.withValues(alpha: 0.15)
-                      : (isDark
-                          ? AppColors.surfaceVariantDark
-                          : AppColors.surfaceVariant),
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                child: Text(
-                  isWindowOpen ? 'Open Now' : 'Next Meal',
-                  style: AppTypography.labelSmall.copyWith(
-                    color: isWindowOpen ? AppColors.secondary : textSecondary,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 14),
-          // ── Meal info ─────────────────────────────────────────────────────
-          Row(
-            children: [
-              Container(
-                width: 52,
-                height: 52,
+                width: 44,
+                height: 44,
                 decoration: BoxDecoration(
                   color: bgColor,
-                  borderRadius: BorderRadius.circular(14),
+                  borderRadius: BorderRadius.circular(12),
                 ),
-                child: Icon(meal!.icon, color: fgColor, size: 26),
+                child: Icon(meal!.icon, color: fgColor, size: 22),
               ),
-              const SizedBox(width: 14),
+              const SizedBox(width: 12),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
+                    Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 8, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: isWindowOpen
+                                ? AppColors.secondary.withValues(alpha: 0.15)
+                                : (isDark
+                                    ? AppColors.surfaceVariantDark
+                                    : AppColors.surfaceVariant),
+                            borderRadius: BorderRadius.circular(20),
+                          ),
+                          child: Text(
+                            isWindowOpen ? 'Open Now' : 'Next Meal',
+                            style: AppTypography.labelSmall.copyWith(
+                              color: isWindowOpen
+                                  ? AppColors.secondary
+                                  : textSecondary,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                        if (price != null) ...[
+                          const SizedBox(width: 8),
+                          Text(
+                            '₹$price',
+                            style: AppTypography.labelMedium.copyWith(
+                              color: AppColors.secondary,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                    const SizedBox(height: 5),
                     Text(
                       meal!.name,
-                      style: AppTypography.titleMedium
-                          .copyWith(color: textPrimary),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: AppTypography.titleSmall.copyWith(
+                        color: textPrimary,
+                        fontWeight: FontWeight.w700,
+                      ),
                     ),
-                    const SizedBox(height: 3),
+                    const SizedBox(height: 2),
                     Text(
                       '${meal!.attendanceWindow.openTime} – ${meal!.attendanceWindow.closeTime}',
                       style: AppTypography.bodySmall
@@ -133,12 +161,35 @@ class NextMealCard extends StatelessWidget {
                   ],
                 ),
               ),
-              if (isMarked) _StatusBadge(status: status!),
+              const SizedBox(width: 8),
+              if (isMarked)
+                _StatusBadge(status: status!)
+              else if (onTap != null)
+                Icon(Icons.chevron_right_rounded,
+                    size: 20, color: textSecondary),
             ],
           ),
-          // ── CTA buttons ───────────────────────────────────────────────────
+          if (menu.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                Icon(Icons.restaurant_menu_rounded,
+                    size: 14, color: textSecondary),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    menu.join(', '),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: AppTypography.bodySmall
+                        .copyWith(color: textSecondary),
+                  ),
+                ),
+              ],
+            ),
+          ],
           if (!isMarked && isWindowOpen) ...[
-            const SizedBox(height: 16),
+            const SizedBox(height: 12),
             Row(
               children: [
                 Expanded(
@@ -150,7 +201,7 @@ class NextMealCard extends StatelessWidget {
                     style: FilledButton.styleFrom(
                       backgroundColor: AppColors.present,
                       foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      padding: const EdgeInsets.symmetric(vertical: 11),
                     ),
                   ),
                 ),
@@ -162,7 +213,7 @@ class NextMealCard extends StatelessWidget {
                       style: OutlinedButton.styleFrom(
                         foregroundColor: textPrimary,
                         side: BorderSide(color: borderColor),
-                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        padding: const EdgeInsets.symmetric(vertical: 11),
                       ),
                       child: const Text('Skip'),
                     ),
@@ -173,6 +224,13 @@ class NextMealCard extends StatelessWidget {
           ],
         ],
       ),
+    );
+
+    if (onTap == null) return card;
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: onTap,
+      child: card,
     );
   }
 }

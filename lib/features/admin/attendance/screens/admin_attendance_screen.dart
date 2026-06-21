@@ -234,23 +234,33 @@ class _AdminAttendanceScreenState extends State<AdminAttendanceScreen> {
               color: isDark ? AppColors.surfaceDark : AppColors.surface,
               padding: const EdgeInsets.symmetric(
                   horizontal: AppConstants.pagePaddingH, vertical: 12),
-              child: Row(
-                children: [
-                  _StatBadge(
-                      label: 'Present',
-                      count: _provider.presentCount,
-                      color: AppColors.present),
-                  const SizedBox(width: 12),
-                  _StatBadge(
-                      label: 'Absent',
-                      count: _provider.absentCount,
-                      color: AppColors.absent),
-                  const SizedBox(width: 12),
-                  _StatBadge(
-                      label: 'Pending',
-                      count: _provider.pendingCount,
-                      color: AppColors.warning),
-                ],
+              child: SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: Row(
+                  children: [
+                    _StatBadge(
+                        label: 'Present',
+                        count: _provider.presentCount,
+                        color: AppColors.present),
+                    const SizedBox(width: 12),
+                    _StatBadge(
+                        label: 'Absent',
+                        count: _provider.absentCount,
+                        color: AppColors.absent),
+                    const SizedBox(width: 12),
+                    _StatBadge(
+                        label: 'Pending',
+                        count: _provider.pendingCount,
+                        color: AppColors.warning),
+                    const SizedBox(width: 12),
+                    // Issue 4: vacation members tracked separately — they are
+                    // NOT counted as present / absent / pending.
+                    _StatBadge(
+                        label: 'Vacation',
+                        count: _provider.vacationCount,
+                        color: AppColors.vacation),
+                  ],
+                ),
               ),
             ),
           const SizedBox(height: 8),
@@ -549,7 +559,12 @@ class _MyAttendanceSheetState extends State<_MyAttendanceSheet> {
   bool _loading = true;
   List<MealModel> _meals = [];
   final Map<String, AttendanceStatus> _status = {};
+  // Issue 1/2 parity: track each meal's chosen preference like the student
+  // flow, seeded from any existing record so the admin sees what they picked.
+  final Map<String, String?> _selectedPref = {};
   String? _savingMealId;
+  // Issue 2: which action is in flight, so only the tapped button animates.
+  AttendanceStatus? _savingStatus;
 
   @override
   void initState() {
@@ -573,6 +588,7 @@ class _MyAttendanceSheetState extends State<_MyAttendanceSheet> {
     if (results[1] case Ok(:final value)) {
       for (final r in value as List<AttendanceModel>) {
         _status[r.mealId] = r.status;
+        if (r.preference != null) _selectedPref[r.mealId] = r.preference;
       }
     }
     meals.sort((a, b) => a.order.compareTo(b.order));
@@ -582,8 +598,13 @@ class _MyAttendanceSheetState extends State<_MyAttendanceSheet> {
     });
   }
 
-  Future<void> _mark(MealModel meal, AttendanceStatus status) async {
-    setState(() => _savingMealId = meal.id);
+  Future<void> _mark(MealModel meal, AttendanceStatus status,
+      {String? preference}) async {
+    if (_savingMealId != null) return;
+    setState(() {
+      _savingMealId = meal.id;
+      _savingStatus = status;
+    });
     final now = DateTime.now();
     final record = AttendanceModel(
       id: '',
@@ -593,13 +614,22 @@ class _MyAttendanceSheetState extends State<_MyAttendanceSheet> {
       organizationId: widget.organizationId,
       status: status,
       date: DateTime(now.year, now.month, now.day),
+      preference: preference,
     );
     final res = await _attendanceRepo.adminOverride(record: record);
     if (!mounted) return;
-    setState(() => _savingMealId = null);
+    setState(() {
+      _savingMealId = null;
+      _savingStatus = null;
+    });
     switch (res) {
       case Ok(:final value):
-        setState(() => _status[meal.id] = value.status);
+        setState(() {
+          _status[meal.id] = value.status;
+          if (value.preference != null) {
+            _selectedPref[meal.id] = value.preference;
+          }
+        });
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
           content: Text('${meal.name}: marked ${status.name}'),
           duration: const Duration(seconds: 2),
@@ -668,8 +698,17 @@ class _MyAttendanceSheetState extends State<_MyAttendanceSheet> {
                             return _MySelfMealCard(
                               meal: meal,
                               status: st,
-                              saving: _savingMealId == meal.id,
-                              onMark: (newStatus) => _mark(meal, newStatus),
+                              selectedPref: _selectedPref[meal.id],
+                              savingStatus: _savingMealId == meal.id
+                                  ? _savingStatus
+                                  : null,
+                              busy: _savingMealId != null,
+                              onSelectPref: (opt) => setState(() {
+                                _selectedPref[meal.id] =
+                                    _selectedPref[meal.id] == opt ? null : opt;
+                              }),
+                              onMark: (newStatus, pref) =>
+                                  _mark(meal, newStatus, preference: pref),
                             );
                           },
                         ),
@@ -685,18 +724,32 @@ class _MySelfMealCard extends StatelessWidget {
   const _MySelfMealCard({
     required this.meal,
     required this.status,
-    required this.saving,
+    required this.selectedPref,
+    required this.savingStatus,
+    required this.busy,
+    required this.onSelectPref,
     required this.onMark,
   });
 
   final MealModel meal;
   final AttendanceStatus status;
-  final bool saving;
-  final void Function(AttendanceStatus) onMark;
+  final String? selectedPref;
+  // Non-null when THIS meal has an action saving — the specific action in
+  // flight, so only that button animates.
+  final AttendanceStatus? savingStatus;
+  // True when any action across the sheet is saving (disable others).
+  final bool busy;
+  final void Function(String option) onSelectPref;
+  final void Function(AttendanceStatus status, String? preference) onMark;
 
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final prefsOn =
+        meal.preferencesEnabled && meal.enabledPreferences.isNotEmpty;
+    final canPresent = !prefsOn || selectedPref != null;
+    final menu = meal.menuItems.where((e) => e.trim().isNotEmpty).toList();
+
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
@@ -717,47 +770,157 @@ class _MySelfMealCard extends StatelessWidget {
                     style: AppTypography.labelLarge
                         .copyWith(fontWeight: FontWeight.w700)),
               ),
-              Text(
-                  '${meal.attendanceWindow.openTime}–${meal.attendanceWindow.closeTime}',
-                  style: AppTypography.bodySmall
-                      .copyWith(color: AppColors.textTertiary)),
+              if (status != AttendanceStatus.pending)
+                _SelfStatusPill(status: status),
             ],
           ),
-          const SizedBox(height: 10),
-          if (saving)
-            const SizedBox(
-              height: 38,
-              child: Center(
-                child: SizedBox(
-                    width: 20,
-                    height: 20,
-                    child: CircularProgressIndicator(strokeWidth: 2)),
-              ),
-            )
-          else
-            Row(
-              children: [
-                _SelfBtn(
-                    label: 'Present',
-                    selected: status == AttendanceStatus.present,
-                    color: AppColors.present,
-                    onTap: () => onMark(AttendanceStatus.present)),
-                const SizedBox(width: 8),
-                _SelfBtn(
-                    label: 'Skip',
-                    selected: status == AttendanceStatus.skipped,
-                    color: AppColors.warning,
-                    onTap: () => onMark(AttendanceStatus.skipped)),
-                const SizedBox(width: 8),
-                _SelfBtn(
-                    label: 'Absent',
-                    selected: status == AttendanceStatus.absent,
-                    color: AppColors.absent,
-                    onTap: () => onMark(AttendanceStatus.absent)),
-              ],
+          const SizedBox(height: 4),
+          Text(
+              'Window  ${meal.attendanceWindow.openTime} - ${meal.attendanceWindow.closeTime}',
+              style: AppTypography.bodySmall
+                  .copyWith(color: AppColors.textTertiary)),
+          // Menu details (Issue 2: parity with what students can see).
+          if (menu.isNotEmpty) ...[
+            const SizedBox(height: 6),
+            Text(menu.join(', '),
+                style: AppTypography.bodySmall.copyWith(
+                  color: isDark
+                      ? AppColors.textSecondaryDark
+                      : AppColors.textSecondary,
+                )),
+          ],
+          // Preference chips (Issue 1/2 parity with the student flow).
+          if (prefsOn) ...[
+            const SizedBox(height: 12),
+            Text('Meal preference (required)',
+                style: AppTypography.labelSmall.copyWith(
+                  color: isDark
+                      ? AppColors.textSecondaryDark
+                      : AppColors.textSecondary,
+                  fontWeight: FontWeight.w500,
+                )),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: meal.enabledPreferences.map((opt) {
+                final isSelected = selectedPref == opt;
+                final disp = MealPreferenceOption.display(opt);
+                return GestureDetector(
+                  onTap: busy ? null : () => onSelectPref(opt),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 12, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: isSelected
+                          ? AppColors.primary
+                          : isDark
+                              ? AppColors.surfaceVariantDark
+                              : AppColors.surfaceVariant,
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(
+                        color: isSelected
+                            ? AppColors.primary
+                            : (isDark
+                                    ? AppColors.borderDark
+                                    : AppColors.border)
+                                .withValues(alpha: 0.6),
+                      ),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(disp.emoji,
+                            style: const TextStyle(fontSize: 13)),
+                        const SizedBox(width: 5),
+                        Text(disp.label,
+                            style: AppTypography.labelSmall.copyWith(
+                              color: isSelected
+                                  ? Colors.white
+                                  : isDark
+                                      ? AppColors.textPrimaryDark
+                                      : AppColors.textPrimary,
+                              fontWeight: FontWeight.w600,
+                            )),
+                      ],
+                    ),
+                  ),
+                );
+              }).toList(),
             ),
+          ],
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              _SelfBtn(
+                label: 'Present',
+                selected: status == AttendanceStatus.present,
+                color: AppColors.present,
+                loading: savingStatus == AttendanceStatus.present,
+                enabled: canPresent && !busy,
+                onTap: () =>
+                    onMark(AttendanceStatus.present, prefsOn ? selectedPref : null),
+              ),
+              const SizedBox(width: 8),
+              _SelfBtn(
+                label: 'Skip',
+                selected: status == AttendanceStatus.skipped,
+                color: AppColors.warning,
+                loading: savingStatus == AttendanceStatus.skipped,
+                enabled: !busy,
+                onTap: () => onMark(AttendanceStatus.skipped, null),
+              ),
+              const SizedBox(width: 8),
+              _SelfBtn(
+                label: 'Absent',
+                selected: status == AttendanceStatus.absent,
+                color: AppColors.absent,
+                loading: savingStatus == AttendanceStatus.absent,
+                enabled: !busy,
+                onTap: () => onMark(AttendanceStatus.absent, null),
+              ),
+            ],
+          ),
         ],
       ),
+    );
+  }
+}
+
+class _SelfStatusPill extends StatelessWidget {
+  const _SelfStatusPill({required this.status});
+  final AttendanceStatus status;
+
+  @override
+  Widget build(BuildContext context) {
+    Color c;
+    String label;
+    switch (status) {
+      case AttendanceStatus.present:
+        c = AppColors.present;
+        label = 'Present';
+      case AttendanceStatus.absent:
+        c = AppColors.absent;
+        label = 'Absent';
+      case AttendanceStatus.skipped:
+        c = AppColors.skipped;
+        label = 'Skipped';
+      case AttendanceStatus.onVacation:
+        c = AppColors.vacation;
+        label = 'Vacation';
+      case AttendanceStatus.pending:
+        c = AppColors.warning;
+        label = 'Pending';
+    }
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      decoration: BoxDecoration(
+        color: c.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Text(label,
+          style: AppTypography.labelSmall
+              .copyWith(color: c, fontWeight: FontWeight.w700)),
     );
   }
 }
@@ -767,19 +930,24 @@ class _SelfBtn extends StatelessWidget {
     required this.label,
     required this.selected,
     required this.color,
+    required this.loading,
+    required this.enabled,
     required this.onTap,
   });
 
   final String label;
   final bool selected;
   final Color color;
+  final bool loading;
+  final bool enabled;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
+    final active = enabled && !loading;
     return Expanded(
       child: InkWell(
-        onTap: onTap,
+        onTap: active ? onTap : null,
         borderRadius: BorderRadius.circular(10),
         child: Container(
           padding: const EdgeInsets.symmetric(vertical: 10),
@@ -793,11 +961,21 @@ class _SelfBtn extends StatelessWidget {
                     ? color
                     : AppColors.border.withValues(alpha: 0.6)),
           ),
-          child: Text(label,
-              style: AppTypography.labelMedium.copyWith(
-                color: selected ? color : AppColors.textSecondary,
-                fontWeight: FontWeight.w700,
-              )),
+          child: loading
+              ? const SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : Text(label,
+                  style: AppTypography.labelMedium.copyWith(
+                    color: selected
+                        ? color
+                        : (enabled
+                            ? AppColors.textSecondary
+                            : AppColors.textSecondary.withValues(alpha: 0.4)),
+                    fontWeight: FontWeight.w700,
+                  )),
         ),
       ),
     );

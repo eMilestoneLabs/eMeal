@@ -39,7 +39,11 @@ class StudentSettingsProvider extends ChangeNotifier {
   Future<void> setVacationMode(bool value) async {
     final user = _user;
     if (user == null) return;
-    await _auth.refreshUser(user.copyWith(isVacationMode: value));
+    // Issue 4: persist to the backend (PATCH /users/me via updateProfile) so an
+    // early turn-off actually sticks across reloads — this was previously an
+    // in-memory-only refreshUser. updateProfile also updates the live session.
+    final ok = await _auth.updateProfile(user.copyWith(isVacationMode: value));
+    if (!ok) return;
     // Cancel all local notifications when vacation starts;
     // reminders will be rescheduled on next dashboard load when vacation ends.
     if (value) {

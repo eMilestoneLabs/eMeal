@@ -133,6 +133,20 @@ class _ExportScreenState extends State<ExportScreen> {
     );
     List<MealModel> meals = [];
     if (mealsResult case Ok(:final value)) meals = value;
+    // Issue 4: members currently on vacation are excluded from billing/auto-skip
+    // in the export so the report matches the on-screen figures and surfaces
+    // vacation rather than counting them absent/skipped.
+    final membersResult = await _groupRepo.getGroupMembers(
+      organizationId: orgId,
+      groupId: groupId,
+    );
+    Set<String> vacationUserIds = const {};
+    if (membersResult case Ok(:final value)) {
+      vacationUserIds = value.data
+          .where((u) => u.isVacationMode)
+          .map((u) => u.id)
+          .toSet();
+    }
     setState(() {
       _records = records;
       _meals = meals;
@@ -146,6 +160,7 @@ class _ExportScreenState extends State<ExportScreen> {
       from: _startDate,
       to: _endDate,
       dateRangeLabel: '${_fmt(_startDate)} – ${_fmt(_endDate)}',
+      vacationUserIds: vacationUserIds,
     );
     if (_provider.exportSuccess && mounted) {
       ScaffoldMessenger.of(context).showSnackBar(

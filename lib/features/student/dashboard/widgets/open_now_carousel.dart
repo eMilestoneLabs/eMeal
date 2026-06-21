@@ -30,6 +30,7 @@ class OpenNowCarousel extends StatefulWidget {
     required this.onMarkPresent,
     required this.onSkip,
     required this.onMarkAttendance,
+    this.onTapMeal,
   });
 
   final List<MealModel> meals;
@@ -43,6 +44,9 @@ class OpenNowCarousel extends StatefulWidget {
   final void Function(MealModel meal) onMarkPresent;
   final void Function(MealModel meal) onSkip;
   final void Function(MealModel meal) onMarkAttendance;
+
+  /// Issue 3: tap a card to open that meal's detail screen.
+  final void Function(MealModel meal)? onTapMeal;
 
   @override
   State<OpenNowCarousel> createState() => _OpenNowCarouselState();
@@ -116,6 +120,23 @@ class _OpenNowCarouselState extends State<OpenNowCarousel> {
     super.dispose();
   }
 
+  /// Issue 3: size the pager to the tallest card the current meals need, so a
+  /// fully-marked day shows a short card instead of the old fixed 208px block.
+  double _cardHeight() {
+    var anyButtons = false;
+    var anyMenu = false;
+    for (final m in widget.meals) {
+      final st = widget.statusOf(m);
+      final marked = st != null && st != AttendanceStatus.pending;
+      if (!marked && widget.isWindowOpen(m)) anyButtons = true;
+      if (m.menuItems.any((e) => e.trim().isNotEmpty)) anyMenu = true;
+    }
+    var h = 120.0; // icon row + chip + name + window + padding
+    if (anyMenu) h += 28;
+    if (anyButtons) h += 54;
+    return h;
+  }
+
   @override
   Widget build(BuildContext context) {
     final meals = widget.meals;
@@ -125,7 +146,7 @@ class _OpenNowCarouselState extends State<OpenNowCarousel> {
     return Column(
       children: [
         SizedBox(
-          height: 208,
+          height: _cardHeight(),
           child: Stack(
             alignment: Alignment.center,
             children: [
@@ -145,6 +166,9 @@ class _OpenNowCarouselState extends State<OpenNowCarousel> {
                       onMarkPresent: () => widget.onMarkPresent(meal),
                       onSkip: () => widget.onSkip(meal),
                       onMarkAttendance: () => widget.onMarkAttendance(meal),
+                      onTap: widget.onTapMeal == null
+                          ? null
+                          : () => widget.onTapMeal!(meal),
                     ),
                   );
                 },

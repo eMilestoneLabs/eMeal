@@ -35,6 +35,8 @@ class _StaffAttendanceScreenState extends State<StaffAttendanceScreen> {
   bool _loading = false;
   String? _error;
   String? _busyMealId;
+  // Issue 2: which action is in flight, so only the tapped button animates.
+  AttendanceStatus? _busyStatus;
 
   // Issue 5: per-meal selected meal preference (parity with the student flow).
   // When a meal has preferences enabled, "Present" stays disabled until the
@@ -133,7 +135,10 @@ class _StaffAttendanceScreenState extends State<StaffAttendanceScreen> {
       {String? preference}) async {
     final gid = _groupId;
     if (gid == null || _busyMealId != null) return;
-    setState(() => _busyMealId = meal.id);
+    setState(() {
+      _busyMealId = meal.id;
+      _busyStatus = status;
+    });
 
     final now = DateTime.now();
     final existing = _records.indexWhere((r) =>
@@ -177,12 +182,16 @@ class _StaffAttendanceScreenState extends State<StaffAttendanceScreen> {
             _records = [..._records, value];
           }
           _busyMealId = null;
+          _busyStatus = null;
         });
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Marked ${_label(status)} for ${meal.name}.')),
         );
       case Err(:final failure):
-        setState(() => _busyMealId = null);
+        setState(() {
+          _busyMealId = null;
+          _busyStatus = null;
+        });
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text(failure.message)),
         );
@@ -404,19 +413,33 @@ class _StaffAttendanceScreenState extends State<StaffAttendanceScreen> {
           const SizedBox(height: 14),
           Row(
             children: [
-              _actionButton('Present', AppColors.present,
-                  status == AttendanceStatus.present, busy,
-                  () => _mark(meal, AttendanceStatus.present,
-                      preference: prefsOn ? selectedPref : null),
-                  enabled: canPresent),
+              _actionButton(
+                'Present',
+                AppColors.present,
+                status == AttendanceStatus.present,
+                loading: busy && _busyStatus == AttendanceStatus.present,
+                enabled: canPresent && !busy,
+                onTap: () => _mark(meal, AttendanceStatus.present,
+                    preference: prefsOn ? selectedPref : null),
+              ),
               const SizedBox(width: 8),
-              _actionButton('Skip', AppColors.skipped,
-                  status == AttendanceStatus.skipped, busy,
-                  () => _mark(meal, AttendanceStatus.skipped)),
+              _actionButton(
+                'Skip',
+                AppColors.skipped,
+                status == AttendanceStatus.skipped,
+                loading: busy && _busyStatus == AttendanceStatus.skipped,
+                enabled: !busy,
+                onTap: () => _mark(meal, AttendanceStatus.skipped),
+              ),
               const SizedBox(width: 8),
-              _actionButton('Absent', AppColors.absent,
-                  status == AttendanceStatus.absent, busy,
-                  () => _mark(meal, AttendanceStatus.absent)),
+              _actionButton(
+                'Absent',
+                AppColors.absent,
+                status == AttendanceStatus.absent,
+                loading: busy && _busyStatus == AttendanceStatus.absent,
+                enabled: !busy,
+                onTap: () => _mark(meal, AttendanceStatus.absent),
+              ),
             ],
           ),
         ],
@@ -453,12 +476,12 @@ class _StaffAttendanceScreenState extends State<StaffAttendanceScreen> {
   Widget _actionButton(
     String label,
     Color color,
-    bool selected,
-    bool busy,
-    VoidCallback onTap, {
-    bool enabled = true,
+    bool selected, {
+    required bool loading,
+    required bool enabled,
+    required VoidCallback onTap,
   }) {
-    final active = enabled && !busy;
+    final active = enabled && !loading;
     return Expanded(
       child: Material(
         color: selected
@@ -471,7 +494,7 @@ class _StaffAttendanceScreenState extends State<StaffAttendanceScreen> {
           child: Container(
             height: 44,
             alignment: Alignment.center,
-            child: busy
+            child: loading
                 ? const SizedBox(
                     width: 18,
                     height: 18,

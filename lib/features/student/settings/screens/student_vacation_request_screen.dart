@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:smart_meal_management/core/constants/app_constants.dart';
 import 'package:smart_meal_management/core/theme/app_colors.dart';
 import 'package:smart_meal_management/core/theme/app_typography.dart';
 import 'package:smart_meal_management/data/repositories/vacation_repository.dart';
@@ -87,6 +88,14 @@ class _StudentVacationRequestScreenState
       setState(() => _error = 'Pick both a start and end date.');
       return;
     }
+    // Premium confirmation so the member understands what vacation mode does and
+    // that it only activates after an admin approves the request.
+    final confirmed = await showDialog<bool>(
+      context: context,
+      barrierColor: Colors.black.withValues(alpha: 0.5),
+      builder: (_) => const _VacationRequestConfirmDialog(),
+    );
+    if (confirmed != true || !mounted) return;
     setState(() {
       _submitting = true;
       _error = null;
@@ -299,4 +308,139 @@ class _StudentVacationRequestScreenState
 
   static String _fmt(DateTime d) =>
       '${d.day.toString().padLeft(2, '0')}/${d.month.toString().padLeft(2, '0')}/${d.year}';
+}
+
+
+// ── Premium vacation-request confirmation dialog ───────────────────────────────
+//
+// Reuses the original premium "Vacation Mode" dialog design (previously shown for
+// the self-enable toggle). It now appears when a member SUBMITS a vacation
+// request, so they understand that — once an admin approves — attendance tracking
+// and meal reminders pause for the selected dates.
+class _VacationRequestConfirmDialog extends StatelessWidget {
+  const _VacationRequestConfirmDialog();
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    return Dialog(
+      backgroundColor: Colors.transparent,
+      child: Container(
+        padding: const EdgeInsets.all(AppConstants.space24),
+        decoration: BoxDecoration(
+          color: isDark ? AppColors.surfaceDark : AppColors.surface,
+          borderRadius: BorderRadius.circular(AppConstants.dialogRadius),
+          border: Border.all(
+            color: isDark
+                ? AppColors.borderDark.withValues(alpha: 0.5)
+                : AppColors.border,
+          ),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 52,
+              height: 52,
+              decoration: BoxDecoration(
+                color: AppColors.vacation.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(14),
+              ),
+              child: const Icon(
+                Icons.beach_access_rounded,
+                color: AppColors.vacation,
+                size: 26,
+              ),
+            ),
+            const SizedBox(height: AppConstants.space16),
+            Text(
+              'Submit Vacation Request?',
+              style: AppTypography.titleMedium.copyWith(
+                color:
+                    isDark ? AppColors.textPrimaryDark : AppColors.textPrimary,
+                fontWeight: FontWeight.w700,
+              ),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: AppConstants.space8),
+            Text(
+              'Once your admin approves, attendance tracking and all meal '
+              'reminders will be paused for the selected dates. You can turn it '
+              'off early if you return.',
+              style: AppTypography.bodySmall.copyWith(
+                color: isDark
+                    ? AppColors.textSecondaryDark
+                    : AppColors.textSecondary,
+                height: 1.5,
+              ),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: AppConstants.space24),
+            Row(
+              children: [
+                Expanded(
+                  child: GestureDetector(
+                    onTap: () => Navigator.of(context).pop(false),
+                    child: Container(
+                      height: 46,
+                      decoration: BoxDecoration(
+                        border: Border.all(
+                          color:
+                              isDark ? AppColors.borderDark : AppColors.border,
+                        ),
+                        borderRadius:
+                            BorderRadius.circular(AppConstants.buttonRadius),
+                      ),
+                      child: Center(
+                        child: Text(
+                          'Cancel',
+                          style: AppTypography.labelMedium.copyWith(
+                            color: isDark
+                                ? AppColors.textPrimaryDark
+                                : AppColors.textPrimary,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: AppConstants.space12),
+                Expanded(
+                  child: GestureDetector(
+                    onTap: () => Navigator.of(context).pop(true),
+                    child: Container(
+                      height: 46,
+                      decoration: BoxDecoration(
+                        color: AppColors.vacation,
+                        borderRadius:
+                            BorderRadius.circular(AppConstants.buttonRadius),
+                        boxShadow: [
+                          BoxShadow(
+                            color: AppColors.vacation.withValues(alpha: 0.30),
+                            blurRadius: 10,
+                            offset: const Offset(0, 3),
+                          ),
+                        ],
+                      ),
+                      child: Center(
+                        child: Text(
+                          'Submit Request',
+                          style: AppTypography.labelMedium.copyWith(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }

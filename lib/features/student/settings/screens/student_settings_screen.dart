@@ -50,25 +50,14 @@ class _StudentSettingsScreenState extends State<StudentSettingsScreen> {
     super.dispose();
   }
 
-  /// Intercepts vacation mode enabling with a confirm dialog.
-  /// Disabling vacation mode applies immediately without confirmation.
-  Future<void> _onVacationToggle(bool value) async {
+  /// Issue 4: students may only turn vacation mode OFF (an early return from an
+  /// admin-approved vacation). Enabling vacation is NOT a self-service action —
+  /// it happens only when an admin approves a vacation request — so there is no
+  /// "enable" path here anymore.
+  Future<void> _turnOffVacation() async {
     final provider = _provider;
     if (provider == null) return;
-    if (!value) {
-      // Turning OFF — apply immediately
-      await provider.setVacationMode(false);
-      return;
-    }
-    // Turning ON — ask for confirmation
-    final confirmed = await showDialog<bool>(
-      context: context,
-      barrierColor: Colors.black.withValues(alpha: 0.5),
-      builder: (_) => const _VacationConfirmDialog(),
-    );
-    if (confirmed == true && mounted) {
-      await provider.setVacationMode(true);
-    }
+    await provider.setVacationMode(false);
   }
 
   Future<void> _logout() async {
@@ -139,12 +128,25 @@ class _StudentSettingsScreenState extends State<StudentSettingsScreen> {
                   _ToggleTile(
                     icon: Icons.beach_access_rounded,
                     iconColor: AppColors.vacation,
-                    title: 'Vacation Mode',
-                    subtitle:
-                        "Pauses all attendance tracking and reminder notifications while you're away.",
+                    title: provider.isVacationMode
+                        ? 'Vacation Mode Active'
+                        : 'Vacation Mode',
+                    subtitle: provider.isVacationMode
+                        ? 'Active — attendance and reminders are paused. Turn off when you return early.'
+                        : "Pauses attendance and reminders while you're away.",
                     value: provider.isVacationMode,
-                    onChanged: _onVacationToggle,
+                    // Issue 4: enabling vacation is admin-approval-only. The
+                    // switch can be turned OFF (early return) but never ON by
+                    // the student — they request it and an admin approves.
+                    onChanged: provider.isVacationMode
+                        ? (v) {
+                            if (!v) _turnOffVacation();
+                          }
+                        : null,
                     isDark: isDark,
+                    disabledReason: provider.isVacationMode
+                        ? null
+                        : 'Submit a vacation request — your admin enables it.',
                   ),
                   // Issue 3: submit a date-range vacation request for admin approval.
                   _ActionTile(
@@ -744,139 +746,6 @@ class _LogoutDialog extends StatelessWidget {
                       child: Center(
                         child: Text(
                           'Sign Out',
-                          style: AppTypography.labelMedium.copyWith(
-                            color: Colors.white,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-// ── Vacation mode confirm dialog ───────────────────────────────────────────────
-
-class _VacationConfirmDialog extends StatelessWidget {
-  const _VacationConfirmDialog();
-
-  @override
-  Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-
-    return Dialog(
-      backgroundColor: Colors.transparent,
-      child: Container(
-        padding: const EdgeInsets.all(AppConstants.space24),
-        decoration: BoxDecoration(
-          color: isDark ? AppColors.surfaceDark : AppColors.surface,
-          borderRadius: BorderRadius.circular(AppConstants.dialogRadius),
-          border: Border.all(
-            color: isDark
-                ? AppColors.borderDark.withValues(alpha: 0.5)
-                : AppColors.border,
-          ),
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            // Icon
-            Container(
-              width: 52,
-              height: 52,
-              decoration: BoxDecoration(
-                color: AppColors.vacation.withValues(alpha: 0.12),
-                borderRadius: BorderRadius.circular(14),
-              ),
-              child: const Icon(
-                Icons.beach_access_rounded,
-                color: AppColors.vacation,
-                size: 26,
-              ),
-            ),
-            const SizedBox(height: AppConstants.space16),
-
-            Text(
-              'Enable Vacation Mode?',
-              style: AppTypography.titleMedium.copyWith(
-                color: isDark ? AppColors.textPrimaryDark : AppColors.textPrimary,
-                fontWeight: FontWeight.w700,
-              ),
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: AppConstants.space8),
-            Text(
-              'Attendance tracking and all meal reminders will be paused while vacation mode is active.',
-              style: AppTypography.bodySmall.copyWith(
-                color: isDark
-                    ? AppColors.textSecondaryDark
-                    : AppColors.textSecondary,
-                height: 1.5,
-              ),
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: AppConstants.space24),
-
-            Row(
-              children: [
-                Expanded(
-                  child: GestureDetector(
-                    onTap: () => Navigator.of(context).pop(false),
-                    child: Container(
-                      height: 46,
-                      decoration: BoxDecoration(
-                        border: Border.all(
-                          color: isDark
-                              ? AppColors.borderDark
-                              : AppColors.border,
-                        ),
-                        borderRadius: BorderRadius.circular(
-                          AppConstants.buttonRadius,
-                        ),
-                      ),
-                      child: Center(
-                        child: Text(
-                          'Cancel',
-                          style: AppTypography.labelMedium.copyWith(
-                            color: isDark
-                                ? AppColors.textPrimaryDark
-                                : AppColors.textPrimary,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: AppConstants.space12),
-                Expanded(
-                  child: GestureDetector(
-                    onTap: () => Navigator.of(context).pop(true),
-                    child: Container(
-                      height: 46,
-                      decoration: BoxDecoration(
-                        color: AppColors.vacation,
-                        borderRadius: BorderRadius.circular(
-                          AppConstants.buttonRadius,
-                        ),
-                        boxShadow: [
-                          BoxShadow(
-                            color: AppColors.vacation.withValues(alpha: 0.30),
-                            blurRadius: 10,
-                            offset: const Offset(0, 3),
-                          ),
-                        ],
-                      ),
-                      child: Center(
-                        child: Text(
-                          'Enable',
                           style: AppTypography.labelMedium.copyWith(
                             color: Colors.white,
                             fontWeight: FontWeight.w700,

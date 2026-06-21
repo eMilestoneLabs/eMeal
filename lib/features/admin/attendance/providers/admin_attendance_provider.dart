@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:smart_meal_management/data/repositories/attendance_repository.dart';
+import 'package:smart_meal_management/data/repositories/group_repository.dart';
 import 'package:smart_meal_management/shared/models/attendance_model.dart';
 import 'package:smart_meal_management/shared/models/result.dart';
 
@@ -8,10 +9,12 @@ import 'package:smart_meal_management/shared/models/result.dart';
 /// Loads group attendance for a selected date, supports status filtering,
 /// and date navigation.
 class AdminAttendanceProvider extends ChangeNotifier {
-  AdminAttendanceProvider({AttendanceRepository? repo})
-      : _repo = repo ?? AttendanceRepository();
+  AdminAttendanceProvider({AttendanceRepository? repo, GroupRepository? groupRepo})
+      : _repo = repo ?? AttendanceRepository(),
+        _groupRepo = groupRepo ?? GroupRepository();
 
   final AttendanceRepository _repo;
+  final GroupRepository _groupRepo;
 
   // ── State ──────────────────────────────────────────────────────────────────
 
@@ -20,6 +23,9 @@ class AdminAttendanceProvider extends ChangeNotifier {
   List<AttendanceModel> _records = [];
   DateTime _selectedDate = DateTime.now();
   AttendanceStatus? _filterStatus;
+  // Issue 4: members on vacation, tracked separately from present/absent/pending.
+  Set<String> _vacationUserIds = {};
+  int _vacationCount = 0;
 
   // ── Getters ────────────────────────────────────────────────────────────────
 
@@ -40,6 +46,11 @@ class AdminAttendanceProvider extends ChangeNotifier {
       _records.where((r) => r.status == AttendanceStatus.absent).length;
   int get pendingCount =>
       _records.where((r) => r.status == AttendanceStatus.pending).length;
+
+  // Issue 4: count of members currently on vacation in this group. They are not
+  // counted as present/absent/pending — vacation is a separate state.
+  int get vacationCount => _vacationCount;
+  Set<String> get vacationUserIds => _vacationUserIds;
 
   // ── Load ──────────────────────────────────────────────────────────────────
 
@@ -62,6 +73,19 @@ class AdminAttendanceProvider extends ChangeNotifier {
         _records = value;
       case Err(:final failure):
         _error = failure.message;
+    }
+
+    // Issue 4: surface a separate "Vacation = X" count. Members on vacation are
+    // tracked apart from present/absent/pending (they are not absentees).
+    final membersResult = await _groupRepo.getGroupMembers(
+      organizationId: organizationId,
+      groupId: groupId,
+    );
+    if (membersResult case Ok(:final value)) {
+      final onVacation =
+          value.data.where((u) => u.isVacationMode).map((u) => u.id).toSet();
+      _vacationUserIds = onVacation;
+      _vacationCount = onVacation.length;
     }
 
     _isLoading = false;

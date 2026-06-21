@@ -378,6 +378,9 @@ class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
                           onSkip: (m) => _skipFromDashboard(provider, m),
                           onMarkAttendance: (m) =>
                               context.go(RouteNames.studentAttendance),
+                          // Issue 3: tap a carousel card to open meal details.
+                          onTapMeal: (m) => _openMealDetail(
+                              context, m, provider.statusForMeal(m.id)),
                         ),
                       ),
 

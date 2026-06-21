@@ -43,6 +43,9 @@ class ExportProvider extends ChangeNotifier {
     required DateTime from,
     required DateTime to,
     String? dateRangeLabel,
+    // Issue 4: members currently on vacation — excluded from billing/auto-skip
+    // and surfaced as "On Vacation" in the export (ExportService handles both).
+    Set<String> vacationUserIds = const {},
   }) async {
     if (_isExporting) return;
     _isExporting = true;
@@ -61,6 +64,7 @@ class ExportProvider extends ChangeNotifier {
             from: from,
             to: to,
             dateRangeLabel: dateRangeLabel,
+            vacationUserIds: vacationUserIds,
           );
         case 'csv':
           await _service.exportCsv(
@@ -71,6 +75,7 @@ class ExportProvider extends ChangeNotifier {
             from: from,
             to: to,
             dateRangeLabel: dateRangeLabel,
+            vacationUserIds: vacationUserIds,
           );
         default: // 'xlsx'
           await _service.exportXlsx(
@@ -81,6 +86,7 @@ class ExportProvider extends ChangeNotifier {
             from: from,
             to: to,
             dateRangeLabel: dateRangeLabel,
+            vacationUserIds: vacationUserIds,
           );
       }
       _exportSuccess = true;
