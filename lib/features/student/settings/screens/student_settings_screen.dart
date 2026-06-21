@@ -6,6 +6,7 @@ import 'package:smart_meal_management/core/theme/app_colors.dart';
 import 'package:smart_meal_management/core/theme/app_typography.dart';
 import 'package:smart_meal_management/features/auth/providers/auth_provider.dart';
 import 'package:smart_meal_management/features/student/settings/providers/student_settings_provider.dart';
+import 'package:smart_meal_management/features/student/settings/screens/student_vacation_request_screen.dart';
 import 'package:smart_meal_management/shared/providers/theme_provider.dart';
 
 /// Student settings screen.
@@ -143,6 +144,20 @@ class _StudentSettingsScreenState extends State<StudentSettingsScreen> {
                         "Pauses all attendance tracking and reminder notifications while you're away.",
                     value: provider.isVacationMode,
                     onChanged: _onVacationToggle,
+                    isDark: isDark,
+                  ),
+                  // Issue 3: submit a date-range vacation request for admin approval.
+                  _ActionTile(
+                    icon: Icons.event_available_rounded,
+                    iconColor: AppColors.vacation,
+                    title: 'Request Vacation',
+                    subtitle:
+                        'Submit a date range for your admin to approve.',
+                    onTap: () => Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (_) => const StudentVacationRequestScreen(),
+                      ),
+                    ),
                     isDark: isDark,
                   ),
                 ],

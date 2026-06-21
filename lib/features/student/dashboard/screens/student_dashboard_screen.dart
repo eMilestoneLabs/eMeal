@@ -10,7 +10,7 @@ import 'package:smart_meal_management/features/notices/widgets/notice_bell.dart'
 import 'package:smart_meal_management/features/student/dashboard/providers/student_dashboard_provider.dart';
 import 'package:smart_meal_management/features/student/dashboard/screens/no_group_screen.dart';
 import 'package:smart_meal_management/features/student/dashboard/widgets/meal_timeline_card.dart';
-import 'package:smart_meal_management/features/student/dashboard/widgets/next_meal_card.dart';
+import 'package:smart_meal_management/features/student/dashboard/widgets/open_now_carousel.dart';
 import 'package:smart_meal_management/features/student/dashboard/widgets/student_greeting_card.dart';
 // group_config_provider.dart removed — GroupConfigProvider is now managed by
 // StudentShell and accessed only via StudentDashboardProvider.
@@ -356,36 +356,33 @@ class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
                       ),
                     )
                   else ...[
-                    // ── Next / Current Meal Card ─────────────────────────
+                    // ── Open Now carousel (Feature 3) ────────────────────
+                    // Multi-card pager: auto-scrolls when all open meals are
+                    // marked, otherwise parks on the first pending meal to force
+                    // attention. Falls back to a single card when only one meal
+                    // qualifies (same look as the original hero card).
                     if (provider.mealsEnabled &&
-                        provider.currentOrNextMeal != null)
+                        provider.openNowMeals.isNotEmpty)
                       SliverToBoxAdapter(
-                        child: NextMealCard(
-                          meal: provider.currentOrNextMeal!,
-                          status: provider
-                              .statusForMeal(provider.currentOrNextMeal!.id),
-                          isWindowOpen: provider
-                              .isWindowOpen(provider.currentOrNextMeal!),
-                          isWindowPast: provider
-                              .isWindowPast(provider.currentOrNextMeal!),
+                        child: OpenNowCarousel(
+                          meals: provider.openNowMeals,
+                          pendingIndex: provider.firstPendingOpenIndex,
+                          statusOf: (m) => provider.statusForMeal(m.id),
+                          isWindowOpen: provider.isWindowOpen,
+                          isWindowPast: provider.isWindowPast,
                           // Issue #1: mark in place so the card flips to Present.
-                          // When preferences are required, route to the
-                          // attendance screen so the student picks a tag first.
-                          onMarkPresent: () => _markPresentFromDashboard(
-                            provider,
-                            provider.currentOrNextMeal!,
-                          ),
-                          onSkip: () => _skipFromDashboard(
-                            provider,
-                            provider.currentOrNextMeal!,
-                          ),
-                          onMarkAttendance: () =>
+                          // When preferences are required, _markPresentFromDashboard
+                          // routes to the attendance screen so a tag is picked first.
+                          onMarkPresent: (m) =>
+                              _markPresentFromDashboard(provider, m),
+                          onSkip: (m) => _skipFromDashboard(provider, m),
+                          onMarkAttendance: (m) =>
                               context.go(RouteNames.studentAttendance),
                         ),
                       ),
 
                     if (provider.mealsEnabled &&
-                        provider.currentOrNextMeal != null)
+                        provider.openNowMeals.isNotEmpty)
                       const SliverToBoxAdapter(
                           child: SizedBox(height: AppConstants.space24)),
 

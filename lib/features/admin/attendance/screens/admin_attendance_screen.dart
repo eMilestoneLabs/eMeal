@@ -7,6 +7,7 @@ import 'package:smart_meal_management/data/repositories/attendance_repository.da
 import 'package:smart_meal_management/data/repositories/meal_repository.dart';
 import 'package:smart_meal_management/shared/models/meal_model.dart';
 import 'package:smart_meal_management/features/admin/attendance/providers/admin_attendance_provider.dart';
+import 'package:smart_meal_management/features/admin/attendance/screens/vacation_requests_screen.dart';
 import 'package:smart_meal_management/features/admin/attendance/widgets/attendance_filter_bar.dart';
 import 'package:smart_meal_management/features/admin/attendance/widgets/member_attendance_row.dart';
 import 'package:smart_meal_management/shared/models/attendance_model.dart';
@@ -191,6 +192,15 @@ class _AdminAttendanceScreenState extends State<AdminAttendanceScreen> {
         backgroundColor: isDark ? AppColors.surfaceDark : AppColors.surface,
         surfaceTintColor: Colors.transparent,
         actions: [
+          // Issue 3: admin reviews member vacation requests (approve/reject/cancel).
+          IconButton(
+            tooltip: 'Vacation requests',
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute(
+                  builder: (_) => const VacationRequestsScreen()),
+            ),
+            icon: const Icon(Icons.beach_access_rounded, size: 20),
+          ),
           // Issue 5: an admin / manager can mark THEIR OWN attendance for today.
           if (_selectedGroupId != null)
             IconButton(
@@ -255,7 +265,12 @@ class _AdminAttendanceScreenState extends State<AdminAttendanceScreen> {
 
           // ── List ────────────────────────────────────────────────────────────
           Expanded(
-            child: _selectedGroupId == null
+            // Issue 4: while groups are still loading, show a loading state
+            // instead of flashing "No groups found" before the group context
+            // resolves. The empty state now only renders once loading is done.
+            child: _loadingGroups
+                ? const AppLoadingIndicator()
+                : _selectedGroupId == null
                 ? const AppEmptyState(
                     icon: Icons.group_outlined,
                     title: 'No groups found',

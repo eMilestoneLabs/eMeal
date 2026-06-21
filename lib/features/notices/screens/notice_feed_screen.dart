@@ -206,7 +206,8 @@ Color _priorityColor(String priority) {
     case 'low':
       return AppColors.textTertiary;
     default:
-      return AppColors.primary;
+      // Issue 2: Normal = blue (spec), consistent with the composer chip.
+      return AppColors.info;
   }
 }
 

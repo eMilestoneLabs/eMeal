@@ -1,0 +1,302 @@
+import 'package:flutter/material.dart';
+import 'package:smart_meal_management/core/theme/app_colors.dart';
+import 'package:smart_meal_management/core/theme/app_typography.dart';
+import 'package:smart_meal_management/data/repositories/vacation_repository.dart';
+import 'package:smart_meal_management/shared/models/result.dart';
+import 'package:smart_meal_management/shared/models/vacation_request_model.dart';
+
+/// Issue 3 — Student "Request Vacation" screen.
+///
+/// A member submits a date-range vacation request that an admin approves or
+/// rejects. Additive: the existing self-service Vacation Mode toggle still
+/// works independently; this adds the approval workflow on top.
+class StudentVacationRequestScreen extends StatefulWidget {
+  const StudentVacationRequestScreen({super.key});
+
+  @override
+  State<StudentVacationRequestScreen> createState() =>
+      _StudentVacationRequestScreenState();
+}
+
+class _StudentVacationRequestScreenState
+    extends State<StudentVacationRequestScreen> {
+  final _repo = VacationRepository();
+  final _reasonCtrl = TextEditingController();
+
+  DateTime? _start;
+  DateTime? _end;
+  bool _submitting = false;
+  bool _loading = true;
+  String? _error;
+  List<VacationRequestModel> _mine = [];
+
+  @override
+  void initState() {
+    super.initState();
+    _loadMine();
+  }
+
+  @override
+  void dispose() {
+    _reasonCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _loadMine() async {
+    setState(() => _loading = true);
+    final res = await _repo.list();
+    if (!mounted) return;
+    switch (res) {
+      case Ok(:final value):
+        setState(() {
+          _mine = value.data;
+          _loading = false;
+        });
+      case Err(:final failure):
+        setState(() {
+          _error = failure.message;
+          _loading = false;
+        });
+    }
+  }
+
+  Future<void> _pick(bool isStart) async {
+    final now = DateTime.now();
+    final initial = isStart
+        ? (_start ?? now)
+        : (_end ?? _start ?? now.add(const Duration(days: 1)));
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: initial,
+      firstDate: now,
+      lastDate: now.add(const Duration(days: 365)),
+    );
+    if (picked == null) return;
+    setState(() {
+      if (isStart) {
+        _start = picked;
+        if (_end != null && _end!.isBefore(picked)) _end = picked;
+      } else {
+        _end = picked;
+      }
+    });
+  }
+
+  Future<void> _submit() async {
+    if (_start == null || _end == null) {
+      setState(() => _error = 'Pick both a start and end date.');
+      return;
+    }
+    setState(() {
+      _submitting = true;
+      _error = null;
+    });
+    final res = await _repo.createRequest(
+      startDate: _start!,
+      endDate: _end!,
+      reason: _reasonCtrl.text.trim(),
+    );
+    if (!mounted) return;
+    setState(() => _submitting = false);
+    switch (res) {
+      case Ok():
+        _reasonCtrl.clear();
+        setState(() {
+          _start = null;
+          _end = null;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Vacation request submitted.')),
+        );
+        _loadMine();
+      case Err(:final failure):
+        setState(() => _error = failure.message);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return Scaffold(
+      backgroundColor: isDark ? AppColors.backgroundDark : AppColors.background,
+      appBar: AppBar(
+        title: Text('Request Vacation', style: AppTypography.titleLarge),
+        backgroundColor: isDark ? AppColors.surfaceDark : AppColors.surface,
+        surfaceTintColor: Colors.transparent,
+      ),
+      body: ListView(
+        padding: const EdgeInsets.fromLTRB(20, 20, 20, 40),
+        children: [
+          Row(
+            children: [
+              Expanded(child: _dateField('Start', _start, () => _pick(true), isDark)),
+              const SizedBox(width: 12),
+              Expanded(child: _dateField('End', _end, () => _pick(false), isDark)),
+            ],
+          ),
+          const SizedBox(height: 16),
+          Text('Reason (optional)',
+              style: AppTypography.labelMedium
+                  .copyWith(fontWeight: FontWeight.w700)),
+          const SizedBox(height: 6),
+          TextField(
+            controller: _reasonCtrl,
+            maxLines: 3,
+            maxLength: 500,
+            decoration: InputDecoration(
+              hintText: 'e.g. Travelling home for the week',
+              border:
+                  OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+            ),
+          ),
+          if (_error != null) ...[
+            const SizedBox(height: 8),
+            Text(_error!,
+                style:
+                    AppTypography.bodySmall.copyWith(color: AppColors.error)),
+          ],
+          const SizedBox(height: 12),
+          SizedBox(
+            height: 50,
+            child: FilledButton.icon(
+              onPressed: _submitting ? null : _submit,
+              style: FilledButton.styleFrom(backgroundColor: AppColors.vacation),
+              icon: _submitting
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(
+                          strokeWidth: 2, color: Colors.white))
+                  : const Icon(Icons.beach_access_rounded),
+              label: Text(_submitting ? 'Submitting...' : 'Submit request'),
+            ),
+          ),
+          const SizedBox(height: 28),
+          Text('Your requests',
+              style: AppTypography.titleSmall
+                  .copyWith(fontWeight: FontWeight.w700)),
+          const SizedBox(height: 12),
+          if (_loading)
+            const Center(child: Padding(
+              padding: EdgeInsets.all(16),
+              child: CircularProgressIndicator(),
+            ))
+          else if (_mine.isEmpty)
+            Text('No requests yet.',
+                style: AppTypography.bodySmall
+                    .copyWith(color: AppColors.textSecondary))
+          else
+            ..._mine.map((r) => _requestTile(r, isDark)),
+        ],
+      ),
+    );
+  }
+
+  Widget _dateField(
+      String label, DateTime? value, VoidCallback onTap, bool isDark) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+        decoration: BoxDecoration(
+          color: isDark ? AppColors.surfaceDark : AppColors.surface,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: (isDark ? AppColors.borderDark : AppColors.border)
+                .withValues(alpha: 0.6),
+          ),
+        ),
+        child: Row(
+          children: [
+            const Icon(Icons.event_rounded,
+                size: 18, color: AppColors.vacation),
+            const SizedBox(width: 10),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(label,
+                    style: AppTypography.labelSmall
+                        .copyWith(color: AppColors.textSecondary)),
+                Text(
+                  value == null ? 'Select' : _fmt(value),
+                  style: AppTypography.bodyMedium
+                      .copyWith(fontWeight: FontWeight.w600),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _requestTile(VacationRequestModel r, bool isDark) {
+    final c = switch (r.status) {
+      'approved' => AppColors.present,
+      'rejected' => AppColors.absent,
+      'cancelled' => AppColors.textTertiary,
+      _ => AppColors.warning,
+    };
+    final canCancel = r.isPending || r.isApproved;
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: isDark ? AppColors.surfaceDark : AppColors.surface,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+          color: (isDark ? AppColors.borderDark : AppColors.border)
+              .withValues(alpha: 0.5),
+        ),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('${_fmt(r.startDate)}  →  ${_fmt(r.endDate)}',
+                    style: AppTypography.bodyMedium
+                        .copyWith(fontWeight: FontWeight.w600)),
+                if (r.reason != null && r.reason!.isNotEmpty) ...[
+                  const SizedBox(height: 2),
+                  Text(r.reason!,
+                      style: AppTypography.bodySmall
+                          .copyWith(color: AppColors.textSecondary)),
+                ],
+              ],
+            ),
+          ),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+            decoration: BoxDecoration(
+              color: c.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: Text(r.status[0].toUpperCase() + r.status.substring(1),
+                style: AppTypography.labelSmall
+                    .copyWith(color: c, fontWeight: FontWeight.w700)),
+          ),
+          if (canCancel)
+            TextButton(
+              onPressed: () async {
+                final res = await _repo.cancel(r.id);
+                if (!mounted) return;
+                if (res case Err(:final failure)) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text(failure.message)));
+                } else {
+                  _loadMine();
+                }
+              },
+              child: const Text('Cancel'),
+            ),
+        ],
+      ),
+    );
+  }
+
+  static String _fmt(DateTime d) =>
+      '${d.day.toString().padLeft(2, '0')}/${d.month.toString().padLeft(2, '0')}/${d.year}';
+}

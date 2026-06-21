@@ -36,6 +36,11 @@ class _StaffAttendanceScreenState extends State<StaffAttendanceScreen> {
   String? _error;
   String? _busyMealId;
 
+  // Issue 5: per-meal selected meal preference (parity with the student flow).
+  // When a meal has preferences enabled, "Present" stays disabled until the
+  // admin picks one — exactly like members.
+  final Map<String, String?> _selectedPref = {};
+
   List<GroupModel> _groups = [];
   String? _groupId;
   List<MealModel> _meals = [];
@@ -124,7 +129,8 @@ class _StaffAttendanceScreenState extends State<StaffAttendanceScreen> {
     return null;
   }
 
-  Future<void> _mark(MealModel meal, AttendanceStatus status) async {
+  Future<void> _mark(MealModel meal, AttendanceStatus status,
+      {String? preference}) async {
     final gid = _groupId;
     if (gid == null || _busyMealId != null) return;
     setState(() => _busyMealId = meal.id);
@@ -137,7 +143,8 @@ class _StaffAttendanceScreenState extends State<StaffAttendanceScreen> {
         r.date.day == now.day);
 
     final record = existing != -1
-        ? _records[existing].copyWith(status: status, markedAt: now)
+        ? _records[existing]
+            .copyWith(status: status, markedAt: now, preference: preference)
         : AttendanceModel(
             id: 'temp_${meal.id}_${now.millisecondsSinceEpoch}',
             mealId: meal.id,
@@ -147,9 +154,14 @@ class _StaffAttendanceScreenState extends State<StaffAttendanceScreen> {
             status: status,
             date: now,
             markedAt: now,
+            preference: preference,
           );
 
-    final res = await _attendanceRepo.markAttendance(record: record);
+    // Issue 5: admins mark their OWN attendance through the override path, so
+    // it works after the window has closed too — the same allowance the spec
+    // grants admins. The endpoint snapshots the effective price and bypasses
+    // the window + vacation checks; it is org/role-scoped server-side.
+    final res = await _attendanceRepo.adminOverride(record: record);
     if (!mounted) return;
     switch (res) {
       case Ok(:final value):
@@ -284,6 +296,13 @@ class _StaffAttendanceScreenState extends State<StaffAttendanceScreen> {
     final open = meal.attendanceWindow.openTime;
     final close = meal.attendanceWindow.closeTime;
 
+    // Issue 5: preference parity. When the meal has preferences enabled, the
+    // admin must pick one before "Present" — identical to the member flow.
+    final prefsOn =
+        meal.preferencesEnabled && meal.enabledPreferences.isNotEmpty;
+    final selectedPref = _selectedPref[meal.id];
+    final canPresent = !prefsOn || selectedPref != null;
+
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       padding: const EdgeInsets.all(16),
@@ -319,12 +338,77 @@ class _StaffAttendanceScreenState extends State<StaffAttendanceScreen> {
                   : AppColors.textSecondary,
             ),
           ),
+          // ── Preference chips (Issue 5 parity) ─────────────────────────────
+          if (prefsOn) ...[
+            const SizedBox(height: 12),
+            Text(
+              'Meal preference (required)',
+              style: AppTypography.labelSmall.copyWith(
+                color: isDark
+                    ? AppColors.textSecondaryDark
+                    : AppColors.textSecondary,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: meal.enabledPreferences.map((opt) {
+                final isSelected = selectedPref == opt;
+                final disp = MealPreferenceOption.display(opt);
+                return GestureDetector(
+                  onTap: () => setState(() {
+                    _selectedPref[meal.id] = isSelected ? null : opt;
+                  }),
+                  child: Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: isSelected
+                          ? AppColors.primary
+                          : isDark
+                              ? AppColors.surfaceVariantDark
+                              : AppColors.surfaceVariant,
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(
+                        color: isSelected
+                            ? AppColors.primary
+                            : (isDark ? AppColors.borderDark : AppColors.border)
+                                .withValues(alpha: 0.6),
+                      ),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(disp.emoji, style: const TextStyle(fontSize: 13)),
+                        const SizedBox(width: 5),
+                        Text(
+                          disp.label,
+                          style: AppTypography.labelSmall.copyWith(
+                            color: isSelected
+                                ? Colors.white
+                                : isDark
+                                    ? AppColors.textPrimaryDark
+                                    : AppColors.textPrimary,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              }).toList(),
+            ),
+          ],
           const SizedBox(height: 14),
           Row(
             children: [
               _actionButton('Present', AppColors.present,
                   status == AttendanceStatus.present, busy,
-                  () => _mark(meal, AttendanceStatus.present)),
+                  () => _mark(meal, AttendanceStatus.present,
+                      preference: prefsOn ? selectedPref : null),
+                  enabled: canPresent),
               const SizedBox(width: 8),
               _actionButton('Skip', AppColors.skipped,
                   status == AttendanceStatus.skipped, busy,
@@ -371,15 +455,19 @@ class _StaffAttendanceScreenState extends State<StaffAttendanceScreen> {
     Color color,
     bool selected,
     bool busy,
-    VoidCallback onTap,
-  ) {
+    VoidCallback onTap, {
+    bool enabled = true,
+  }) {
+    final active = enabled && !busy;
     return Expanded(
       child: Material(
-        color: selected ? color : color.withValues(alpha: 0.10),
+        color: selected
+            ? color
+            : color.withValues(alpha: enabled ? 0.10 : 0.04),
         borderRadius: BorderRadius.circular(12),
         child: InkWell(
           borderRadius: BorderRadius.circular(12),
-          onTap: busy ? null : onTap,
+          onTap: active ? onTap : null,
           child: Container(
             height: 44,
             alignment: Alignment.center,
@@ -393,7 +481,9 @@ class _StaffAttendanceScreenState extends State<StaffAttendanceScreen> {
                     label,
                     style: AppTypography.labelMedium.copyWith(
                       fontWeight: FontWeight.w700,
-                      color: selected ? Colors.white : color,
+                      color: selected
+                          ? Colors.white
+                          : color.withValues(alpha: enabled ? 1 : 0.4),
                     ),
                   ),
           ),

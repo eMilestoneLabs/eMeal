@@ -144,6 +144,44 @@ class StudentDashboardProvider extends ChangeNotifier {
     return null;
   }
 
+  /// Feature 3: ordered meals for the "Open Now" carousel.
+  ///
+  /// Priority order (spec): pending-and-open meals first (force attention),
+  /// then already-marked open meals, and — if nothing is open — a single
+  /// fallback to the next upcoming (not-yet-past) meal. Empty when meals are
+  /// off or nothing qualifies. Purely derived; no extra fetches or rebuilds.
+  List<MealModel> get openNowMeals {
+    final pendingOpen = <MealModel>[];
+    final markedOpen = <MealModel>[];
+    for (final m in _todayMeals) {
+      if (!isWindowOpen(m)) continue;
+      if (markedMealIds.contains(m.id)) {
+        markedOpen.add(m);
+      } else {
+        pendingOpen.add(m);
+      }
+    }
+    final ordered = <MealModel>[...pendingOpen, ...markedOpen];
+    if (ordered.isNotEmpty) return ordered;
+    for (final m in _todayMeals) {
+      if (!isWindowPast(m)) return [m];
+    }
+    return const [];
+  }
+
+  /// Index inside [openNowMeals] of the first OPEN meal the student has not
+  /// acted on yet, or -1 when every open meal is already marked. The carousel
+  /// parks on this index and pauses auto-scroll to force attention.
+  int get firstPendingOpenIndex {
+    final list = openNowMeals;
+    for (var i = 0; i < list.length; i++) {
+      if (isWindowOpen(list[i]) && !markedMealIds.contains(list[i].id)) {
+        return i;
+      }
+    }
+    return -1;
+  }
+
   // ── Load ──────────────────────────────────────────────────────────────────
 
   Future<void> load({required UserModel user}) async {

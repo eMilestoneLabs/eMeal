@@ -1,8 +1,26 @@
 import 'package:flutter/material.dart';
 import 'package:smart_meal_management/core/theme/app_colors.dart';
 import 'package:smart_meal_management/core/theme/app_typography.dart';
+import 'package:smart_meal_management/data/repositories/group_repository.dart';
 import 'package:smart_meal_management/data/repositories/notice_repository.dart';
+import 'package:smart_meal_management/shared/models/group_model.dart';
 import 'package:smart_meal_management/shared/models/result.dart';
+
+/// Premium priority colours (Issue 2) — shared with the notice feed card so the
+/// chip in the composer matches what members will see. Spec: low=grey,
+/// normal=blue, high=orange, urgent=red — legible in light and dark themes.
+Color noticePriorityColor(String priority) {
+  switch (priority) {
+    case 'urgent':
+      return AppColors.error;
+    case 'high':
+      return AppColors.warning;
+    case 'low':
+      return AppColors.textTertiary;
+    default:
+      return AppColors.info;
+  }
+}
 
 /// Admin composer for a new notice (Phase B). Pops `true` on success so the
 /// feed refreshes. Scope defaults to the admin's current group; can be switched
@@ -28,16 +46,38 @@ class _NoticeComposerScreenState extends State<NoticeComposerScreen> {
 
   String _priority = 'normal';
   bool _pinned = false;
-  bool _orgWide = false;
   DateTime? _expiresAt;
   bool _saving = false;
   String? _error;
 
+  // Issue 2: targeting. 'org' = entire organisation; 'groups' = specific
+  // groups. Specific-group delivery reuses the existing single-groupId contract
+  // by posting one notice per selected group — no schema / contract change.
+  String _scope = 'org';
+  List<GroupModel> _groups = [];
+  final Set<String> _selectedGroupIds = {};
+  bool _loadingGroups = true;
+
   @override
   void initState() {
     super.initState();
-    // No group context -> force organisation-wide.
-    _orgWide = widget.groupId == null;
+    // With a current-group context, default to targeting that group; otherwise
+    // organisation-wide.
+    if (widget.groupId != null) {
+      _scope = 'groups';
+      _selectedGroupIds.add(widget.groupId!);
+    }
+    _loadGroups();
+  }
+
+  Future<void> _loadGroups() async {
+    final res = await GroupRepository()
+        .getOrganisationGroups(organizationId: widget.organizationId);
+    if (!mounted) return;
+    setState(() {
+      if (res case Ok(:final value)) _groups = value.data;
+      _loadingGroups = false;
+    });
   }
 
   @override
@@ -68,27 +108,53 @@ class _NoticeComposerScreenState extends State<NoticeComposerScreen> {
       setState(() => _error = 'Title and message are required.');
       return;
     }
+    if (_scope == 'groups' && _selectedGroupIds.isEmpty) {
+      setState(() => _error =
+          'Select at least one group, or choose Entire organisation.');
+      return;
+    }
     setState(() {
       _saving = true;
       _error = null;
     });
-    final res = await _repo.createNotice(
-      title: title,
-      body: body,
-      groupId: _orgWide ? null : widget.groupId,
-      priority: _priority,
-      pinned: _pinned,
-      expiresAt: _expiresAt,
-    );
+
+    // Org-wide = one notice with no group. Specific groups = one notice per
+    // selected group (reuses the single-groupId contract; fully additive).
+    String? firstError;
+    if (_scope == 'org') {
+      final res = await _repo.createNotice(
+        title: title,
+        body: body,
+        groupId: null,
+        priority: _priority,
+        pinned: _pinned,
+        expiresAt: _expiresAt,
+      );
+      if (res case Err(:final failure)) firstError = failure.message;
+    } else {
+      for (final gid in _selectedGroupIds) {
+        final res = await _repo.createNotice(
+          title: title,
+          body: body,
+          groupId: gid,
+          priority: _priority,
+          pinned: _pinned,
+          expiresAt: _expiresAt,
+        );
+        if (res case Err(:final failure)) {
+          firstError = failure.message;
+          break;
+        }
+      }
+    }
     if (!mounted) return;
-    switch (res) {
-      case Ok():
-        Navigator.of(context).pop(true);
-      case Err(:final failure):
-        setState(() {
-          _saving = false;
-          _error = failure.message;
-        });
+    if (firstError == null) {
+      Navigator.of(context).pop(true);
+    } else {
+      setState(() {
+        _saving = false;
+        _error = firstError;
+      });
     }
   }
 
@@ -126,12 +192,40 @@ class _NoticeComposerScreenState extends State<NoticeComposerScreen> {
           const SizedBox(height: 6),
           Wrap(
             spacing: 8,
+            runSpacing: 8,
             children: ['low', 'normal', 'high', 'urgent'].map((p) {
               final sel = _priority == p;
-              return ChoiceChip(
-                label: Text(p[0].toUpperCase() + p.substring(1)),
-                selected: sel,
-                onSelected: (_) => setState(() => _priority = p),
+              final c = noticePriorityColor(p);
+              return GestureDetector(
+                onTap: () => setState(() => _priority = p),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 14, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: sel ? c : c.withValues(alpha: 0.10),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(
+                      color: sel ? c : c.withValues(alpha: 0.4),
+                    ),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (sel) ...[
+                        const Icon(Icons.check_rounded,
+                            size: 14, color: Colors.white),
+                        const SizedBox(width: 4),
+                      ],
+                      Text(
+                        p[0].toUpperCase() + p.substring(1),
+                        style: AppTypography.labelMedium.copyWith(
+                          color: sel ? Colors.white : c,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
               );
             }).toList(),
           ),
@@ -143,22 +237,73 @@ class _NoticeComposerScreenState extends State<NoticeComposerScreen> {
             activeThumbColor: AppColors.primary,
             onChanged: (v) => setState(() => _pinned = v),
           ),
-          SwitchListTile(
-            contentPadding: EdgeInsets.zero,
-            title: Text('Organisation-wide', style: AppTypography.labelLarge),
-            subtitle: Text(
-              _orgWide
-                  ? 'Visible to every group in your organisation'
-                  : 'Visible only to your current group',
-              style: AppTypography.bodySmall
-                  .copyWith(color: AppColors.textTertiary),
-            ),
-            value: _orgWide,
-            activeThumbColor: AppColors.primary,
-            onChanged: widget.groupId == null
-                ? null
-                : (v) => setState(() => _orgWide = v),
+          _label('Send to'),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Expanded(
+                child: _ScopeOption(
+                  label: 'Entire organisation',
+                  icon: Icons.apartment_rounded,
+                  selected: _scope == 'org',
+                  onTap: () => setState(() => _scope = 'org'),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: _ScopeOption(
+                  label: 'Specific groups',
+                  icon: Icons.groups_rounded,
+                  selected: _scope == 'groups',
+                  onTap: () => setState(() => _scope = 'groups'),
+                ),
+              ),
+            ],
           ),
+          if (_scope == 'org')
+            Padding(
+              padding: const EdgeInsets.only(top: 6),
+              child: Text(
+                'Visible to every group in your organisation.',
+                style: AppTypography.bodySmall
+                    .copyWith(color: AppColors.textTertiary),
+              ),
+            ),
+          if (_scope == 'groups') ...[
+            const SizedBox(height: 6),
+            if (_loadingGroups)
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 12),
+                child: Center(child: CircularProgressIndicator()),
+              )
+            else if (_groups.isEmpty)
+              Text(
+                'No groups yet — create a group first.',
+                style: AppTypography.bodySmall
+                    .copyWith(color: AppColors.textTertiary),
+              )
+            else
+              Column(
+                children: _groups.map((g) {
+                  final checked = _selectedGroupIds.contains(g.id);
+                  return CheckboxListTile(
+                    contentPadding: EdgeInsets.zero,
+                    dense: true,
+                    controlAffinity: ListTileControlAffinity.leading,
+                    activeColor: AppColors.primary,
+                    title: Text(g.name, style: AppTypography.bodyMedium),
+                    value: checked,
+                    onChanged: (v) => setState(() {
+                      if (v ?? false) {
+                        _selectedGroupIds.add(g.id);
+                      } else {
+                        _selectedGroupIds.remove(g.id);
+                      }
+                    }),
+                  );
+                }).toList(),
+              ),
+          ],
           ListTile(
             contentPadding: EdgeInsets.zero,
             leading: const Icon(Icons.event_busy_rounded),
@@ -212,4 +357,69 @@ class _NoticeComposerScreenState extends State<NoticeComposerScreen> {
         border:
             OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
       );
+}
+
+/// Issue 2: a premium segmented option for the notice targeting selector.
+class _ScopeOption extends StatelessWidget {
+  const _ScopeOption({
+    required this.label,
+    required this.icon,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final String label;
+  final IconData icon;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final c = AppColors.primary;
+    return Material(
+      color: selected
+          ? c.withValues(alpha: 0.12)
+          : (isDark ? AppColors.surfaceDark : AppColors.surface),
+      borderRadius: BorderRadius.circular(12),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: selected
+                  ? c
+                  : (isDark ? AppColors.borderDark : AppColors.border)
+                      .withValues(alpha: 0.6),
+              width: selected ? 1.5 : 1,
+            ),
+          ),
+          child: Row(
+            children: [
+              Icon(icon,
+                  size: 18,
+                  color: selected ? c : AppColors.textTertiary),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  label,
+                  style: AppTypography.labelMedium.copyWith(
+                    color: selected
+                        ? c
+                        : (isDark
+                            ? AppColors.textPrimaryDark
+                            : AppColors.textPrimary),
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 }
