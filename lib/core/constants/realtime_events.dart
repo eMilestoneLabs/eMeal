@@ -70,6 +70,9 @@ abstract final class RealtimeEvents {
   /// Guest party / person updated. Room: `organization:{organizationId}`.
   static const String guestUpdated = 'guest.updated.v1';
 
+  /// New notice posted (Phase B notice board). Room: group / org / admin.
+  static const String noticeCreated = 'notice.created.v1';
+
   /// Server-side error frame (e.g. rate limit). Not versioned.
   static const String error = 'error';
 
@@ -92,6 +95,7 @@ abstract final class RealtimeEvents {
     eventStatsUpdated,
     guestJoined,
     guestUpdated,
+    noticeCreated,
   ];
 
   // ── Client → server (messages handled by the gateway) ───────────────────────

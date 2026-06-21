@@ -358,11 +358,47 @@ class MealRepository implements IMealRepository {
     required String organizationId,
     required String groupId,
     required String scheduleId,
+    MealScheduleModel? schedule,
   }) async {
     if (!_isMock) {
-      // B10 LIVE: POST /schedules/:id/publish — admin only.
+      // Issue 2: when the local draft is supplied, send its entries so the
+      // backend atomically REPLACES + publishes in one transaction. Students
+      // keep seeing the previously published week until this commit lands —
+      // editing a published week never strands them on the master meal config.
+      Map<String, dynamic>? body;
+      if (schedule != null) {
+        final now = DateTime.now();
+        final monday = DateTime(now.year, now.month, now.day)
+            .subtract(Duration(days: now.weekday - 1));
+        String fmt(DateTime d) =>
+            '${d.year.toString().padLeft(4, '0')}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+        final entries = <Map<String, dynamic>>[];
+        for (final daySchedule in schedule.days) {
+          final date = fmt(monday.add(Duration(days: daySchedule.day.index)));
+          for (final e in daySchedule.meals) {
+            entries.add({
+              'mealId': e.mealId,
+              'date': date,
+              if (e.name.isNotEmpty) 'mealName': e.name,
+              if (e.openTime != null && e.closeTime != null)
+                'attendanceWindow': {
+                  'openTime': e.openTime,
+                  'closeTime': e.closeTime,
+                },
+              'preferencesEnabled': e.preferencesEnabled,
+              'enabledPreferences': e.enabledPreferences,
+              'menuItems': e.menuItems,
+              if (e.price != null) 'price': e.price,
+            });
+          }
+        }
+        body = {'entries': entries, 'replaceEntries': true};
+      }
+      // B10 LIVE: POST /schedules/:id/publish — admin only. An entries body
+      // triggers atomic replace-and-publish; no body = idempotent flag flip.
       final result = await DioApiService.instance.post<Map<String, dynamic>>(
         '/schedules/$scheduleId/publish',
+        body: body,
       );
       return switch (result) {
         Err(:final failure) => Err(failure),

@@ -163,8 +163,11 @@ class _MealConfigFormState extends State<MealConfigForm> {
   /// backend enforces the same rule; this just disables the field early.
   bool get _priceLocked {
     if (widget.initialMeal == null || !widget.pricingEnabled) return false;
+    // Locked ONLY while the window is currently open (open <= now <= close).
+    // Editable before it opens and after it closes (applies going forward).
     final now = TimeOfDay.now();
-    return now.hour * 60 + now.minute >= _toMinutes(_openTime);
+    final nowM = now.hour * 60 + now.minute;
+    return nowM >= _toMinutes(_openTime) && nowM <= _toMinutes(_closeTime);
   }
 
   bool get _canSave =>

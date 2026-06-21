@@ -5,6 +5,7 @@ import 'package:smart_meal_management/core/theme/app_colors.dart';
 import 'package:smart_meal_management/core/theme/app_typography.dart';
 import 'package:smart_meal_management/features/admin/dashboard/providers/admin_dashboard_provider.dart';
 import 'package:smart_meal_management/features/admin/dashboard/widgets/admin_greeting_card.dart';
+import 'package:smart_meal_management/features/notices/widgets/notice_bell.dart';
 import 'package:smart_meal_management/features/admin/dashboard/widgets/quick_action_grid.dart';
 import 'package:smart_meal_management/features/admin/dashboard/widgets/stats_summary_row.dart';
 import 'package:smart_meal_management/shared/models/attendance_model.dart';
@@ -75,6 +76,12 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
         backgroundColor: isDark ? AppColors.surfaceDark : AppColors.surface,
         surfaceTintColor: Colors.transparent,
         actions: [
+          if (auth.currentUser != null)
+            NoticeBell(
+              organizationId: auth.currentUser!.organizationId,
+              groupId: _provider.selectedGroupId,
+              isAdmin: true,
+            ),
           IconButton(
             tooltip: 'Refresh',
             icon: const Icon(Icons.refresh_rounded),
@@ -324,10 +331,16 @@ class _MealSummaryCard extends StatelessWidget {
                   overflow: TextOverflow.ellipsis,
                 ),
               ),
-              // Additive: effective (per-day) price when pricing is enabled.
-              if (meal.price != null)
+              // Issue 1: the dashboard must mirror what was actually billed, never
+              // a price edited AFTER the window closed (those edits apply to next
+              // week's same weekday). Use the captured snapshot price; only fall
+              // back to the live Meal.price while today's window is still open
+              // (price not yet frozen / nothing billed yet).
+              if ((summary?.snapshotPrice ??
+                      (_mealWindowOpenNow(meal) ? meal.price : null)) !=
+                  null)
                 Text(
-                  '₹${meal.price}',
+                  '₹${summary?.snapshotPrice ?? meal.price}',
                   style: AppTypography.labelMedium.copyWith(
                     fontWeight: FontWeight.w800,
                     color: AppColors.primary,
@@ -702,7 +715,6 @@ class _GroupSelector extends StatelessWidget {
 class _GroupTile extends StatelessWidget {
   const _GroupTile({required this.group});
   final GroupModel group;
-
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
@@ -753,4 +765,25 @@ class _GroupTile extends StatelessWidget {
       ),
     );
   }
+}
+
+/// Issue 1 helper: true when [meal]'s attendance window is open at the current
+/// wall-clock minute. Used so the admin dashboard only shows a live (editable)
+/// unit price while the window is open; once closed it shows the billed snapshot.
+bool _mealWindowOpenNow(MealModel meal) {
+  int? toMinutes(String t) {
+    final parts = t.split(':');
+    if (parts.length < 2) return null;
+    final h = int.tryParse(parts[0]);
+    final m = int.tryParse(parts[1]);
+    if (h == null || m == null) return null;
+    return h * 60 + m;
+  }
+
+  final open = toMinutes(meal.attendanceWindow.openTime);
+  final close = toMinutes(meal.attendanceWindow.closeTime);
+  if (open == null || close == null) return true;
+  final now = TimeOfDay.now();
+  final nowMinutes = now.hour * 60 + now.minute;
+  return nowMinutes >= open && nowMinutes <= close;
 }

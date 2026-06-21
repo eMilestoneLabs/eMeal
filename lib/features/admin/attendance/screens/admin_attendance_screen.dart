@@ -3,6 +3,9 @@ import 'package:smart_meal_management/core/constants/app_constants.dart';
 import 'package:smart_meal_management/core/theme/app_colors.dart';
 import 'package:smart_meal_management/core/theme/app_typography.dart';
 import 'package:smart_meal_management/data/repositories/group_repository.dart';
+import 'package:smart_meal_management/data/repositories/attendance_repository.dart';
+import 'package:smart_meal_management/data/repositories/meal_repository.dart';
+import 'package:smart_meal_management/shared/models/meal_model.dart';
 import 'package:smart_meal_management/features/admin/attendance/providers/admin_attendance_provider.dart';
 import 'package:smart_meal_management/features/admin/attendance/widgets/attendance_filter_bar.dart';
 import 'package:smart_meal_management/features/admin/attendance/widgets/member_attendance_row.dart';
@@ -145,6 +148,28 @@ class _AdminAttendanceScreenState extends State<AdminAttendanceScreen> {
     );
   }
 
+  /// Issue 5: opens a sheet where the admin marks their OWN attendance for
+  /// today's meals (via the admin override path, which works regardless of the
+  /// window and snapshots the effective price). Refreshes the list afterwards.
+  Future<void> _openMyAttendance() async {
+    final auth = AuthProviderScope.of(context);
+    final user = auth.currentUser;
+    if (user == null || _selectedGroupId == null) return;
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => _MyAttendanceSheet(
+        organizationId: user.organizationId,
+        groupId: _selectedGroupId!,
+        userId: user.id,
+        userName: user.name,
+      ),
+    );
+    if (!mounted) return;
+    await _loadAttendance(user.organizationId);
+  }
+
   @override
   void dispose() {
     _provider.removeListener(_rebuild);
@@ -166,6 +191,13 @@ class _AdminAttendanceScreenState extends State<AdminAttendanceScreen> {
         backgroundColor: isDark ? AppColors.surfaceDark : AppColors.surface,
         surfaceTintColor: Colors.transparent,
         actions: [
+          // Issue 5: an admin / manager can mark THEIR OWN attendance for today.
+          if (_selectedGroupId != null)
+            IconButton(
+              tooltip: 'Mark my attendance',
+              onPressed: _openMyAttendance,
+              icon: const Icon(Icons.how_to_reg_rounded, size: 20),
+            ),
           TextButton.icon(
             onPressed: _pickDate,
             icon: const Icon(Icons.calendar_today_rounded, size: 16),
@@ -466,6 +498,292 @@ class _AttendanceOverrideSheet extends StatelessWidget {
           }),
           const SizedBox(height: 8),
         ],
+      ),
+    );
+  }
+}
+
+
+// ── Issue 5: admin self-attendance sheet ────────────────────────────────────
+
+/// Lets an admin / manager mark THEIR OWN attendance for today's meals. Uses the
+/// admin override endpoint with the admin's own userId, so it works even outside
+/// the attendance window and snapshots the effective price (admins participate as
+/// group members like anyone else).
+class _MyAttendanceSheet extends StatefulWidget {
+  const _MyAttendanceSheet({
+    required this.organizationId,
+    required this.groupId,
+    required this.userId,
+    required this.userName,
+  });
+
+  final String organizationId;
+  final String groupId;
+  final String userId;
+  final String userName;
+
+  @override
+  State<_MyAttendanceSheet> createState() => _MyAttendanceSheetState();
+}
+
+class _MyAttendanceSheetState extends State<_MyAttendanceSheet> {
+  final _mealRepo = MealRepository();
+  final _attendanceRepo = AttendanceRepository();
+
+  bool _loading = true;
+  List<MealModel> _meals = [];
+  final Map<String, AttendanceStatus> _status = {};
+  String? _savingMealId;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    setState(() => _loading = true);
+    final results = await Future.wait([
+      _mealRepo.getTodayMeals(
+          organizationId: widget.organizationId, groupId: widget.groupId),
+      _attendanceRepo.getTodayAttendance(
+          userId: widget.userId,
+          groupId: widget.groupId,
+          organizationId: widget.organizationId),
+    ]);
+    if (!mounted) return;
+    var meals = <MealModel>[];
+    if (results[0] case Ok(:final value)) meals = value as List<MealModel>;
+    if (results[1] case Ok(:final value)) {
+      for (final r in value as List<AttendanceModel>) {
+        _status[r.mealId] = r.status;
+      }
+    }
+    meals.sort((a, b) => a.order.compareTo(b.order));
+    setState(() {
+      _meals = meals;
+      _loading = false;
+    });
+  }
+
+  Future<void> _mark(MealModel meal, AttendanceStatus status) async {
+    setState(() => _savingMealId = meal.id);
+    final now = DateTime.now();
+    final record = AttendanceModel(
+      id: '',
+      mealId: meal.id,
+      userId: widget.userId,
+      groupId: widget.groupId,
+      organizationId: widget.organizationId,
+      status: status,
+      date: DateTime(now.year, now.month, now.day),
+    );
+    final res = await _attendanceRepo.adminOverride(record: record);
+    if (!mounted) return;
+    setState(() => _savingMealId = null);
+    switch (res) {
+      case Ok(:final value):
+        setState(() => _status[meal.id] = value.status);
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('${meal.name}: marked ${status.name}'),
+          duration: const Duration(seconds: 2),
+        ));
+      case Err(:final failure):
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(failure.message),
+          duration: const Duration(seconds: 2),
+        ));
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return DraggableScrollableSheet(
+      expand: false,
+      initialChildSize: 0.6,
+      minChildSize: 0.4,
+      maxChildSize: 0.92,
+      builder: (ctx, scrollCtrl) => Container(
+        decoration: BoxDecoration(
+          color: isDark ? AppColors.surfaceDark : AppColors.surface,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+        ),
+        padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Center(
+              child: Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: AppColors.border,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+            ),
+            const SizedBox(height: 14),
+            Text('My attendance · today',
+                style: AppTypography.titleMedium
+                    .copyWith(fontWeight: FontWeight.w700)),
+            const SizedBox(height: 2),
+            Text(widget.userName,
+                style: AppTypography.bodySmall
+                    .copyWith(color: AppColors.textTertiary)),
+            const SizedBox(height: 12),
+            Expanded(
+              child: _loading
+                  ? const Center(child: CircularProgressIndicator())
+                  : _meals.isEmpty
+                      ? Center(
+                          child: Text('No meals configured for today.',
+                              style: AppTypography.bodyMedium
+                                  .copyWith(color: AppColors.textTertiary)))
+                      : ListView.separated(
+                          controller: scrollCtrl,
+                          itemCount: _meals.length,
+                          separatorBuilder: (_, _) =>
+                              const SizedBox(height: 10),
+                          itemBuilder: (ctx, i) {
+                            final meal = _meals[i];
+                            final st =
+                                _status[meal.id] ?? AttendanceStatus.pending;
+                            return _MySelfMealCard(
+                              meal: meal,
+                              status: st,
+                              saving: _savingMealId == meal.id,
+                              onMark: (newStatus) => _mark(meal, newStatus),
+                            );
+                          },
+                        ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _MySelfMealCard extends StatelessWidget {
+  const _MySelfMealCard({
+    required this.meal,
+    required this.status,
+    required this.saving,
+    required this.onMark,
+  });
+
+  final MealModel meal;
+  final AttendanceStatus status;
+  final bool saving;
+  final void Function(AttendanceStatus) onMark;
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: isDark ? AppColors.backgroundDark : AppColors.background,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+          color: (isDark ? AppColors.borderDark : AppColors.border)
+              .withValues(alpha: 0.5),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(meal.name,
+                    style: AppTypography.labelLarge
+                        .copyWith(fontWeight: FontWeight.w700)),
+              ),
+              Text(
+                  '${meal.attendanceWindow.openTime}–${meal.attendanceWindow.closeTime}',
+                  style: AppTypography.bodySmall
+                      .copyWith(color: AppColors.textTertiary)),
+            ],
+          ),
+          const SizedBox(height: 10),
+          if (saving)
+            const SizedBox(
+              height: 38,
+              child: Center(
+                child: SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2)),
+              ),
+            )
+          else
+            Row(
+              children: [
+                _SelfBtn(
+                    label: 'Present',
+                    selected: status == AttendanceStatus.present,
+                    color: AppColors.present,
+                    onTap: () => onMark(AttendanceStatus.present)),
+                const SizedBox(width: 8),
+                _SelfBtn(
+                    label: 'Skip',
+                    selected: status == AttendanceStatus.skipped,
+                    color: AppColors.warning,
+                    onTap: () => onMark(AttendanceStatus.skipped)),
+                const SizedBox(width: 8),
+                _SelfBtn(
+                    label: 'Absent',
+                    selected: status == AttendanceStatus.absent,
+                    color: AppColors.absent,
+                    onTap: () => onMark(AttendanceStatus.absent)),
+              ],
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SelfBtn extends StatelessWidget {
+  const _SelfBtn({
+    required this.label,
+    required this.selected,
+    required this.color,
+    required this.onTap,
+  });
+
+  final String label;
+  final bool selected;
+  final Color color;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Expanded(
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(10),
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 10),
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color:
+                selected ? color.withValues(alpha: 0.16) : Colors.transparent,
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(
+                color: selected
+                    ? color
+                    : AppColors.border.withValues(alpha: 0.6)),
+          ),
+          child: Text(label,
+              style: AppTypography.labelMedium.copyWith(
+                color: selected ? color : AppColors.textSecondary,
+                fontWeight: FontWeight.w700,
+              )),
+        ),
       ),
     );
   }

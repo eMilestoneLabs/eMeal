@@ -24,6 +24,7 @@ class AttendanceActionCard extends StatefulWidget {
     required this.status,
     required this.onMark,
     this.isWindowOpen = true,
+    this.isWindowClosed = false,
     this.isVacationMode = false,
     this.isDefaultAttendance = false,
     this.isLoading = false,
@@ -33,6 +34,10 @@ class AttendanceActionCard extends StatefulWidget {
 
   final MealModel meal;
   final AttendanceStatus? status;
+
+  /// True when the attendance window has already CLOSED for today (past close
+  /// time). Used to show an explicit "Attendance closed" note on a marked meal.
+  final bool isWindowClosed;
 
   /// Called when the student marks attendance with an optional preference.
   final void Function(AttendanceStatus status, {String? preference}) onMark;
@@ -186,11 +191,41 @@ class _AttendanceActionCardState extends State<AttendanceActionCard> {
                 AppConstants.space16,
                 AppConstants.space12,
               ),
-              child: _MarkedRow(
-                status: widget.status!,
-                isDark: isDark,
-                canChange: widget.isWindowOpen && !widget.isVacationMode,
-                onMark: (s) => _markWithPreference(s),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _MarkedRow(
+                    status: widget.status!,
+                    isDark: isDark,
+                    canChange: widget.isWindowOpen && !widget.isVacationMode,
+                    onMark: (s) => _markWithPreference(s),
+                  ),
+                  // Once the window has closed, the student can no longer change
+                  // attendance — show that clearly instead of a silent state.
+                  if (widget.isWindowClosed) ...[
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        Icon(Icons.lock_clock_rounded,
+                            size: 13,
+                            color: isDark
+                                ? AppColors.textSecondaryDark
+                                : AppColors.textTertiary),
+                        const SizedBox(width: 6),
+                        Expanded(
+                          child: Text(
+                            'Attendance closed — you can no longer change this meal.',
+                            style: AppTypography.labelSmall.copyWith(
+                              color: isDark
+                                  ? AppColors.textSecondaryDark
+                                  : AppColors.textTertiary,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ],
               ),
             )
           else if (widget.isVacationMode)

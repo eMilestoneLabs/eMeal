@@ -10,19 +10,11 @@ import 'package:smart_meal_management/shared/models/attendance_model.dart';
 import 'package:smart_meal_management/shared/models/meal_model.dart';
 
 /// Builds PDF / CSV / Excel exports of attendance + billing and shares them via
-/// the platform share sheet ([share_plus]).
-///
-/// Columns (req 5): Name | Group | Meal | Status | Preference | Price Tag |
-/// Date | Attendance Marked Time. A per-member billing summary (req 8) is
-/// appended. Un-marked closed windows appear as virtual Skipped @ closeTime
-/// (req 6) via [BillingService]. Excel writes datetime as text so it never
-/// renders as `#####` (req 9).
+/// the platform share sheet (share_plus).
 class ExportService {
   ExportService._();
 
   static final ExportService instance = ExportService._();
-
-  // ── Shared row/column helpers ───────────────────────────────────────────────
 
   List<String> _headers(bool pricingEnabled) => [
         'Name',
@@ -38,15 +30,23 @@ class ExportService {
   List<String> _rowCells(
     BillingRow r,
     String groupName,
-    bool pricingEnabled,
-  ) {
+    bool pricingEnabled, {
+    // The bundled PDF font cannot render the ₹ glyph, so the PDF passes 'Rs '.
+    // CSV/Excel keep '₹' (those render it correctly).
+    String currency = '₹',
+  }) {
     return [
       r.userName,
       groupName,
       r.mealName,
       _statusLabel(r.status),
       r.preference ?? '',
-      if (pricingEnabled) (r.price != null ? '₹${r.price}' : ''),
+      // Only PRESENT meals carry a charge — Skip / Absent show 0 so the column
+      // matches the billing total.
+      if (pricingEnabled)
+        (r.status == AttendanceStatus.present
+            ? '$currency${r.price ?? 0}'
+            : '${currency}0'),
       _formatDate(r.date),
       r.markedAt != null ? _formatDateTime(r.markedAt!) : '',
     ];
@@ -62,12 +62,19 @@ class ExportService {
     required DateTime from,
     required DateTime to,
     String? dateRangeLabel,
+    List<MealModel> todayMeals = const [],
+    Set<String> vacationUserIds = const {},
   }) async {
+    // Issue 3 & 7: pass today's published overlay + vacation members so exported
+    // billing matches the on-screen figures (per-day window auto-skip + vacation
+    // exclusion) instead of the master-window / no-vacation fallback.
     final rows = BillingService.buildRows(
       records: records,
       meals: meals,
       from: from,
       to: to,
+      todayMeals: todayMeals,
+      vacationUserIds: vacationUserIds,
     );
     final summaries = BillingService.summarize(rows);
     final pdf = pw.Document();
@@ -100,7 +107,8 @@ class ExportService {
           pw.TableHelper.fromTextArray(
             headers: _headers(pricingEnabled),
             data: rows
-                .map((r) => _rowCells(r, groupName, pricingEnabled))
+                .map((r) =>
+                    _rowCells(r, groupName, pricingEnabled, currency: 'Rs '))
                 .toList(),
             headerStyle:
                 pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 9),
@@ -156,7 +164,8 @@ class ExportService {
           if (pricingEnabled) ...[
             pw.SizedBox(height: 2),
             pw.Text(
-              'Total Bill: ₹${s.totalBill}',
+              // PDF font lacks ₹ — use 'Rs '.
+              'Total Bill: Rs ${s.totalBill}',
               style:
                   pw.TextStyle(fontSize: 11, fontWeight: pw.FontWeight.bold),
             ),
@@ -176,9 +185,16 @@ class ExportService {
     required DateTime from,
     required DateTime to,
     String? dateRangeLabel,
+    List<MealModel> todayMeals = const [],
+    Set<String> vacationUserIds = const {},
   }) async {
     final rows = BillingService.buildRows(
-        records: records, meals: meals, from: from, to: to);
+        records: records,
+        meals: meals,
+        from: from,
+        to: to,
+        todayMeals: todayMeals,
+        vacationUserIds: vacationUserIds);
     final summaries = BillingService.summarize(rows);
     final buffer = StringBuffer();
 
@@ -213,8 +229,6 @@ class ExportService {
 
   // ── Excel (.xlsx) ────────────────────────────────────────────────────────────
 
-  /// Real .xlsx export. The Attendance Marked Time is written as TEXT so Excel
-  /// never reformats it to `#####` (req 9) — it shows exactly like the PDF.
   Future<void> exportXlsx({
     required List<AttendanceModel> records,
     required List<MealModel> meals,
@@ -223,9 +237,16 @@ class ExportService {
     required DateTime from,
     required DateTime to,
     String? dateRangeLabel,
+    List<MealModel> todayMeals = const [],
+    Set<String> vacationUserIds = const {},
   }) async {
     final rows = BillingService.buildRows(
-        records: records, meals: meals, from: from, to: to);
+        records: records,
+        meals: meals,
+        from: from,
+        to: to,
+        todayMeals: todayMeals,
+        vacationUserIds: vacationUserIds);
     final summaries = BillingService.summarize(rows);
 
     final book = xls.Excel.createExcel();
@@ -237,14 +258,12 @@ class ExportService {
     );
     for (final r in rows) {
       sheet.appendRow(
-        // All cells as text — keeps date/time human-readable, no #####.
         _rowCells(r, groupName, pricingEnabled)
             .map((c) => xls.TextCellValue(c))
             .toList(),
       );
     }
 
-    // Billing summary sheet.
     final sum = book['Billing Summary'];
     sum.appendRow([
       xls.TextCellValue('Name'),
@@ -265,7 +284,6 @@ class ExportService {
       ]);
     }
 
-    // Remove the default empty sheet excel creates.
     if (book.sheets.containsKey('Sheet1')) book.delete('Sheet1');
     book.setDefaultSheet(sheetName);
 

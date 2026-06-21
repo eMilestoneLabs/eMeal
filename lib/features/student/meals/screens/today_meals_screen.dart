@@ -7,7 +7,6 @@ import 'package:smart_meal_management/core/constants/app_constants.dart';
 import 'package:smart_meal_management/core/theme/app_colors.dart';
 import 'package:smart_meal_management/core/theme/app_typography.dart';
 import 'package:smart_meal_management/features/auth/providers/auth_provider.dart';
-import 'package:smart_meal_management/features/student/attendance/providers/student_attendance_provider.dart';
 import 'package:smart_meal_management/features/student/dashboard/providers/student_dashboard_provider.dart';
 import 'package:smart_meal_management/shared/models/attendance_model.dart';
 import 'package:smart_meal_management/shared/models/group_model.dart';
@@ -29,61 +28,44 @@ class TodayMealsScreen extends StatefulWidget {
 }
 
 class _TodayMealsScreenState extends State<TodayMealsScreen> {
-  // Dashboard data comes from the shell-level StudentDashboardScope —
-  // no duplicate API calls when switching tabs.
-  late final StudentAttendanceProvider _attendanceProvider;
-  bool _initialized = false;
+  // Issue 1: attendance status + marking now flow through the SHARED
+  // StudentDashboardProvider (shell-level) instead of a local provider. This
+  // keeps the Meals tab, Attendance tab and Home in sync — a mark made on any
+  // surface is immediately reflected on the others (no stale "Mark Present").
+  bool _ensuredLoad = false;
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    if (!_initialized) {
-      _initialized = true;
-      _attendanceProvider = StudentAttendanceProvider();
-      final user = AuthProviderScope.of(context).currentUser;
-      final groupId = user?.effectiveGroupIds.firstOrNull;
-      if (user != null && groupId != null) {
-        // Dashboard provider is shared — only load attendance locally.
-        _attendanceProvider.load(
-          userId: user.id,
-          groupId: groupId,
-          organizationId: user.organizationId,
-        );
-      }
+    if (_ensuredLoad) return;
+    _ensuredLoad = true;
+    // Safety: if the app opened directly on this tab before Home loaded the
+    // shared dashboard, kick off the load once (no-op if already loaded).
+    final dash = StudentDashboardScope.maybeOf(context);
+    final user = AuthProviderScope.of(context).currentUser;
+    if (dash != null &&
+        user != null &&
+        dash.todayMeals.isEmpty &&
+        !dash.isLoading) {
+      dash.load(user: user);
     }
-  }
-
-  @override
-  void dispose() {
-    // Do NOT dispose the dashboard provider — it is owned by StudentShell.
-    _attendanceProvider.dispose();
-    super.dispose();
   }
 
   Future<void> _onRefresh() async {
     final user = AuthProviderScope.of(context).currentUser;
-    final groupId = user?.effectiveGroupIds.firstOrNull;
-    if (user == null || groupId == null) return;
+    if (user == null) return;
     final dashboardProvider = StudentDashboardScope.maybeOf(context);
-    await Future.wait([
-      if (dashboardProvider != null) dashboardProvider.load(user: user),
-      _attendanceProvider.load(
-        userId: user.id,
-        groupId: groupId,
-        organizationId: user.organizationId,
-      ),
-    ]);
+    if (dashboardProvider != null) await dashboardProvider.load(user: user);
   }
 
-  void _mark(String mealId, AttendanceStatus status, {String? preference}) {
+  void _mark(MealModel meal, AttendanceStatus status, {String? preference}) {
     final user = AuthProviderScope.of(context).currentUser;
-    final groupId = user?.effectiveGroupIds.firstOrNull;
-    if (user == null || groupId == null) return;
-    _attendanceProvider.markAttendance(
-      mealId: mealId,
-      userId: user.id,
-      groupId: groupId,
-      organizationId: user.organizationId,
+    if (user == null) return;
+    final dashboardProvider = StudentDashboardScope.maybeOf(context);
+    if (dashboardProvider == null) return;
+    dashboardProvider.markStatus(
+      user: user,
+      meal: meal,
       status: status,
       preference: preference,
     );
@@ -101,10 +83,9 @@ class _TodayMealsScreenState extends State<TodayMealsScreen> {
     }
 
     return ListenableBuilder(
-      listenable: Listenable.merge([dashboardProvider, _attendanceProvider]),
+      listenable: dashboardProvider,
       builder: (context, _) {
-        final isLoading =
-            dashboardProvider.isLoading || _attendanceProvider.isLoading;
+        final isLoading = dashboardProvider.isLoading;
         final meals = dashboardProvider.todayMeals;
         final isVacation = dashboardProvider.isVacationMode;
         final isDefaultAttend =
@@ -192,7 +173,7 @@ class _TodayMealsScreenState extends State<TodayMealsScreen> {
                             itemBuilder: (context, i) {
                               final meal = meals[i];
                               final status =
-                                  _attendanceProvider.statusForMeal(meal.id);
+                                  dashboardProvider.statusForMeal(meal.id);
                               final isOpen =
                                   dashboardProvider.isWindowOpen(meal);
                               final isPast =
@@ -200,6 +181,11 @@ class _TodayMealsScreenState extends State<TodayMealsScreen> {
                               return _TodayMealCard(
                                 meal: meal,
                                 status: status,
+                                // Issue 5: once marked, show the price that was
+                                // snapshotted at mark time (matches billing),
+                                // not the live meal price which may have changed.
+                                snapshotPrice: dashboardProvider
+                                    .snapshotPriceForMeal(meal.id),
                                 isWindowOpen: isOpen,
                                 isWindowPast: isPast,
                                 isVacationMode: isVacation,
@@ -213,7 +199,7 @@ class _TodayMealsScreenState extends State<TodayMealsScreen> {
                                             .map((e) => e.name)
                                             .toList(),
                                 onMark: (s, pref) =>
-                                    _mark(meal.id, s, preference: pref),
+                                    _mark(meal, s, preference: pref),
                               );
                             },
                           ),
@@ -343,12 +329,17 @@ class _TodayMealCard extends StatefulWidget {
     required this.isVacationMode,
     required this.isDefaultAttend,
     required this.onMark,
+    this.snapshotPrice,
     this.preferencesEnabled = false,
     this.enabledPreferences = const [],
   });
 
   final MealModel meal;
   final AttendanceStatus? status;
+
+  /// Issue 5: price snapshotted on the attendance record (shown once marked).
+  final int? snapshotPrice;
+
   final bool isWindowOpen;
   final bool isWindowPast;
   final bool isVacationMode;
@@ -371,6 +362,13 @@ class _TodayMealCardState extends State<_TodayMealCard> {
 
   bool get _isMarked =>
       widget.status != null && widget.status != AttendanceStatus.pending;
+
+  /// Issue 5: once the meal is marked, show the snapshot price that was billed;
+  /// otherwise show the live meal price. Null hides the price chip.
+  int? get _displayPrice =>
+      (_isMarked && widget.snapshotPrice != null)
+          ? widget.snapshotPrice
+          : widget.meal.price;
 
   @override
   Widget build(BuildContext context) {
@@ -450,11 +448,12 @@ class _TodayMealCardState extends State<_TodayMealCard> {
                                   : AppColors.textSecondary,
                             ),
                           ),
-                          // Additive: show meal price before marking attendance.
-                          if (widget.meal.price != null) ...[
+                          // Show meal price. Issue 5: once marked, prefer the
+                          // snapshot price (what was billed) over the live price.
+                          if (_displayPrice != null) ...[
                             const SizedBox(width: 8),
                             Text(
-                              '• ₹${widget.meal.price}',
+                              '• ₹$_displayPrice',
                               style: AppTypography.bodySmall.copyWith(
                                 color: AppColors.primary,
                                 fontWeight: FontWeight.w700,
@@ -565,6 +564,7 @@ class _TodayMealCardState extends State<_TodayMealCard> {
               status: widget.status!,
               isDark: isDark,
               canChange: widget.isWindowOpen,
+              windowClosed: widget.isWindowPast,
               onMark: (s) => widget.onMark(s, _selectedPref),
             )
 
@@ -948,11 +948,13 @@ class _MarkedState extends StatelessWidget {
     required this.isDark,
     required this.canChange,
     required this.onMark,
+    this.windowClosed = false,
   });
 
   final AttendanceStatus status;
   final bool isDark;
   final bool canChange;
+  final bool windowClosed;
   final void Function(AttendanceStatus) onMark;
 
   @override
@@ -966,36 +968,65 @@ class _MarkedState extends StatelessWidget {
         AppConstants.space16,
         AppConstants.space12,
       ),
-      child: Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(icon, size: 16, color: color),
-          const SizedBox(width: AppConstants.space8),
-          Text(
-            label,
-            style: AppTypography.bodySmall.copyWith(
-              color: color,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-          if (canChange) ...[
-            const Spacer(),
-            TextButton(
-              onPressed: () => _showChangeSheet(context),
-              style: TextButton.styleFrom(
-                foregroundColor: isDark
-                    ? AppColors.textSecondaryDark
-                    : AppColors.textSecondary,
-                padding: const EdgeInsets.symmetric(
-                  horizontal: AppConstants.space8,
-                  vertical: 4,
-                ),
-              ),
-              child: Text(
-                'Change',
-                style: AppTypography.labelSmall.copyWith(
+          Row(
+            children: [
+              Icon(icon, size: 16, color: color),
+              const SizedBox(width: AppConstants.space8),
+              Text(
+                label,
+                style: AppTypography.bodySmall.copyWith(
+                  color: color,
                   fontWeight: FontWeight.w600,
                 ),
               ),
+              if (canChange) ...[
+                const Spacer(),
+                TextButton(
+                  onPressed: () => _showChangeSheet(context),
+                  style: TextButton.styleFrom(
+                    foregroundColor: isDark
+                        ? AppColors.textSecondaryDark
+                        : AppColors.textSecondary,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: AppConstants.space8,
+                      vertical: 4,
+                    ),
+                  ),
+                  child: Text(
+                    'Change',
+                    style: AppTypography.labelSmall.copyWith(
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ],
+            ],
+          ),
+          // Window has closed — make it explicit that the meal can't change.
+          if (windowClosed) ...[
+            const SizedBox(height: 6),
+            Row(
+              children: [
+                Icon(Icons.lock_clock_rounded,
+                    size: 13,
+                    color: isDark
+                        ? AppColors.textSecondaryDark
+                        : AppColors.textTertiary),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    'Attendance closed — you can no longer change this meal.',
+                    style: AppTypography.labelSmall.copyWith(
+                      color: isDark
+                          ? AppColors.textSecondaryDark
+                          : AppColors.textTertiary,
+                    ),
+                  ),
+                ),
+              ],
             ),
           ],
         ],

@@ -130,6 +130,13 @@ class AdminMoreScreen extends StatelessWidget {
             color: isDark ? AppColors.textSecondaryDark : AppColors.textSecondary,
             onTap: () => context.push(RouteNames.adminSettings),
           ),
+          _NavTile(
+            icon: Icons.how_to_reg_rounded,
+            label: 'Mark My Attendance',
+            subtitle: 'Mark your own meals like a member',
+            color: AppColors.present,
+            onTap: () => context.push(RouteNames.adminMyAttendance),
+          ),
 
           const SizedBox(height: 20),
 

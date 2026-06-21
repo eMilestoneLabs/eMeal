@@ -92,18 +92,41 @@ class AdminAttendanceProvider extends ChangeNotifier {
   }) async {
     final idx = _records.indexWhere((r) => r.id == recordId);
     if (idx == -1) return false;
+    final original = _records[idx];
 
-    // Optimistic update — swap status + set markedAt to now
-    final updated = _records[idx].copyWith(
+    // Optimistic update — swap status + set markedAt to now.
+    final optimistic = original.copyWith(
       status: newStatus,
       markedAt: DateTime.now(),
     );
-    _records = List.of(_records)..[idx] = updated;
+    _records = List.of(_records)..[idx] = optimistic;
     notifyListeners();
 
-    // Simulate network latency — in production, call the API here
-    await Future.delayed(const Duration(milliseconds: 300));
-    return true;
+    // Issue 6: actually PERSIST the override (this was previously a local-only
+    // no-op). The admin override endpoint bypasses the window + vacation checks
+    // and snapshots the effective price — so a forgotten student can be marked
+    // even after the window has closed, and it sticks across reloads.
+    final result = await _repo.adminOverride(
+      record: original.copyWith(status: newStatus),
+    );
+    switch (result) {
+      case Ok(:final value):
+        final i = _records.indexWhere((r) => r.id == recordId);
+        if (i != -1) {
+          _records = List.of(_records)..[i] = value;
+          notifyListeners();
+        }
+        return true;
+      case Err(:final failure):
+        // Revert the optimistic change and surface the error.
+        final i = _records.indexWhere((r) => r.id == recordId);
+        if (i != -1) {
+          _records = List.of(_records)..[i] = original;
+        }
+        _error = failure.message;
+        notifyListeners();
+        return false;
+    }
   }
 
   void clearError() {

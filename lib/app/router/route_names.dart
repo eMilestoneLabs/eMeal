@@ -44,6 +44,8 @@ abstract final class RouteNames {
   static const String adminSettings = '/admin/settings';
   static const String adminProfile = '/admin/profile';
   static const String adminMore = '/admin/more';
+  // Issue 5: staff (admin/manager) self-attendance
+  static const String adminMyAttendance = '/admin/my-attendance';
 
   // Groups (shared — accessed by students and admins)
   static const String groupJoin = '/groups/join';

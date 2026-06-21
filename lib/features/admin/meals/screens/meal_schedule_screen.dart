@@ -697,22 +697,29 @@ class _MealSlotCard extends StatelessWidget {
     final displayPrice =
         isEnabled ? (dayEntry!.price ?? meal.price) : meal.price;
 
-    // Issue 3: the price is locked (no longer changeable) once the schedule is
-    // published AND this day's attendance window has opened — past days this
-    // week, or today after its open time. Future days stay editable. The
-    // backend enforces the same rule; this is the visual padlock indicator.
+    // Price is locked ONLY for TODAY while its attendance window is currently
+    // open (open <= now <= close). Past weekdays, future weekdays, today before
+    // open, and today after close all stay editable — those edits apply to the
+    // next occurrence and never touch a completed day (historical records keep
+    // their snapshot). Backend enforces the same rule; this is the indicator.
     bool computePriceLocked() {
       if (!isPublished || displayPrice == null) return false;
-      final todayIndex =
-          DayOfWeek.fromWeekday(DateTime.now().weekday).index;
-      if (day.index < todayIndex) return true; // earlier this week → closed
-      if (day.index > todayIndex) return false; // upcoming day → editable
-      final parts = displayOpen.split(':'); // today → locked once window opens
-      if (parts.length < 2) return false;
-      final openMinutes = (int.tryParse(parts[0]) ?? 0) * 60 +
-          (int.tryParse(parts[1]) ?? 0);
+      final todayIndex = DayOfWeek.fromWeekday(DateTime.now().weekday).index;
+      if (day.index != todayIndex) return false; // only today can be locked
+      int? mins(String hhmm) {
+        final p = hhmm.split(':');
+        if (p.length < 2) return null;
+        final h = int.tryParse(p[0]);
+        final m = int.tryParse(p[1]);
+        return (h == null || m == null) ? null : h * 60 + m;
+      }
+
+      final open = mins(displayOpen);
+      final close = mins(displayClose);
+      if (open == null || close == null) return false;
       final now = TimeOfDay.now();
-      return now.hour * 60 + now.minute >= openMinutes;
+      final nowM = now.hour * 60 + now.minute;
+      return nowM >= open && nowM <= close;
     }
 
     final priceLocked = computePriceLocked();
@@ -1178,9 +1185,65 @@ class _DayMealEditSheetState extends State<_DayMealEditSheet> {
     return '$h:$m';
   }
 
+  /// Issue 9: parse an "HH:mm" string into a [TimeOfDay], or null if invalid.
+  TimeOfDay? _timeOfDayFromHHmm(String raw) {
+    final parts = raw.trim().split(':');
+    if (parts.length != 2) return null;
+    final h = int.tryParse(parts[0]);
+    final m = int.tryParse(parts[1]);
+    if (h == null || m == null || h < 0 || h > 23 || m < 0 || m > 59) {
+      return null;
+    }
+    return TimeOfDay(hour: h, minute: m);
+  }
+
+  /// Issue 9: open a Material time picker and write the chosen "HH:mm" back into
+  /// [ctrl] — admins pick a time on the clock instead of typing it manually.
+  Future<void> _pickTime(TextEditingController ctrl, String fallback) async {
+    final initial = _timeOfDayFromHHmm(ctrl.text) ??
+        _timeOfDayFromHHmm(fallback) ??
+        TimeOfDay.now();
+    final picked = await showTimePicker(
+      context: context,
+      initialTime: initial,
+      builder: (ctx, child) => MediaQuery(
+        data: MediaQuery.of(ctx).copyWith(alwaysUse24HourFormat: true),
+        child: child!,
+      ),
+    );
+    if (picked == null) return;
+    final hh = picked.hour.toString().padLeft(2, '0');
+    final mm = picked.minute.toString().padLeft(2, '0');
+    setState(() => ctrl.text = '$hh:$mm');
+  }
+
   /// Display label for a lowercase preference key (e.g. "veg" -> "Veg").
   String _prefLabel(String key) =>
       key.isEmpty ? key : key[0].toUpperCase() + key.substring(1);
+
+  /// Per-day price is locked ONLY for TODAY while its attendance window is
+  /// currently open (open ≤ now ≤ close). Past weekdays, future weekdays, today
+  /// before open, and today after close stay editable — those edits apply to
+  /// the next occurrence of that weekday, never to a completed day.
+  bool get _priceLocked {
+    if (!widget.pricingEnabled) return false;
+    final todayIndex = DayOfWeek.fromWeekday(DateTime.now().weekday).index;
+    if (widget.day.index != todayIndex) return false;
+    int? mins(String hhmm) {
+      final p = hhmm.split(':');
+      if (p.length < 2) return null;
+      final h = int.tryParse(p[0]);
+      final m = int.tryParse(p[1]);
+      return (h == null || m == null) ? null : h * 60 + m;
+    }
+
+    final open = mins(widget.entry.openTime ?? widget.templateOpenTime);
+    final close = mins(widget.entry.closeTime ?? widget.templateCloseTime);
+    if (open == null || close == null) return false;
+    final now = TimeOfDay.now();
+    final nowM = now.hour * 60 + now.minute;
+    return nowM >= open && nowM <= close;
+  }
 
   void _save() {
     final name = _nameCtrl.text.trim();
@@ -1193,8 +1256,11 @@ class _DayMealEditSheetState extends State<_DayMealEditSheet> {
       preferencesEnabled: _prefsEnabled,
       enabledPreferences:
           _prefsEnabled ? List<String>.from(_selectedPrefs) : <String>[],
+      // Issue 2: when locked, never let the current day's price change.
       price: widget.pricingEnabled
-          ? int.tryParse(_priceCtrl.text.trim())
+          ? (_priceLocked
+              ? widget.entry.price
+              : int.tryParse(_priceCtrl.text.trim()))
           : widget.entry.price,
     );
     Navigator.of(context).pop();
@@ -1308,9 +1374,14 @@ class _DayMealEditSheetState extends State<_DayMealEditSheet> {
                   Expanded(
                     child: TextField(
                       controller: _openCtrl,
+                      readOnly: true,
+                      onTap: () =>
+                          _pickTime(_openCtrl, widget.templateOpenTime),
                       decoration: InputDecoration(
                         labelText: 'Open time',
                         hintText: widget.templateOpenTime,
+                        suffixIcon:
+                            const Icon(Icons.schedule_rounded, size: 18),
                         border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(
                               AppConstants.inputRadius),
@@ -1322,9 +1393,14 @@ class _DayMealEditSheetState extends State<_DayMealEditSheet> {
                   Expanded(
                     child: TextField(
                       controller: _closeCtrl,
+                      readOnly: true,
+                      onTap: () =>
+                          _pickTime(_closeCtrl, widget.templateCloseTime),
                       decoration: InputDecoration(
                         labelText: 'Close time',
                         hintText: widget.templateCloseTime,
+                        suffixIcon:
+                            const Icon(Icons.schedule_rounded, size: 18),
                         border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(
                               AppConstants.inputRadius),
@@ -1464,13 +1540,23 @@ class _DayMealEditSheetState extends State<_DayMealEditSheet> {
               const SizedBox(height: 6),
               TextField(
                 controller: _priceCtrl,
+                enabled: !_priceLocked,
                 keyboardType: TextInputType.number,
                 decoration: InputDecoration(
                   prefixText: '₹ ',
+                  suffixIcon: _priceLocked
+                      ? const Icon(Icons.lock_rounded,
+                          size: 18, color: AppColors.textTertiary)
+                      : null,
                   hintText: widget.templatePrice != null
                       ? 'Default ₹${widget.templatePrice}'
                       : 'e.g. 40',
-                  helperText: 'Leave blank to inherit the master meal price.',
+                  helperText: _priceLocked
+                      ? 'Price locked while attendance is open. Editable once the window closes.'
+                      : 'Leave blank to inherit the master meal price.',
+                  helperStyle: _priceLocked
+                      ? const TextStyle(color: AppColors.warning)
+                      : null,
                   border: OutlineInputBorder(
                     borderRadius:
                         BorderRadius.circular(AppConstants.inputRadius),

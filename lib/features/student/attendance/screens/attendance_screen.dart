@@ -5,11 +5,11 @@ import 'package:smart_meal_management/core/constants/app_constants.dart';
 import 'package:smart_meal_management/core/theme/app_colors.dart';
 import 'package:smart_meal_management/core/theme/app_typography.dart';
 import 'package:smart_meal_management/features/auth/providers/auth_provider.dart';
-import 'package:smart_meal_management/features/student/attendance/providers/student_attendance_provider.dart';
 import 'package:smart_meal_management/features/student/attendance/widgets/attendance_action_card.dart';
 import 'package:smart_meal_management/features/student/dashboard/providers/student_dashboard_provider.dart';
 import 'package:smart_meal_management/features/student/providers/group_config_provider.dart';
 import 'package:smart_meal_management/shared/models/attendance_model.dart';
+import 'package:smart_meal_management/shared/models/meal_model.dart';
 
 /// Student attendance screen — today's meals with per-meal action cards.
 ///
@@ -41,68 +41,44 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
   // Only the attendance-specific provider is owned and disposed here — this
   // matches the TodayMealsScreen pattern (P3-6 fix) and prevents duplicate
   // API calls each time the Attendance tab is selected (G1 fix).
-  late final StudentAttendanceProvider _attendanceProvider;
-  bool _initialized = false;
+  // Issue 1: attendance status + marking flow through the SHARED
+  // StudentDashboardProvider (shell-level), so a mark made here, on the Meals
+  // tab, or on Home stays consistent everywhere — already-marked meals show the
+  // submitted status instead of re-prompting "Mark Present".
+  bool _ensuredLoad = false;
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    if (!_initialized) {
-      _initialized = true;
-      _attendanceProvider = StudentAttendanceProvider();
-
-      final auth = AuthProviderScope.of(context);
-      if (auth.currentUser != null) {
-        final user = auth.currentUser!;
-        final groupId = user.effectiveGroupIds.firstOrNull;
-        // Only load when the student has actually joined a group.
-        if (groupId != null) {
-          _attendanceProvider.load(
-            userId: user.id,
-            groupId: groupId,
-            organizationId: user.organizationId,
-          );
-          // StudentDashboardProvider is shared — StudentShell already loaded it.
-          // No separate load needed here; reading from scope below.
-        }
-      }
+    if (_ensuredLoad) return;
+    _ensuredLoad = true;
+    // Safety: ensure the shared dashboard is loaded if this tab opened first.
+    final dash = StudentDashboardScope.maybeOf(context);
+    final user = AuthProviderScope.of(context).currentUser;
+    if (dash != null &&
+        user != null &&
+        dash.todayMeals.isEmpty &&
+        !dash.isLoading) {
+      dash.load(user: user);
     }
-  }
-
-  @override
-  void dispose() {
-    _attendanceProvider.dispose();
-    // Do NOT dispose the StudentDashboardScope provider — it is owned by StudentShell.
-    super.dispose();
   }
 
   Future<void> _onRefresh() async {
     final auth = AuthProviderScope.of(context);
-    if (auth.currentUser == null) return;
-    final user = auth.currentUser!;
-    final groupId = user.effectiveGroupIds.firstOrNull;
-    if (groupId == null) return;
+    final user = auth.currentUser;
+    if (user == null) return;
     final dashProvider = StudentDashboardScope.maybeOf(context);
-    await Future.wait([
-      _attendanceProvider.load(
-        userId: user.id,
-        groupId: groupId,
-        organizationId: user.organizationId,
-      ),
-      if (dashProvider != null) dashProvider.load(user: user),
-    ]);
+    if (dashProvider != null) await dashProvider.load(user: user);
   }
 
-  void _mark(String mealId, AttendanceStatus status, {String? preference}) {
-    final auth = AuthProviderScope.of(context);
-    final user = auth.currentUser;
-    final groupId = user?.effectiveGroupIds.firstOrNull;
-    if (user == null || groupId == null) return;
-    _attendanceProvider.markAttendance(
-      mealId: mealId,
-      userId: user.id,
-      groupId: groupId,
-      organizationId: user.organizationId,
+  void _mark(MealModel meal, AttendanceStatus status, {String? preference}) {
+    final user = AuthProviderScope.of(context).currentUser;
+    if (user == null) return;
+    final dashProvider = StudentDashboardScope.maybeOf(context);
+    if (dashProvider == null) return;
+    dashProvider.markStatus(
+      user: user,
+      meal: meal,
       status: status,
       preference: preference,
     );
@@ -122,11 +98,11 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
       );
     }
 
-    // Merge both providers so a single ListenableBuilder handles all rebuilds.
+    // Single shared provider drives all rebuilds (status + meals + marking).
     return ListenableBuilder(
-      listenable: Listenable.merge([_attendanceProvider, dashProvider]),
+      listenable: dashProvider,
       builder: (context, _) {
-        final isLoading = _attendanceProvider.isLoading || dashProvider.isLoading;
+        final isLoading = dashProvider.isLoading;
         final meals = dashProvider.todayMeals;
         final isVacation = dashProvider.isVacationMode;
 
@@ -242,14 +218,16 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
                                           .toList();
                               return AttendanceActionCard(
                                 meal: meal,
-                                status: _attendanceProvider.statusForMeal(meal.id),
+                                status: dashProvider.statusForMeal(meal.id),
                                 isWindowOpen: dashProvider.isWindowOpen(meal),
+                                isWindowClosed:
+                                    dashProvider.isWindowPast(meal),
                                 isVacationMode: isVacation,
                                 isDefaultAttendance: isDefaultAttend,
                                 preferencesEnabled: prefsEnabled,
                                 enabledPreferences: enabledPrefs,
                                 onMark: (s, {String? preference}) =>
-                                    _mark(meal.id, s, preference: preference),
+                                    _mark(meal, s, preference: preference),
                               );
                             },
                           ),

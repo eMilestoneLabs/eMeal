@@ -80,12 +80,22 @@ class BillingService {
     required DateTime from,
     required DateTime to,
     DateTime? now,
+    List<MealModel> todayMeals = const [],
+    Set<String> vacationUserIds = const {},
   }) {
     final clock = now ?? DateTime.now();
     final today = DateTime(clock.year, clock.month, clock.day);
 
     final activeMeals = meals.where((m) => m.isActive).toList()
       ..sort((a, b) => a.order.compareTo(b.order));
+
+    // Issue 3: for TODAY, the effective attendance window + price come from the
+    // active published planner (Weekly / Day-Wise Meal Mode), which can differ
+    // from the master meal catalogue. Using the master close time made the
+    // virtual auto-skip fire while today's per-day window was still open. When
+    // today's overlay meals are supplied, prefer them for the current day so a
+    // skip is only ever synthesised AFTER the real window has closed.
+    final todayById = {for (final m in todayMeals) m.id: m};
     if (activeMeals.isEmpty) {
       // No meal catalogue — fall back to the raw records as-is.
       return records
@@ -130,13 +140,16 @@ class BillingService {
           !d.isAfter(toD);
           d = d.add(const Duration(days: 1))) {
         if (d.isAfter(today)) break; // future days have no attendance yet
+        final isToday = d.isAtSameMomentAs(today);
         for (final meal in activeMeals) {
+          // For today, use the published per-day window/price when available.
+          final effectiveMeal =
+              isToday ? (todayById[meal.id] ?? meal) : meal;
           final rec = recByKey[key(uid, meal.id, d)];
-          final closeDt = _closeDateTime(d, meal.attendanceWindow.closeTime);
+          final closeDt =
+              _closeDateTime(d, effectiveMeal.attendanceWindow.closeTime);
           final windowClosed = d.isBefore(today) ||
-              (d.isAtSameMomentAs(today) &&
-                  closeDt != null &&
-                  clock.isAfter(closeDt));
+              (isToday && closeDt != null && clock.isAfter(closeDt));
 
           if (rec != null) {
             // Real record. A skipped record without a markedAt uses closeTime.
@@ -151,15 +164,17 @@ class BillingService {
               mealName: meal.name,
               status: rec.status,
               preference: rec.preference,
-              // Per-day price snapshot overrides master; fall back to master
-              // for legacy records marked before pricing existed.
-              price: rec.price ?? meal.price,
+              // Per-day price snapshot overrides master; fall back to the
+              // day-effective price for legacy records marked before pricing.
+              price: rec.price ?? effectiveMeal.price,
               date: d,
               markedAt: marked,
               autoSkipped: false,
             ));
-          } else if (windowClosed) {
+          } else if (windowClosed && !vacationUserIds.contains(uid)) {
             // Virtual auto-skip (req 6): member never marked, window closed.
+            // Issue 7: members currently on Vacation Mode are excluded from
+            // attendance calculations — never synthesise a skip for them.
             rows.add(BillingRow(
               userId: uid,
               userName: uname,
@@ -167,7 +182,7 @@ class BillingService {
               mealName: meal.name,
               status: AttendanceStatus.skipped,
               preference: null,
-              price: meal.price,
+              price: effectiveMeal.price,
               date: d,
               markedAt: closeDt,
               autoSkipped: true,

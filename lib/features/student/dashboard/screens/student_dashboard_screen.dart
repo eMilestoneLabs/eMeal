@@ -6,6 +6,7 @@ import 'package:smart_meal_management/core/theme/app_colors.dart';
 import 'package:smart_meal_management/core/theme/app_typography.dart';
 import 'package:smart_meal_management/data/services/notification_service.dart';
 import 'package:smart_meal_management/features/auth/providers/auth_provider.dart';
+import 'package:smart_meal_management/features/notices/widgets/notice_bell.dart';
 import 'package:smart_meal_management/features/student/dashboard/providers/student_dashboard_provider.dart';
 import 'package:smart_meal_management/features/student/dashboard/screens/no_group_screen.dart';
 import 'package:smart_meal_management/features/student/dashboard/widgets/meal_timeline_card.dart';
@@ -262,6 +263,22 @@ class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
                   // ── Top padding ──────────────────────────────────────────
                   const SliverToBoxAdapter(
                       child: SizedBox(height: AppConstants.space24)),
+
+                  // ── Notice bell row ──────────────────────────────────────
+                  SliverToBoxAdapter(
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: AppConstants.space12),
+                      child: Align(
+                        alignment: Alignment.centerRight,
+                        child: NoticeBell(
+                          organizationId: currentUser.organizationId,
+                          groupId: _activeGroupId ?? currentUser.groupId,
+                          isAdmin: false,
+                        ),
+                      ),
+                    ),
+                  ),
 
                   // ── Greeting card ────────────────────────────────────────
                   SliverToBoxAdapter(

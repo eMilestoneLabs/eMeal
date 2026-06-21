@@ -122,11 +122,22 @@ class StudentDashboardProvider extends ChangeNotifier {
       .map((r) => r.mealId)
       .toSet();
 
-  /// The currently open meal or the next upcoming one (null when meals off).
+  /// The meal to feature in the "Open Now" hero (null when meals off).
+  ///
+  /// Issue 8: prioritise the *actionable* meal — an open window the student has
+  /// not yet acted on — so an already-marked earlier slot (e.g. Breakfast) never
+  /// hides a still-open later slot (e.g. Dinner). Falls back to any open meal,
+  /// then to the next upcoming (not-yet-past) meal.
   MealModel? get currentOrNextMeal {
+    // 1) Open window the student has not yet responded to.
+    for (final meal in _todayMeals) {
+      if (isWindowOpen(meal) && !markedMealIds.contains(meal.id)) return meal;
+    }
+    // 2) Any open window (already marked) — still "Open Now".
     for (final meal in _todayMeals) {
       if (isWindowOpen(meal)) return meal;
     }
+    // 3) Next upcoming meal whose window has not passed.
     for (final meal in _todayMeals) {
       if (!isWindowPast(meal)) return meal;
     }
@@ -380,6 +391,28 @@ class StudentDashboardProvider extends ChangeNotifier {
                 a.date.day == today.day,
           )
           .status;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Issue 5: the ₹ price snapshotted onto today's attendance record for [mealId]
+  /// (the price the student actually saw when they marked). Null when the meal
+  /// is not yet marked or the record carries no price — callers then fall back
+  /// to the live meal price. Prevents the displayed price drifting away from the
+  /// billed price after an admin edits the meal config.
+  int? snapshotPriceForMeal(String mealId) {
+    final today = DateTime.now();
+    try {
+      return _todayAttendance
+          .firstWhere(
+            (a) =>
+                a.mealId == mealId &&
+                a.date.year == today.year &&
+                a.date.month == today.month &&
+                a.date.day == today.day,
+          )
+          .price;
     } catch (_) {
       return null;
     }

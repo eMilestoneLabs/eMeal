@@ -598,37 +598,46 @@ class MealConfigProvider extends ChangeNotifier {
     _isSaving = true;
     notifyListeners();
 
-    // Issue #12: a locally-built draft has an empty id. Persist it first (create
-    // or update) so publish targets a real /schedules/:id — never the broken
-    // /schedules//publish that produced "Cannot POST /api/v1/schedules/publish".
-    final saveResult = await _mealRepo.saveSchedule(
-      organizationId: organizationId,
-      groupId: groupId,
-      schedule: _weekSchedule!,
-    );
-    final String scheduleId;
-    switch (saveResult) {
-      case Ok(:final value):
-        _weekSchedule = value;
-        scheduleId = value.id;
-      case Err(:final failure):
-        _error = failure.message;
-        _syncPublishedIfServerRejected(failure.message);
+    String scheduleId = _weekSchedule!.id;
+    final bool isNew = scheduleId.isEmpty;
+
+    // Issue #12: a locally-built draft has an empty id — create it first so
+    // publish targets a real /schedules/:id. An existing week is NOT pre-updated
+    // (that path was rejected for published weeks); instead its entries are sent
+    // straight to publish for an atomic replace-and-publish (Issue 2), so
+    // students never lose the live published week while the admin edits.
+    if (isNew) {
+      final saveResult = await _mealRepo.saveSchedule(
+        organizationId: organizationId,
+        groupId: groupId,
+        schedule: _weekSchedule!,
+      );
+      switch (saveResult) {
+        case Ok(:final value):
+          _weekSchedule = value;
+          scheduleId = value.id;
+        case Err(:final failure):
+          _error = failure.message;
+          _syncPublishedIfServerRejected(failure.message);
+          _isSaving = false;
+          notifyListeners();
+          return false;
+      }
+      if (scheduleId.isEmpty) {
+        _error = 'Could not create schedule. Add meals first, then publish.';
         _isSaving = false;
         notifyListeners();
         return false;
-    }
-    if (scheduleId.isEmpty) {
-      _error = 'Could not create schedule. Add meals first, then publish.';
-      _isSaving = false;
-      notifyListeners();
-      return false;
+      }
     }
 
     final result = await _mealRepo.publishSchedule(
       organizationId: organizationId,
       groupId: groupId,
       scheduleId: scheduleId,
+      // Existing week -> send entries for atomic replace+publish. New week was
+      // just created with its entries, so a plain flag-flip publish suffices.
+      schedule: isNew ? null : _weekSchedule,
     );
 
     switch (result) {

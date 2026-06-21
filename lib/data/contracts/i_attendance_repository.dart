@@ -43,6 +43,14 @@ abstract interface class IAttendanceRepository {
   });
 
   /// Update an existing attendance record (status change, preference update).
+  /// Admin override — marks/creates a record for ANY user (or the admin
+  /// themselves), bypassing the attendance window + vacation checks.
+  /// POST /attendance/admin/override. The record carries userId/mealId/date/
+  /// status (+ optional preference/note).
+  Future<Result<AttendanceModel>> adminOverride({
+    required AttendanceModel record,
+  });
+
   Future<Result<AttendanceModel>> updateAttendance({
     required AttendanceModel record,
   });

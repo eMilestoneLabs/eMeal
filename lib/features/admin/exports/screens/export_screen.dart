@@ -14,8 +14,7 @@ import 'package:smart_meal_management/shared/models/result.dart';
 import 'package:smart_meal_management/shared/widgets/app_primary_button.dart';
 import 'package:smart_meal_management/features/auth/providers/auth_provider.dart';
 
-/// Export screen — PDF or CSV attendance reports.
-/// Group name is resolved dynamically; never hardcoded.
+/// Export screen — PDF / Excel / CSV attendance reports.
 class ExportScreen extends StatefulWidget {
   const ExportScreen({super.key});
   @override
@@ -26,7 +25,9 @@ class _ExportScreenState extends State<ExportScreen> {
   late final ExportProvider _provider;
   final GroupRepository _groupRepo = GroupRepository();
 
-  DateTime _startDate = DateTime.now().subtract(const Duration(days: 30));
+  // Issue 3: default export range is the CURRENT CALENDAR MONTH (1st → today),
+  // not a rolling 30-day window. Admin can still pick any custom range.
+  DateTime _startDate = DateTime(DateTime.now().year, DateTime.now().month, 1);
   DateTime _endDate = DateTime.now();
   List<AttendanceModel> _records = [];
   List<MealModel> _meals = [];
@@ -72,7 +73,6 @@ class _ExportScreenState extends State<ExportScreen> {
       _loadingGroups = false;
       if (result case Ok(:final value)) {
         _groups = value.data;
-        // Use effectiveGroupIds.firstOrNull for multi-group correctness.
         final uid = auth.currentUser?.effectiveGroupIds.firstOrNull;
         final match = _groups.any((g) => g.id == uid);
         _selectedGroupId = match ? uid : (_groups.isNotEmpty ? _groups.first.id : null);
@@ -120,14 +120,13 @@ class _ExportScreenState extends State<ExportScreen> {
     final groupId = _selectedGroupId ?? user.groupId ?? '';
     final orgId = user.organizationId;
     final result = await AttendanceRepository().getAttendanceHistory(
-      userId: '', // empty = group-scope query (all members), not admin's own records
+      userId: '',
       groupId: groupId, organizationId: orgId,
       from: _startDate, to: _endDate,
       params: const PaginationParams(page: 1, limit: 100),
     );
     List<AttendanceModel> records = [];
     if (result case Ok(:final value)) records = value.data;
-    // Load the group's meals (with prices + windows) for Price Tag + auto-skip.
     final mealsResult = await MealRepository().getGroupMeals(
       organizationId: orgId,
       groupId: groupId,
@@ -186,13 +185,17 @@ class _ExportScreenState extends State<ExportScreen> {
             Text('Export Format', style: AppTypography.titleSmall),
             const SizedBox(height: AppConstants.space12),
             Row(children: [
-              _FormatTile(label: 'PDF Report', icon: Icons.picture_as_pdf_rounded,
-                  selected: _provider.isPdf, color: AppColors.absent,
+              _FormatTile(label: 'PDF', icon: Icons.picture_as_pdf_rounded,
+                  selected: _provider.exportFormat == 'pdf', color: AppColors.absent,
                   onTap: () => _provider.setFormat('pdf')),
               const SizedBox(width: 12),
-              _FormatTile(label: 'Excel (.xlsx)', icon: Icons.table_chart_rounded,
-                  selected: !_provider.isPdf, color: AppColors.secondary,
+              _FormatTile(label: 'Excel', icon: Icons.table_chart_rounded,
+                  selected: _provider.exportFormat == 'xlsx', color: AppColors.secondary,
                   onTap: () => _provider.setFormat('xlsx')),
+              const SizedBox(width: 12),
+              _FormatTile(label: 'CSV', icon: Icons.description_rounded,
+                  selected: _provider.exportFormat == 'csv', color: AppColors.info,
+                  onTap: () => _provider.setFormat('csv')),
             ]),
             const SizedBox(height: AppConstants.space24),
             Text('Date Range', style: AppTypography.titleSmall),

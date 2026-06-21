@@ -20,6 +20,7 @@ class MealAttendanceSummary {
     required this.absentCount,
     required this.skippedCount,
     required this.preferenceBreakdown,
+    this.snapshotPrice,
   });
 
   final String mealId;
@@ -30,6 +31,12 @@ class MealAttendanceSummary {
   final int presentCount;
   final int absentCount;
   final int skippedCount;
+
+  /// Issue 1: snapshot unit price actually billed for present records on this
+  /// meal+date (null when pricing is off or nobody marked present). The admin
+  /// dashboard prefers this over the live Meal.price so a later price edit on a
+  /// closed meal never rewrites what today already showed.
+  final int? snapshotPrice;
 
   /// tag -> count for THIS meal only (e.g. {"veg":12,"chicken":8}).
   final Map<String, int> preferenceBreakdown;
@@ -51,6 +58,11 @@ class MealAttendanceSummary {
       presentCount: j['presentDays'] ?? j['presentCount'] ?? 0,
       absentCount: j['absentDays'] ?? j['absentCount'] ?? 0,
       skippedCount: j['skippedDays'] ?? j['skippedCount'] ?? 0,
+      snapshotPrice: j['snapshotPrice'] is int
+          ? j['snapshotPrice'] as int
+          : (j['snapshotPrice'] == null
+              ? null
+              : int.tryParse(j['snapshotPrice'].toString())),
       preferenceBreakdown: breakdown,
     );
   }

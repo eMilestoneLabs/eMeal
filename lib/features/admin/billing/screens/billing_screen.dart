@@ -1,24 +1,14 @@
+import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import 'package:smart_meal_management/core/theme/app_colors.dart';
 import 'package:smart_meal_management/core/theme/app_typography.dart';
-import 'package:smart_meal_management/data/repositories/attendance_repository.dart';
-import 'package:smart_meal_management/data/repositories/group_repository.dart';
-import 'package:smart_meal_management/data/repositories/meal_repository.dart';
-import 'package:smart_meal_management/data/services/billing_service.dart';
+import 'package:smart_meal_management/features/admin/billing/providers/member_billing_provider.dart';
+import 'package:smart_meal_management/features/admin/billing/screens/member_billing_detail_screen.dart';
 import 'package:smart_meal_management/features/auth/providers/auth_provider.dart';
-import 'package:smart_meal_management/shared/models/attendance_model.dart';
+import 'package:smart_meal_management/shared/models/billing_summary.dart';
 import 'package:smart_meal_management/shared/models/group_model.dart';
-import 'package:smart_meal_management/shared/models/meal_model.dart';
-import 'package:smart_meal_management/shared/models/paginated_response.dart';
-import 'package:smart_meal_management/shared/models/result.dart';
 
-/// Admin per-member billing (req 7).
-///
-/// Pick a group + a range preset (Daily / Weekly / Monthly / Custom) and the
-/// screen computes each member's itemised meal consumption and total payable
-/// from the existing attendance records + meal prices, via [BillingService].
-/// Only PRESENT meals contribute to the bill; un-marked closed windows are
-/// counted as auto-skipped (no charge).
+/// Member Billing V2 — premium fintech-style billing dashboard (admin).
 class BillingScreen extends StatefulWidget {
   const BillingScreen({super.key});
 
@@ -26,211 +16,465 @@ class BillingScreen extends StatefulWidget {
   State<BillingScreen> createState() => _BillingScreenState();
 }
 
-enum _RangePreset { daily, weekly, monthly, custom }
-
 class _BillingScreenState extends State<BillingScreen> {
-  final _groupRepo = GroupRepository();
-  final _attendanceRepo = AttendanceRepository();
-  final _mealRepo = MealRepository();
-
-  List<GroupModel> _groups = [];
-  String? _groupId;
-  bool _loadingGroups = true;
-  bool _loading = false;
+  final MemberBillingProvider _provider = MemberBillingProvider();
   bool _initialized = false;
-
-  _RangePreset _preset = _RangePreset.monthly;
-  DateTime _from = DateTime.now().subtract(const Duration(days: 29));
-  DateTime _to = DateTime.now();
-
-  List<BillingSummary> _summaries = [];
-  List<BillingRow> _rows = [];
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    if (!_initialized) {
-      _initialized = true;
-      _loadGroups();
-    }
-  }
-
-  Future<void> _loadGroups() async {
+    if (_initialized) return;
+    _initialized = true;
     final user = AuthProviderScope.of(context).currentUser;
-    if (user == null) return;
-    final res =
-        await _groupRepo.getOrganisationGroups(organizationId: user.organizationId);
-    if (!mounted) return;
-    setState(() {
-      _loadingGroups = false;
-      if (res case Ok(:final value)) {
-        _groups = value.data;
-        _groupId = _groups.isNotEmpty ? _groups.first.id : null;
-      }
-    });
-    if (_groupId != null) _compute();
+    if (user != null) _provider.init(user);
   }
 
-  void _applyPreset(_RangePreset p) {
-    final now = DateTime.now();
-    setState(() {
-      _preset = p;
-      switch (p) {
-        case _RangePreset.daily:
-          _from = DateTime(now.year, now.month, now.day);
-          _to = now;
-        case _RangePreset.weekly:
-          _from = DateTime(now.year, now.month, now.day)
-              .subtract(Duration(days: now.weekday - 1));
-          _to = now;
-        case _RangePreset.monthly:
-          _from = DateTime(now.year, now.month, 1);
-          _to = now;
-        case _RangePreset.custom:
-          break;
-      }
-    });
-    if (p != _RangePreset.custom) _compute();
+  @override
+  void dispose() {
+    _provider.dispose();
+    super.dispose();
   }
 
-  bool get _pricingEnabled {
-    if (_groupId == null) return false;
-    try {
-      return _groups
-          .firstWhere((g) => g.id == _groupId)
-          .mealConfig
-          .mealPricingEnabled;
-    } catch (_) {
-      return false;
-    }
-  }
-
-  Future<void> _compute() async {
-    final user = AuthProviderScope.of(context).currentUser;
-    if (user == null || _groupId == null) return;
-    setState(() => _loading = true);
-
-    final recRes = await _attendanceRepo.getAttendanceHistory(
-      userId: '',
-      groupId: _groupId!,
-      organizationId: user.organizationId,
-      from: _from,
-      to: _to,
-      params: const PaginationParams(page: 1, limit: 100),
-    );
-    final mealRes = await _mealRepo.getGroupMeals(
-      organizationId: user.organizationId,
-      groupId: _groupId!,
-    );
-
-    List<AttendanceModel> records = [];
-    if (recRes case Ok(:final value)) records = value.data;
-    List<MealModel> meals = [];
-    if (mealRes case Ok(:final value)) meals = value;
-
-    final rows = BillingService.buildRows(
-      records: records,
-      meals: meals,
-      from: _from,
-      to: _to,
-    );
-    if (!mounted) return;
-    setState(() {
-      _rows = rows;
-      _summaries = BillingService.summarize(rows);
-      _loading = false;
-    });
-  }
+  String _fmt(DateTime d) =>
+      '${d.day.toString().padLeft(2, '0')}/${d.month.toString().padLeft(2, '0')}/${d.year}';
 
   Future<void> _pickCustom() async {
     final picked = await showDateRangePicker(
       context: context,
       firstDate: DateTime.now().subtract(const Duration(days: 365)),
       lastDate: DateTime.now(),
-      initialDateRange: DateTimeRange(start: _from, end: _to),
+      initialDateRange:
+          DateTimeRange(start: _provider.from, end: _provider.to),
     );
-    if (picked != null) {
-      setState(() {
-        _preset = _RangePreset.custom;
-        _from = picked.start;
-        _to = picked.end;
-      });
-      _compute();
-    }
+    if (picked != null) _provider.setCustomRange(picked.start, picked.end);
   }
 
-  String _fmt(DateTime d) =>
-      '${d.day.toString().padLeft(2, '0')}/${d.month.toString().padLeft(2, '0')}/${d.year}';
+  void _openMember(BillingMemberRow m) {
+    final user = AuthProviderScope.of(context).currentUser;
+    if (user == null) return;
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => MemberBillingDetailScreen(
+          userId: m.userId,
+          userName: m.userName,
+          role: m.role,
+          groupId: _provider.groupId ?? '',
+          organizationId: user.organizationId,
+          groupName: _provider.selectedGroup?.name ?? '',
+          from: _provider.from,
+          to: _provider.to,
+          pricingEnabled: _provider.pricingEnabled,
+        ),
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
+    final cs = Theme.of(context).colorScheme;
     return Scaffold(
-      backgroundColor: colorScheme.surfaceContainerLowest,
+      backgroundColor: cs.surfaceContainerLowest,
       appBar: AppBar(
         title: Text('Member Billing', style: AppTypography.titleLarge),
-        backgroundColor: colorScheme.surface,
+        backgroundColor: cs.surface,
         surfaceTintColor: Colors.transparent,
       ),
-      body: _loadingGroups
-          ? const Center(child: CircularProgressIndicator())
-          : Padding(
-              padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
+      body: ListenableBuilder(
+        listenable: _provider,
+        builder: (context, _) {
+          if (_provider.loadingGroups) {
+            return const Center(child: CircularProgressIndicator());
+          }
+          if (_provider.groups.isEmpty) {
+            return Center(
+              child: Text('No groups yet.',
+                  style: AppTypography.bodyMedium
+                      .copyWith(color: AppColors.textTertiary)),
+            );
+          }
+          return LayoutBuilder(
+            builder: (context, c) {
+              return ListView(
+                padding: const EdgeInsets.fromLTRB(16, 16, 16, 28),
                 children: [
-                  if (_groups.length > 1) ...[
-                    _GroupDropdown(
-                      groups: _groups,
-                      selectedId: _groupId,
-                      onChanged: (id) {
-                        setState(() => _groupId = id);
-                        _compute();
-                      },
-                    ),
-                    const SizedBox(height: 12),
+                  _GroupSelector(
+                    groups: _provider.groups,
+                    selected: _provider.selectedGroup,
+                    onSelect: _provider.selectGroup,
+                  ),
+                  const SizedBox(height: 14),
+                  _PeriodSelector(
+                    period: _provider.period,
+                    onSelect: (p) => p == BillingPeriod.custom
+                        ? _pickCustom()
+                        : _provider.setPeriod(p),
+                  ),
+                  const SizedBox(height: 6),
+                  Text('${_fmt(_provider.from)} – ${_fmt(_provider.to)}',
+                      style: AppTypography.bodySmall
+                          .copyWith(color: AppColors.textTertiary)),
+                  const SizedBox(height: 14),
+                  _summaryCards(cs, c.maxWidth),
+                  const SizedBox(height: 18),
+                  // Issue 4: while the billing summary + series are loading, show
+                  // a loader for the analytics region instead of letting the
+                  // charts flash "No data for this range." before data arrives.
+                  if (_provider.loading) ...[
+                    const _BillingAnalyticsLoading(),
+                    const SizedBox(height: 18),
+                  ] else ...[
+                    if (_provider.pricingEnabled &&
+                        _provider.summary.mealBreakdown.isNotEmpty) ...[
+                      _RevenueChartCard(
+                          breakdown: _provider.summary.mealBreakdown),
+                      const SizedBox(height: 18),
+                    ],
+                    if (_provider.pricingEnabled) ...[
+                      _AnalyticsSection(provider: _provider),
+                      const SizedBox(height: 18),
+                    ],
                   ],
-                  _PresetRow(
-                    preset: _preset,
-                    onSelect: (p) =>
-                        p == _RangePreset.custom ? _pickCustom() : _applyPreset(p),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    '${_fmt(_from)} – ${_fmt(_to)}',
-                    style: AppTypography.bodySmall
-                        .copyWith(color: AppColors.textTertiary),
-                  ),
+                  _controlsRow(cs),
                   const SizedBox(height: 12),
-                  Expanded(
-                    child: _loading
-                        ? const Center(child: CircularProgressIndicator())
-                        : _summaries.isEmpty
-                            ? Center(
-                                child: Text('No attendance in this range.',
-                                    style: AppTypography.bodyMedium.copyWith(
-                                        color: AppColors.textTertiary)),
-                              )
-                            : ListView.separated(
-                                itemCount: _summaries.length,
-                                separatorBuilder: (_, _) =>
-                                    const SizedBox(height: 10),
-                                itemBuilder: (_, i) => _MemberBillCard(
-                                  summary: _summaries[i],
-                                  pricingEnabled: _pricingEnabled,
-                                  onTap: () => _showItemized(_summaries[i]),
-                                ),
-                              ),
-                  ),
+                  if (_provider.loading)
+                    const Padding(
+                      padding: EdgeInsets.symmetric(vertical: 32),
+                      child: Center(child: CircularProgressIndicator()),
+                    )
+                  else if (_provider.error != null)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 24),
+                      child: Center(
+                        child: Text(_provider.error!,
+                            style: AppTypography.bodySmall
+                                .copyWith(color: AppColors.error)),
+                      ),
+                    )
+                  else if (_provider.visibleMembers.isEmpty)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 24),
+                      child: Center(
+                        child: Text('No members in this range.',
+                            style: AppTypography.bodyMedium
+                                .copyWith(color: AppColors.textTertiary)),
+                      ),
+                    )
+                  else
+                    ..._provider.visibleMembers.map((m) => Padding(
+                          padding: const EdgeInsets.only(bottom: 10),
+                          child: _MemberCard(
+                            member: m,
+                            pricingEnabled: _provider.pricingEnabled,
+                            onTap: () => _openMember(m),
+                          ),
+                        )),
                 ],
-              ),
-            ),
+              );
+            },
+          );
+        },
+      ),
     );
   }
 
-  void _showItemized(BillingSummary s) {
-    final rows =
-        _rows.where((r) => r.userId == s.userId).toList();
+  Widget _summaryCards(ColorScheme cs, double width) {
+    final s = _provider.summary;
+    final cards = <Widget>[
+      _SummaryCard(
+        label: 'Revenue',
+        value: cur(s.revenue),
+        icon: Icons.payments_rounded,
+        accent: AppColors.present,
+      ),
+      _SummaryCard(
+        label: 'Members',
+        value: '${s.memberCount}',
+        icon: Icons.groups_rounded,
+        accent: AppColors.primary,
+      ),
+      _SummaryCard(
+        label: 'Present Meals',
+        value: '${s.presentMeals}',
+        icon: Icons.restaurant_rounded,
+        accent: AppColors.info,
+      ),
+      _SummaryCard(
+        label: 'Average Bill',
+        value: cur(s.averageBill),
+        icon: Icons.trending_up_rounded,
+        accent: AppColors.warning,
+      ),
+    ];
+
+    if (width >= 720) {
+      return Row(
+        children: [
+          for (var i = 0; i < cards.length; i++) ...[
+            Expanded(child: cards[i]),
+            if (i != cards.length - 1) const SizedBox(width: 12),
+          ],
+        ],
+      );
+    }
+
+    if (width >= 480) {
+      Widget row(Widget a, Widget b) => Row(
+            children: [
+              Expanded(child: a),
+              const SizedBox(width: 12),
+              Expanded(child: b),
+            ],
+          );
+      return Column(
+        children: [
+          row(cards[0], cards[1]),
+          const SizedBox(height: 12),
+          row(cards[2], cards[3]),
+        ],
+      );
+    }
+
+    return SizedBox(
+      height: 96,
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        physics: const BouncingScrollPhysics(),
+        itemCount: cards.length,
+        separatorBuilder: (_, _) => const SizedBox(width: 12),
+        itemBuilder: (_, i) => SizedBox(width: 160, child: cards[i]),
+      ),
+    );
+  }
+
+  Widget _controlsRow(ColorScheme cs) {
+    return Row(
+      children: [
+        Expanded(
+          child: Container(
+            height: 44,
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            decoration: BoxDecoration(
+              color: cs.surface,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: AppColors.border.withValues(alpha: 0.6)),
+            ),
+            child: Row(
+              children: [
+                const Icon(Icons.search_rounded,
+                    size: 18, color: AppColors.textTertiary),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: TextField(
+                    onChanged: _provider.setSearch,
+                    style: AppTypography.bodySmall,
+                    decoration: const InputDecoration(
+                      isCollapsed: true,
+                      border: InputBorder.none,
+                      hintText: 'Search name / email / phone',
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(width: 10),
+        Container(
+          height: 44,
+          padding: const EdgeInsets.symmetric(horizontal: 8),
+          decoration: BoxDecoration(
+            color: cs.surface,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: AppColors.border.withValues(alpha: 0.6)),
+          ),
+          child: DropdownButtonHideUnderline(
+            child: DropdownButton<BillingSort>(
+              value: _provider.sort,
+              isDense: true,
+              icon: const Icon(Icons.sort_rounded, size: 18),
+              style: AppTypography.labelSmall
+                  .copyWith(color: cs.onSurface, fontWeight: FontWeight.w600),
+              items: const [
+                DropdownMenuItem(
+                    value: BillingSort.highestBill, child: Text('Highest bill')),
+                DropdownMenuItem(
+                    value: BillingSort.lowestBill, child: Text('Lowest bill')),
+                DropdownMenuItem(
+                    value: BillingSort.mostMeals, child: Text('Most meals')),
+                DropdownMenuItem(
+                    value: BillingSort.leastMeals, child: Text('Least meals')),
+                DropdownMenuItem(value: BillingSort.name, child: Text('Name')),
+                DropdownMenuItem(
+                    value: BillingSort.newest, child: Text('Newest')),
+                DropdownMenuItem(
+                    value: BillingSort.oldest, child: Text('Oldest')),
+              ],
+              onChanged: (v) {
+                if (v != null) _provider.setSort(v);
+              },
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+String cur(int v) => '₹$v';
+
+// Summary card
+class _SummaryCard extends StatelessWidget {
+  const _SummaryCard({
+    required this.label,
+    required this.value,
+    required this.icon,
+    required this.accent,
+  });
+  final String label;
+  final String value;
+  final IconData icon;
+  final Color accent;
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: cs.surface,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: AppColors.border.withValues(alpha: 0.5)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Container(
+            width: 32,
+            height: 32,
+            decoration: BoxDecoration(
+              color: accent.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(9),
+            ),
+            child: Icon(icon, size: 17, color: accent),
+          ),
+          const SizedBox(height: 8),
+          Text(value,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: AppTypography.titleMedium
+                  .copyWith(fontWeight: FontWeight.w800)),
+          Text(label,
+              style: AppTypography.labelSmall
+                  .copyWith(color: AppColors.textTertiary)),
+        ],
+      ),
+    );
+  }
+}
+
+// Period selector
+class _PeriodSelector extends StatelessWidget {
+  const _PeriodSelector({required this.period, required this.onSelect});
+  final BillingPeriod period;
+  final ValueChanged<BillingPeriod> onSelect;
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    Widget seg(String label, BillingPeriod p) {
+      final sel = period == p;
+      return Expanded(
+        child: GestureDetector(
+          onTap: () => onSelect(p),
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 160),
+            curve: Curves.easeOut,
+            margin: const EdgeInsets.all(3),
+            padding: const EdgeInsets.symmetric(vertical: 9),
+            decoration: BoxDecoration(
+              color: sel ? AppColors.primary : Colors.transparent,
+              borderRadius: BorderRadius.circular(10),
+              boxShadow: sel
+                  ? [
+                      BoxShadow(
+                        color: AppColors.primary.withValues(alpha: 0.25),
+                        blurRadius: 8,
+                        offset: const Offset(0, 2),
+                      ),
+                    ]
+                  : null,
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                if (sel) ...[
+                  const Icon(Icons.check_rounded, size: 14, color: Colors.white),
+                  const SizedBox(width: 4),
+                ],
+                Flexible(
+                  child: Text(
+                    label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    textAlign: TextAlign.center,
+                    style: AppTypography.labelSmall.copyWith(
+                      fontWeight: FontWeight.w700,
+                      color: sel ? Colors.white : AppColors.textSecondary,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
+    return Container(
+      decoration: BoxDecoration(
+        color: cs.surface,
+        borderRadius: BorderRadius.circular(13),
+        border: Border.all(color: AppColors.border.withValues(alpha: 0.6)),
+      ),
+      child: Row(
+        children: [
+          seg('Today', BillingPeriod.today),
+          seg('Week', BillingPeriod.week),
+          seg('Month', BillingPeriod.month),
+          seg('Custom', BillingPeriod.custom),
+        ],
+      ),
+    );
+  }
+}
+
+// Group selector (searchable)
+Widget _groupAvatar(String name, {double size = 38}) {
+  final initials = name.trim().isNotEmpty ? name.trim()[0].toUpperCase() : '?';
+  return Container(
+    width: size,
+    height: size,
+    alignment: Alignment.center,
+    decoration: BoxDecoration(
+      color: AppColors.primary.withValues(alpha: 0.12),
+      borderRadius: BorderRadius.circular(size * 0.28),
+    ),
+    child: Text(initials,
+        style: AppTypography.titleSmall.copyWith(
+            color: AppColors.primary, fontWeight: FontWeight.w800)),
+  );
+}
+
+class _GroupSelector extends StatelessWidget {
+  const _GroupSelector(
+      {required this.groups, required this.selected, required this.onSelect});
+  final List<GroupModel> groups;
+  final GroupModel? selected;
+  final ValueChanged<String?> onSelect;
+
+  void _openPicker(BuildContext context) {
+    if (groups.length <= 1) return;
     showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
@@ -238,260 +482,606 @@ class _BillingScreenState extends State<BillingScreen> {
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
-      builder: (_) => DraggableScrollableSheet(
-        expand: false,
-        initialChildSize: 0.7,
-        maxChildSize: 0.92,
-        builder: (_, ctrl) => ListView(
-          controller: ctrl,
-          padding: const EdgeInsets.all(20),
-          children: [
-            Text(s.userName,
-                style: AppTypography.titleMedium
-                    .copyWith(fontWeight: FontWeight.w700)),
-            const SizedBox(height: 4),
-            if (_pricingEnabled)
-              Text('Total Bill: ₹${s.totalBill}',
-                  style: AppTypography.titleSmall.copyWith(
-                      color: AppColors.primary, fontWeight: FontWeight.w800)),
-            const SizedBox(height: 12),
-            ...rows.map((r) => Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 6),
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          '${r.mealName} · ${_fmt(r.date)}',
-                          style: AppTypography.bodySmall,
-                        ),
-                      ),
-                      Text(
-                        _statusText(r),
-                        style: AppTypography.labelSmall.copyWith(
-                          fontWeight: FontWeight.w700,
-                          color: _statusColor(r),
-                        ),
-                      ),
-                      if (_pricingEnabled && r.isPresent) ...[
-                        const SizedBox(width: 10),
-                        Text('₹${r.price ?? 0}',
-                            style: AppTypography.labelSmall
-                                .copyWith(fontWeight: FontWeight.w700)),
-                      ],
-                    ],
-                  ),
-                )),
-          ],
-        ),
+      builder: (_) => _GroupPickerSheet(
+        groups: groups,
+        selectedId: selected?.id,
+        onSelect: (id) {
+          Navigator.of(context).pop();
+          onSelect(id);
+        },
       ),
     );
   }
 
-  String _statusText(BillingRow r) {
-    switch (r.status) {
-      case AttendanceStatus.present:
-        return 'Present';
-      case AttendanceStatus.absent:
-        return 'Absent';
-      case AttendanceStatus.skipped:
-        return r.autoSkipped ? 'Skipped (auto)' : 'Skipped';
-      default:
-        return '—';
-    }
-  }
-
-  Color _statusColor(BillingRow r) {
-    switch (r.status) {
-      case AttendanceStatus.present:
-        return AppColors.present;
-      case AttendanceStatus.absent:
-        return AppColors.absent;
-      case AttendanceStatus.skipped:
-        return AppColors.skipped;
-      default:
-        return AppColors.textTertiary;
-    }
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final g = selected;
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: () => _openPicker(context),
+        borderRadius: BorderRadius.circular(14),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          decoration: BoxDecoration(
+            color: cs.surface,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: AppColors.border.withValues(alpha: 0.6)),
+          ),
+          child: Row(
+            children: [
+              _groupAvatar(g?.name ?? '?'),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(g?.name ?? 'Select group',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: AppTypography.labelLarge
+                            .copyWith(fontWeight: FontWeight.w700)),
+                    if (g != null)
+                      Text('${g.memberCount} members',
+                          style: AppTypography.labelSmall
+                              .copyWith(color: AppColors.textTertiary)),
+                  ],
+                ),
+              ),
+              if (groups.length > 1)
+                const Icon(Icons.unfold_more_rounded,
+                    color: AppColors.textTertiary),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 }
 
-class _GroupDropdown extends StatelessWidget {
-  const _GroupDropdown(
-      {required this.groups, required this.selectedId, required this.onChanged});
+class _GroupPickerSheet extends StatefulWidget {
+  const _GroupPickerSheet(
+      {required this.groups, required this.selectedId, required this.onSelect});
   final List<GroupModel> groups;
   final String? selectedId;
-  final ValueChanged<String?> onChanged;
+  final ValueChanged<String?> onSelect;
 
   @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 2),
-      decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surface,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: AppColors.border),
-      ),
-      child: DropdownButtonHideUnderline(
-        child: DropdownButton<String>(
-          value: selectedId,
-          isExpanded: true,
-          items: groups
-              .map((g) => DropdownMenuItem(
-                  value: g.id,
-                  child: Text(g.name, overflow: TextOverflow.ellipsis)))
-              .toList(),
-          onChanged: onChanged,
-        ),
-      ),
-    );
-  }
+  State<_GroupPickerSheet> createState() => _GroupPickerSheetState();
 }
 
-class _PresetRow extends StatelessWidget {
-  const _PresetRow({required this.preset, required this.onSelect});
-  final _RangePreset preset;
-  final ValueChanged<_RangePreset> onSelect;
+class _GroupPickerSheetState extends State<_GroupPickerSheet> {
+  String _q = '';
 
   @override
   Widget build(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
-
-    Widget chip(String label, _RangePreset p) {
-      final sel = preset == p;
-      return Padding(
-        padding: const EdgeInsets.only(right: 8),
-        child: Material(
-          color: Colors.transparent,
-          child: InkWell(
-            borderRadius: BorderRadius.circular(20),
-            onTap: () => onSelect(p),
-            child: AnimatedContainer(
-              duration: const Duration(milliseconds: 140),
-              curve: Curves.easeOut,
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 16, vertical: 9),
+    final q = _q.trim().toLowerCase();
+    final list = q.isEmpty
+        ? widget.groups
+        : widget.groups
+            .where((g) => g.name.toLowerCase().contains(q))
+            .toList();
+    return Padding(
+      padding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(context).bottom),
+      child: DraggableScrollableSheet(
+        expand: false,
+        initialChildSize: 0.6,
+        maxChildSize: 0.9,
+        builder: (_, ctrl) => Column(
+          children: [
+            const SizedBox(height: 12),
+            Container(
+              width: 40,
+              height: 4,
               decoration: BoxDecoration(
-                color: sel
-                    ? AppColors.primary
-                    : colorScheme.surface,
-                borderRadius: BorderRadius.circular(20),
-                border: Border.all(
-                  color: sel
-                      ? AppColors.primary
-                      : AppColors.border,
-                  width: 1,
-                ),
-                boxShadow: sel
-                    ? [
-                        BoxShadow(
-                          color: AppColors.primary.withValues(alpha: 0.25),
-                          blurRadius: 8,
-                          offset: const Offset(0, 2),
-                        ),
-                      ]
-                    : null,
+                color: AppColors.border,
+                borderRadius: BorderRadius.circular(2),
               ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 14, 16, 8),
               child: Row(
-                mainAxisSize: MainAxisSize.min,
                 children: [
-                  if (sel) ...[
-                    const Icon(Icons.check_rounded,
-                        size: 15, color: Colors.white),
-                    const SizedBox(width: 5),
-                  ],
-                  Text(
-                    label,
-                    style: TextStyle(
-                      fontSize: 12.5,
-                      fontWeight: FontWeight.w600,
-                      color: sel ? Colors.white : AppColors.textSecondary,
+                  const Icon(Icons.search_rounded,
+                      size: 18, color: AppColors.textTertiary),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: TextField(
+                      autofocus: true,
+                      onChanged: (v) => setState(() => _q = v),
+                      style: AppTypography.bodyMedium,
+                      decoration: const InputDecoration(
+                        isCollapsed: true,
+                        border: InputBorder.none,
+                        hintText: 'Search group',
+                      ),
                     ),
                   ),
                 ],
               ),
             ),
-          ),
+            const Divider(height: 1),
+            Expanded(
+              child: ListView.builder(
+                controller: ctrl,
+                itemCount: list.length,
+                itemBuilder: (_, i) {
+                  final g = list[i];
+                  final sel = g.id == widget.selectedId;
+                  return ListTile(
+                    leading: _groupAvatar(g.name, size: 40),
+                    title: Text(g.name,
+                        style: AppTypography.labelLarge
+                            .copyWith(fontWeight: FontWeight.w700)),
+                    subtitle: Text('${g.memberCount} members',
+                        style: AppTypography.labelSmall
+                            .copyWith(color: AppColors.textTertiary)),
+                    trailing: sel
+                        ? const Icon(Icons.check_circle_rounded,
+                            color: AppColors.primary)
+                        : null,
+                    onTap: () => widget.onSelect(g.id),
+                  );
+                },
+              ),
+            ),
+            SizedBox(height: MediaQuery.paddingOf(context).bottom + 8),
+          ],
         ),
-      );
-    }
+      ),
+    );
+  }
+}
 
-    return SingleChildScrollView(
-      scrollDirection: Axis.horizontal,
-      physics: const BouncingScrollPhysics(),
-      child: Row(
+// Revenue-by-meal chart
+class _RevenueChartCard extends StatelessWidget {
+  const _RevenueChartCard({required this.breakdown});
+  final List<BillingMealBreakdown> breakdown;
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final items = breakdown.take(6).toList();
+    final maxY = items.fold<int>(0, (m, e) => e.revenue > m ? e.revenue : m);
+    return Container(
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 10),
+      decoration: BoxDecoration(
+        color: cs.surface,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: AppColors.border.withValues(alpha: 0.5)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          chip('Today', _RangePreset.daily),
-          chip('This Week', _RangePreset.weekly),
-          chip('This Month', _RangePreset.monthly),
-          chip('Custom', _RangePreset.custom),
+          Text('Revenue by meal',
+              style: AppTypography.titleSmall
+                  .copyWith(fontWeight: FontWeight.w700)),
+          const SizedBox(height: 16),
+          SizedBox(
+            height: 180,
+            child: BarChart(
+              BarChartData(
+                alignment: BarChartAlignment.spaceAround,
+                maxY: (maxY == 0 ? 1 : maxY) * 1.2,
+                borderData: FlBorderData(show: false),
+                gridData: const FlGridData(show: false),
+                titlesData: FlTitlesData(
+                  leftTitles: const AxisTitles(
+                      sideTitles: SideTitles(showTitles: false)),
+                  rightTitles: const AxisTitles(
+                      sideTitles: SideTitles(showTitles: false)),
+                  topTitles: const AxisTitles(
+                      sideTitles: SideTitles(showTitles: false)),
+                  bottomTitles: AxisTitles(
+                    sideTitles: SideTitles(
+                      showTitles: true,
+                      reservedSize: 30,
+                      getTitlesWidget: (value, meta) {
+                        final i = value.toInt();
+                        if (i < 0 || i >= items.length) {
+                          return const SizedBox.shrink();
+                        }
+                        final name = items[i].mealName;
+                        return Padding(
+                          padding: const EdgeInsets.only(top: 6),
+                          child: Text(
+                            name.length > 6 ? name.substring(0, 6) : name,
+                            style: AppTypography.labelSmall.copyWith(
+                                fontSize: 9, color: AppColors.textTertiary),
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                ),
+                barGroups: [
+                  for (var i = 0; i < items.length; i++)
+                    BarChartGroupData(
+                      x: i,
+                      barRods: [
+                        BarChartRodData(
+                          toY: items[i].revenue.toDouble(),
+                          width: 18,
+                          color: AppColors.primary,
+                          borderRadius: const BorderRadius.vertical(
+                              top: Radius.circular(6)),
+                        ),
+                      ],
+                    ),
+                ],
+              ),
+            ),
+          ),
         ],
       ),
     );
   }
 }
 
-class _MemberBillCard extends StatelessWidget {
-  const _MemberBillCard(
-      {required this.summary,
-      required this.pricingEnabled,
-      required this.onTap});
-  final BillingSummary summary;
+// Member card
+class _MemberCard extends StatelessWidget {
+  const _MemberCard({
+    required this.member,
+    required this.pricingEnabled,
+    required this.onTap,
+  });
+  final BillingMemberRow member;
   final bool pricingEnabled;
   final VoidCallback onTap;
 
+  String _fmtDate(DateTime? d) {
+    if (d == null) return '—';
+    const m = [
+      'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+    ];
+    return '${d.day} ${m[d.month - 1]} ${d.year}';
+  }
+
   @override
   Widget build(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
+    final cs = Theme.of(context).colorScheme;
     return Material(
       color: Colors.transparent,
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(14),
+        borderRadius: BorderRadius.circular(16),
         child: Container(
           padding: const EdgeInsets.all(14),
           decoration: BoxDecoration(
-            color: colorScheme.surface,
-            borderRadius: BorderRadius.circular(14),
-            border: Border.all(
-                color: AppColors.border.withValues(alpha: 0.5)),
+            color: cs.surface,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: AppColors.border.withValues(alpha: 0.5)),
           ),
           child: Row(
             children: [
+              _groupAvatar(member.userName, size: 42),
+              const SizedBox(width: 12),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(summary.userName,
-                        style: AppTypography.labelLarge
-                            .copyWith(fontWeight: FontWeight.w700)),
-                    const SizedBox(height: 4),
+                    Row(
+                      children: [
+                        Flexible(
+                          child: Text(member.userName,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: AppTypography.labelLarge
+                                  .copyWith(fontWeight: FontWeight.w700)),
+                        ),
+                        const SizedBox(width: 6),
+                        _RolePill(role: member.role),
+                      ],
+                    ),
+                    const SizedBox(height: 3),
                     Text(
-                      'Present ${summary.present} · Skipped ${summary.skipped} · Absent ${summary.absent}',
+                      'Present ${member.presentCount} · Skipped ${member.skippedCount} · Absent ${member.absentCount}',
                       style: AppTypography.bodySmall
                           .copyWith(color: AppColors.textSecondary),
                     ),
-                  ],
-                ),
-              ),
-              if (pricingEnabled)
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    Text('₹${summary.totalBill}',
-                        style: AppTypography.titleSmall.copyWith(
-                            fontWeight: FontWeight.w800,
-                            color: AppColors.primary)),
-                    Text('Total bill',
+                    Text('Last activity: ${_fmtDate(member.lastActivity)}',
                         style: AppTypography.labelSmall
                             .copyWith(color: AppColors.textTertiary)),
                   ],
                 ),
-              const SizedBox(width: 4),
-              const Icon(Icons.chevron_right_rounded,
-                  color: AppColors.textTertiary),
+              ),
+              const SizedBox(width: 8),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  if (pricingEnabled)
+                    Text(cur(member.totalBill),
+                        style: AppTypography.titleSmall.copyWith(
+                            fontWeight: FontWeight.w800,
+                            color: AppColors.primary)),
+                  const SizedBox(height: 2),
+                  const Icon(Icons.chevron_right_rounded,
+                      color: AppColors.textTertiary),
+                ],
+              ),
             ],
           ),
         ),
       ),
+    );
+  }
+}
+
+class _RolePill extends StatelessWidget {
+  const _RolePill({required this.role});
+  final String role;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+      decoration: BoxDecoration(
+        color: AppColors.info.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Text(role,
+          style: AppTypography.labelSmall
+              .copyWith(color: AppColors.info, fontWeight: FontWeight.w600)),
+    );
+  }
+}
+
+
+// ── Analytics section (Gap 3): revenue trend, meals consumed, member spend ───
+
+class _AnalyticsSection extends StatelessWidget {
+  const _AnalyticsSection({required this.provider});
+  final MemberBillingProvider provider;
+
+  String _short(String label) =>
+      label.length >= 5 ? label.substring(5) : label;
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final pts = provider.series.points;
+    final topMembers = provider.summary.members.take(6).toList();
+    return Container(
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 14),
+      decoration: BoxDecoration(
+        color: cs.surface,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: AppColors.border.withValues(alpha: 0.5)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text('Analytics',
+                    style: AppTypography.titleSmall
+                        .copyWith(fontWeight: FontWeight.w700)),
+              ),
+              _BucketToggle(
+                bucket: provider.bucket,
+                onSelect: provider.setBucket,
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          Text('Revenue trend',
+              style: AppTypography.labelMedium
+                  .copyWith(color: AppColors.textSecondary)),
+          const SizedBox(height: 10),
+          SizedBox(
+            height: 150,
+            child: pts.isEmpty
+                ? _emptyChart()
+                : BarChart(
+                    BarChartData(
+                      alignment: BarChartAlignment.spaceAround,
+                      maxY: (pts.fold<int>(
+                                  0, (m, e) => e.revenue > m ? e.revenue : m) ==
+                              0
+                          ? 1
+                          : pts.fold<int>(
+                              0, (m, e) => e.revenue > m ? e.revenue : m) *
+                              1.2),
+                      borderData: FlBorderData(show: false),
+                      gridData: const FlGridData(show: false),
+                      titlesData: _bottomTitles(pts.map((e) => _short(e.label)).toList()),
+                      barGroups: [
+                        for (var i = 0; i < pts.length; i++)
+                          BarChartGroupData(x: i, barRods: [
+                            BarChartRodData(
+                              toY: pts[i].revenue.toDouble(),
+                              width: 14,
+                              color: AppColors.primary,
+                              borderRadius: const BorderRadius.vertical(
+                                  top: Radius.circular(5)),
+                            ),
+                          ]),
+                      ],
+                    ),
+                  ),
+          ),
+          const SizedBox(height: 18),
+          Text('Meals consumed',
+              style: AppTypography.labelMedium
+                  .copyWith(color: AppColors.textSecondary)),
+          const SizedBox(height: 10),
+          SizedBox(
+            height: 130,
+            child: pts.isEmpty
+                ? _emptyChart()
+                : LineChart(
+                    LineChartData(
+                      minY: 0,
+                      borderData: FlBorderData(show: false),
+                      gridData: const FlGridData(show: false),
+                      titlesData: _bottomTitles(pts.map((e) => _short(e.label)).toList()),
+                      lineBarsData: [
+                        LineChartBarData(
+                          spots: [
+                            for (var i = 0; i < pts.length; i++)
+                              FlSpot(i.toDouble(), pts[i].presentMeals.toDouble()),
+                          ],
+                          isCurved: true,
+                          color: AppColors.secondary,
+                          barWidth: 3,
+                          dotData: const FlDotData(show: false),
+                          belowBarData: BarAreaData(
+                            show: true,
+                            color: AppColors.secondary.withValues(alpha: 0.12),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+          ),
+          const SizedBox(height: 18),
+          Text('Top member spending',
+              style: AppTypography.labelMedium
+                  .copyWith(color: AppColors.textSecondary)),
+          const SizedBox(height: 10),
+          SizedBox(
+            height: 150,
+            child: topMembers.isEmpty
+                ? _emptyChart()
+                : BarChart(
+                    BarChartData(
+                      alignment: BarChartAlignment.spaceAround,
+                      maxY: (topMembers.fold<int>(0,
+                                  (m, e) => e.totalBill > m ? e.totalBill : m) ==
+                              0
+                          ? 1
+                          : topMembers.fold<int>(0,
+                                  (m, e) => e.totalBill > m ? e.totalBill : m) *
+                              1.2),
+                      borderData: FlBorderData(show: false),
+                      gridData: const FlGridData(show: false),
+                      titlesData: _bottomTitles(topMembers
+                          .map((m) => m.userName.split(' ').first)
+                          .toList()),
+                      barGroups: [
+                        for (var i = 0; i < topMembers.length; i++)
+                          BarChartGroupData(x: i, barRods: [
+                            BarChartRodData(
+                              toY: topMembers[i].totalBill.toDouble(),
+                              width: 16,
+                              color: AppColors.warning,
+                              borderRadius: const BorderRadius.vertical(
+                                  top: Radius.circular(5)),
+                            ),
+                          ]),
+                      ],
+                    ),
+                  ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _emptyChart() => Center(
+        child: Text('No data for this range.',
+            style: AppTypography.labelSmall
+                .copyWith(color: AppColors.textTertiary)),
+      );
+
+  FlTitlesData _bottomTitles(List<String> labels) => FlTitlesData(
+        leftTitles:
+            const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+        rightTitles:
+            const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+        topTitles:
+            const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+        bottomTitles: AxisTitles(
+          sideTitles: SideTitles(
+            showTitles: true,
+            reservedSize: 26,
+            getTitlesWidget: (value, meta) {
+              final i = value.toInt();
+              if (i < 0 || i >= labels.length) return const SizedBox.shrink();
+              // Thin out labels when there are many buckets.
+              final step = (labels.length / 6).ceil();
+              if (step > 1 && i % step != 0) return const SizedBox.shrink();
+              return Padding(
+                padding: const EdgeInsets.only(top: 6),
+                child: Text(labels[i],
+                    style: AppTypography.labelSmall
+                        .copyWith(fontSize: 8, color: AppColors.textTertiary)),
+              );
+            },
+          ),
+        ),
+      );
+}
+
+class _BucketToggle extends StatelessWidget {
+  const _BucketToggle({required this.bucket, required this.onSelect});
+  final BillingBucket bucket;
+  final ValueChanged<BillingBucket> onSelect;
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    Widget seg(String label, BillingBucket b) {
+      final sel = bucket == b;
+      return GestureDetector(
+        onTap: () => onSelect(b),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 140),
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+          decoration: BoxDecoration(
+            color: sel ? AppColors.primary : Colors.transparent,
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Text(label,
+              style: AppTypography.labelSmall.copyWith(
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+                color: sel ? Colors.white : AppColors.textSecondary,
+              )),
+        ),
+      );
+    }
+
+    return Container(
+      padding: const EdgeInsets.all(2),
+      decoration: BoxDecoration(
+        color: cs.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: AppColors.border.withValues(alpha: 0.5)),
+      ),
+      child: Row(mainAxisSize: MainAxisSize.min, children: [
+        seg('Day', BillingBucket.day),
+        seg('Week', BillingBucket.week),
+        seg('Month', BillingBucket.month),
+      ]),
+    );
+  }
+}
+
+
+/// Issue 4: lightweight loader card for the billing analytics region, shown
+/// while the summary + series requests are in flight so the charts never flash
+/// an empty "No data for this range." state before data arrives.
+class _BillingAnalyticsLoading extends StatelessWidget {
+  const _BillingAnalyticsLoading();
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return Container(
+      height: 180,
+      decoration: BoxDecoration(
+        color: isDark ? AppColors.surfaceDark : AppColors.surface,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: (isDark ? AppColors.borderDark : AppColors.border)
+              .withValues(alpha: 0.4),
+        ),
+      ),
+      child: const Center(child: CircularProgressIndicator()),
     );
   }
 }
