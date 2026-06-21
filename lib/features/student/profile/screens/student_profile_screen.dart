@@ -153,6 +153,68 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
                       ),
                       const SizedBox(height: AppConstants.space12),
 
+                      // ── My Billing ────────────────────────────────
+                      Material(
+                        color: isDark
+                            ? AppColors.surfaceDark
+                            : AppColors.surface,
+                        borderRadius: BorderRadius.circular(14),
+                        child: InkWell(
+                          borderRadius: BorderRadius.circular(14),
+                          onTap: () =>
+                              context.push(RouteNames.studentBilling),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 16, vertical: 14),
+                            decoration: BoxDecoration(
+                              borderRadius: BorderRadius.circular(14),
+                              border: Border.all(
+                                color: (isDark
+                                        ? AppColors.borderDark
+                                        : AppColors.border)
+                                    .withValues(alpha: 0.6),
+                              ),
+                            ),
+                            child: Row(
+                              children: [
+                                Container(
+                                  width: 40,
+                                  height: 40,
+                                  decoration: BoxDecoration(
+                                    color: AppColors.primary
+                                        .withValues(alpha: 0.12),
+                                    borderRadius: BorderRadius.circular(10),
+                                  ),
+                                  child: const Icon(Icons.receipt_long_rounded,
+                                      size: 20, color: AppColors.primary),
+                                ),
+                                const SizedBox(width: 14),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text('My Billing',
+                                          style: AppTypography.labelLarge
+                                              .copyWith(
+                                                  fontWeight: FontWeight.w600)),
+                                      Text('Meal charges, history & exports',
+                                          style: AppTypography.labelSmall
+                                              .copyWith(
+                                                  color:
+                                                      AppColors.textTertiary)),
+                                    ],
+                                  ),
+                                ),
+                                const Icon(Icons.chevron_right_rounded,
+                                    color: AppColors.textTertiary),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: AppConstants.space12),
+
                       // ── Logout button ──────────────────────────────
                       _LogoutButton(onLogout: _logout),
                       const SizedBox(height: AppConstants.space40),

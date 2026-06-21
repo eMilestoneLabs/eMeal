@@ -36,6 +36,7 @@ import 'package:smart_meal_management/features/events/screens/event_guest/event_
 import 'package:smart_meal_management/features/groups/screens/group_join_screen.dart';
 import 'package:smart_meal_management/features/student/attendance/screens/attendance_history_screen.dart';
 import 'package:smart_meal_management/features/student/attendance/screens/attendance_screen.dart';
+import 'package:smart_meal_management/features/student/billing/screens/student_billing_screen.dart';
 import 'package:smart_meal_management/features/student/dashboard/screens/student_dashboard_screen.dart';
 import 'package:smart_meal_management/features/student/meals/screens/today_meals_screen.dart';
 import 'package:smart_meal_management/features/student/meals/screens/weekly_menu_screen.dart';
@@ -256,6 +257,10 @@ GoRouter buildRouter(AuthProvider auth) {
           GoRoute(
             path: RouteNames.studentSettings,
             builder: (context, state) => const StudentSettingsScreen(),
+          ),
+          GoRoute(
+            path: RouteNames.studentBilling,
+            builder: (context, state) => const StudentBillingScreen(),
           ),
         ],
       ),

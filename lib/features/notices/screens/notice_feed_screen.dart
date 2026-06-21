@@ -36,6 +36,9 @@ class _NoticeFeedScreenState extends State<NoticeFeedScreen> {
 
   bool _loading = true;
   String? _error;
+  // Issue 7: Notice Board backend may not be deployed yet. A failed load is
+  // shown as a friendly "coming soon" state instead of a raw API error page.
+  bool _unavailable = false;
   List<NoticeModel> _notices = [];
 
   @override
@@ -68,11 +71,14 @@ class _NoticeFeedScreenState extends State<NoticeFeedScreen> {
           _notices = value.data;
           _loading = false;
           _error = null;
+          _unavailable = false;
         });
-      case Err(:final failure):
+      case Err():
+        // Notice Board is future work — degrade gracefully (no error page).
         setState(() {
           _loading = false;
-          _error = failure.message;
+          _error = null;
+          _unavailable = true;
         });
     }
   }
@@ -172,7 +178,7 @@ class _NoticeFeedScreenState extends State<NoticeFeedScreen> {
             : _error != null
                 ? _ErrorState(message: _error!, onRetry: _load)
                 : _notices.isEmpty
-                    ? const _EmptyState()
+                    ? _EmptyState(unavailable: _unavailable)
                     : ListView.separated(
                         padding: const EdgeInsets.fromLTRB(16, 16, 16, 96),
                         itemCount: _notices.length,
@@ -420,20 +426,43 @@ class _NoticeDetailSheet extends StatelessWidget {
 // ── Empty + error ────────────────────────────────────────────────────────────
 
 class _EmptyState extends StatelessWidget {
-  const _EmptyState();
+  const _EmptyState({this.unavailable = false});
+
+  /// True when the backend notices service isn't reachable yet — shows a
+  /// "coming soon" message instead of "No notices yet".
+  final bool unavailable;
+
   @override
   Widget build(BuildContext context) {
     return ListView(
       children: [
         const SizedBox(height: 120),
-        const Icon(Icons.notifications_off_rounded,
-            size: 48, color: AppColors.textTertiary),
+        Icon(
+            unavailable
+                ? Icons.notifications_active_outlined
+                : Icons.notifications_off_rounded,
+            size: 48,
+            color: AppColors.textTertiary),
         const SizedBox(height: 12),
         Center(
-          child: Text('No notices yet',
+          child: Text(unavailable ? 'Notifications coming soon' : 'No notices yet',
               style: AppTypography.bodyMedium
                   .copyWith(color: AppColors.textTertiary)),
         ),
+        if (unavailable) ...[
+          const SizedBox(height: 6),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 40),
+            child: Center(
+              child: Text(
+                'Announcements will appear here in a future update.',
+                textAlign: TextAlign.center,
+                style: AppTypography.bodySmall
+                    .copyWith(color: AppColors.textTertiary),
+              ),
+            ),
+          ),
+        ],
       ],
     );
   }

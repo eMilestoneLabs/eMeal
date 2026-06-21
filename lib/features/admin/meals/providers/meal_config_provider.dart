@@ -867,43 +867,68 @@ class MealConfigProvider extends ChangeNotifier {
     if (_weekSchedule == null) return;
 
     final targetDay = DayOfWeek.values[weekdayIndex % 7];
-    final updatedDays = _weekSchedule!.days.map((daySchedule) {
-      if (daySchedule.day != targetDay) return daySchedule;
 
-      final List<DayMealEntry> entries = List<DayMealEntry>.from(daySchedule.meals);
-      if (enabled) {
-        final alreadyPresent = entries.any((e) => e.mealId == mealId);
-        if (!alreadyPresent) {
-          final meal = _meals.firstWhere(
-            (m) => m.id == mealId,
-            orElse: () => _meals.first,
-          );
-          entries.add(DayMealEntry(
-            mealId: meal.id,
-            name: meal.name,
-            slotKey: meal.slotKey,
-            order: meal.order,
-            // Copy menu items from the template so the newly-enabled day
-            // entry starts with the same content as the shared meal.
-            menuItems: List<String>.from(meal.menuItems),
-            preferencesEnabled: meal.preferencesEnabled,
-            enabledPreferences: meal.enabledPreferences,
-            price: meal.price,
-          ));
-          entries.sort((a, b) => a.order.compareTo(b.order));
+    // Build a fresh day entry from the master meal template.
+    DayMealEntry buildEntry() {
+      final meal = _meals.firstWhere(
+        (m) => m.id == mealId,
+        orElse: () => _meals.first,
+      );
+      return DayMealEntry(
+        mealId: meal.id,
+        name: meal.name,
+        slotKey: meal.slotKey,
+        order: meal.order,
+        // Copy menu items from the template so the newly-enabled day
+        // entry starts with the same content as the shared meal.
+        menuItems: List<String>.from(meal.menuItems),
+        preferencesEnabled: meal.preferencesEnabled,
+        enabledPreferences: meal.enabledPreferences,
+        price: meal.price,
+      );
+    }
+
+    final bool dayExists =
+        _weekSchedule!.days.any((d) => d.day == targetDay);
+
+    List<DaySchedule> updatedDays;
+    if (!dayExists) {
+      // Regression fix: a weekday with NO day-row (all meals disabled, or a
+      // published week that only stored enabled days) must still be enable-able.
+      // Previously toggleMealDay only mutated EXISTING day-rows, so enabling a
+      // meal on such a day silently did nothing. Create the day on enable.
+      if (!enabled) return; // nothing to disable on a non-existent day
+      updatedDays = [
+        ..._weekSchedule!.days,
+        DaySchedule(day: targetDay, meals: [buildEntry()]),
+      ];
+    } else {
+      updatedDays = _weekSchedule!.days.map((daySchedule) {
+        if (daySchedule.day != targetDay) return daySchedule;
+
+        final List<DayMealEntry> entries =
+            List<DayMealEntry>.from(daySchedule.meals);
+        if (enabled) {
+          if (!entries.any((e) => e.mealId == mealId)) {
+            entries.add(buildEntry());
+            entries.sort((a, b) => a.order.compareTo(b.order));
+          }
+        } else {
+          entries.removeWhere((e) => e.mealId == mealId);
         }
-      } else {
-        entries.removeWhere((e) => e.mealId == mealId);
-      }
-      return DaySchedule(day: daySchedule.day, meals: entries);
-    }).toList();
+        return DaySchedule(day: daySchedule.day, meals: entries);
+      }).toList();
+    }
 
     _weekSchedule = MealScheduleModel(
       id: _weekSchedule!.id,
       groupId: _weekSchedule!.groupId,
       organizationId: _weekSchedule!.organizationId,
       days: updatedDays,
-      isPublished: _weekSchedule!.isPublished,
+      // Editing always reverts to a local draft (consistent with every other
+      // edit method) so the change is editable + a Publish button appears. The
+      // SERVER's published schedule stays live for students until re-publish.
+      isPublished: false,
       publishedAt: _weekSchedule!.publishedAt,
       createdAt: _weekSchedule!.createdAt,
     );

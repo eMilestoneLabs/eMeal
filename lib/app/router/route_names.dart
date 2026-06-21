@@ -30,6 +30,8 @@ abstract final class RouteNames {
   static const String studentWeeklyMenu = '/student/menu';
   static const String studentProfile = '/student/profile';
   static const String studentSettings = '/student/settings';
+  // Student Billing module (own meal charges, history, exports)
+  static const String studentBilling = '/student/billing';
 
   // Admin / Manager
   static const String adminRoot = '/admin';

@@ -788,34 +788,50 @@ class _MealSlotCard extends StatelessWidget {
                         ),
                       ),
                       const SizedBox(height: 2),
-                      Row(
-                        children: [
-                          Icon(
-                            Icons.schedule_rounded,
-                            size: 12,
-                            color: isDark
-                                ? AppColors.textSecondaryDark
-                                : AppColors.textSecondary,
-                          ),
-                          const SizedBox(width: 4),
-                          Text(
-                            '$displayOpen – $displayClose',
-                            style: AppTypography.bodySmall.copyWith(
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 8, vertical: 3),
+                        decoration: BoxDecoration(
+                          color: (isDark
+                                  ? AppColors.borderDark
+                                  : AppColors.border)
+                              .withValues(alpha: 0.25),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              Icons.schedule_rounded,
+                              size: 12,
                               color: isDark
                                   ? AppColors.textSecondaryDark
                                   : AppColors.textSecondary,
-                              fontWeight: FontWeight.w500,
                             ),
-                          ),
-                          if (isEnabled && dayEntry!.hasCustomTiming) ...[
-                            const SizedBox(width: 4),
-                            const Icon(
-                              Icons.timer_outlined,
-                              size: 11,
-                              color: AppColors.secondary,
+                            const SizedBox(width: 5),
+                            Flexible(
+                              child: Text(
+                                '$displayOpen – $displayClose',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: AppTypography.bodySmall.copyWith(
+                                  color: isDark
+                                      ? AppColors.textSecondaryDark
+                                      : AppColors.textSecondary,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
                             ),
+                            if (isEnabled && dayEntry!.hasCustomTiming) ...[
+                              const SizedBox(width: 5),
+                              const Icon(
+                                Icons.timer_outlined,
+                                size: 11,
+                                color: AppColors.secondary,
+                              ),
+                            ],
                           ],
-                        ],
+                        ),
                       ),
                     ],
                   ),

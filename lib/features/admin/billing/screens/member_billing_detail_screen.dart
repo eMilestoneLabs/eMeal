@@ -435,22 +435,41 @@ class _MemberBillingDetailScreenState extends State<MemberBillingDetailScreen> {
           const Divider(height: 1),
           ...rows.map((r) => Padding(
                 padding:
-                    const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                    const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
                 child: Row(
                   children: [
                     Expanded(
-                      child: Text(r.mealName, style: AppTypography.bodySmall),
+                      child: Text(r.mealName,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: AppTypography.bodySmall
+                              .copyWith(fontWeight: FontWeight.w600)),
                     ),
-                    Text(_statusText(r),
-                        style: AppTypography.labelSmall.copyWith(
-                            fontWeight: FontWeight.w700,
-                            color: _statusColor(r))),
-                    if (widget.pricingEnabled && r.isPresent) ...[
-                      const SizedBox(width: 10),
-                      Text('₹${r.price ?? 0}',
-                          style: AppTypography.labelSmall
-                              .copyWith(fontWeight: FontWeight.w700)),
-                    ],
+                    const SizedBox(width: 8),
+                    // Fixed-width status column so every row lines up vertically.
+                    SizedBox(
+                      width: 92,
+                      child: Text(_statusText(r),
+                          textAlign: TextAlign.right,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: AppTypography.labelSmall.copyWith(
+                              fontWeight: FontWeight.w700,
+                              color: _statusColor(r))),
+                    ),
+                    // Fixed-width right-aligned price column ('—' when no charge).
+                    if (widget.pricingEnabled)
+                      SizedBox(
+                        width: 64,
+                        child: Text(r.isPresent ? '₹${r.price ?? 0}' : '—',
+                            textAlign: TextAlign.right,
+                            maxLines: 1,
+                            style: AppTypography.labelSmall.copyWith(
+                                fontWeight: FontWeight.w700,
+                                color: r.isPresent
+                                    ? AppColors.textPrimary
+                                    : AppColors.textTertiary)),
+                      ),
                   ],
                 ),
               )),
