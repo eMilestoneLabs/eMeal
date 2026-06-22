@@ -115,7 +115,8 @@ class _StudentShellState extends State<StudentShell> {
       // Meals disabled — meals + menu both hidden; 3 tabs
       return [_homeTab, _attendanceTab, _profileTab];
     }
-    if (!_groupConfig.weeklyMenuEnabled) {
+    if (!_groupConfig.weeklyMenuEnabled ||
+        _groupConfig.dayWiseMealsEnabled) {
       // Meals on, but no weekly menu — 4 tabs
       return [_homeTab, _mealsTab, _attendanceTab, _profileTab];
     }
@@ -132,7 +133,8 @@ class _StudentShellState extends State<StudentShell> {
         RouteNames.studentProfile,
       ];
     }
-    if (!_groupConfig.weeklyMenuEnabled) {
+    if (!_groupConfig.weeklyMenuEnabled ||
+        _groupConfig.dayWiseMealsEnabled) {
       return [
         RouteNames.studentDashboard,
         RouteNames.studentMeals,

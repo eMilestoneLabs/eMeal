@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:smart_meal_management/core/utils/time_format.dart';
 import 'package:smart_meal_management/core/constants/app_constants.dart';
 import 'package:smart_meal_management/core/theme/app_colors.dart';
 import 'package:smart_meal_management/core/theme/app_typography.dart';
@@ -708,7 +709,7 @@ class _HistoryTile extends StatelessWidget {
   }
 
   String _formatTime(DateTime d) =>
-      '${d.hour.toString().padLeft(2, '0')}:${d.minute.toString().padLeft(2, '0')}';
+      TimeFormat.tod12(TimeOfDay.fromDateTime(d));
 
   @override
   Widget build(BuildContext context) {

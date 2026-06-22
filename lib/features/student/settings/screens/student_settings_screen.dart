@@ -37,10 +37,16 @@ class _StudentSettingsScreenState extends State<StudentSettingsScreen> {
     super.didChangeDependencies();
     if (!_initialized) {
       _initialized = true;
+      final auth = AuthProviderScope.of(context);
       _provider = StudentSettingsProvider(
-        authProvider: AuthProviderScope.of(context),
+        authProvider: auth,
         themeProvider: ThemeProvider.of(context),
       );
+      // Pull the latest user from the backend so an admin's vacation approval
+      // (which flips isVacationMode ON server-side) is reflected here without an
+      // app restart. The settings provider reads auth.currentUser live + listens
+      // for changes, so this updates the toggle as soon as it returns.
+      auth.refreshCurrentUser();
     }
   }
 
@@ -129,11 +135,11 @@ class _StudentSettingsScreenState extends State<StudentSettingsScreen> {
                     icon: Icons.beach_access_rounded,
                     iconColor: AppColors.vacation,
                     title: provider.isVacationMode
-                        ? 'Vacation Mode Active'
-                        : 'Vacation Mode',
+                        ? 'Vacation Status — Active'
+                        : 'Vacation Status',
                     subtitle: provider.isVacationMode
-                        ? 'Active — attendance and reminders are paused. Turn off when you return early.'
-                        : "Pauses attendance and reminders while you're away.",
+                        ? 'Active — attendance and reminders are paused. You may turn it off if you return early.'
+                        : 'Automatically activated when your vacation request is approved. You may turn it off if you return early.',
                     value: provider.isVacationMode,
                     // Issue 4: enabling vacation is admin-approval-only. The
                     // switch can be turned OFF (early return) but never ON by
@@ -146,7 +152,7 @@ class _StudentSettingsScreenState extends State<StudentSettingsScreen> {
                     isDark: isDark,
                     disabledReason: provider.isVacationMode
                         ? null
-                        : 'Submit a vacation request — your admin enables it.',
+                        : 'Automatically activated when your vacation request is approved.',
                   ),
                   // Issue 3: submit a date-range vacation request for admin approval.
                   _ActionTile(

@@ -6,6 +6,7 @@ import 'package:smart_meal_management/app/router/route_names.dart';
 import 'package:smart_meal_management/core/constants/app_constants.dart';
 import 'package:smart_meal_management/core/theme/app_colors.dart';
 import 'package:smart_meal_management/core/theme/app_typography.dart';
+import 'package:smart_meal_management/core/utils/time_format.dart';
 import 'package:smart_meal_management/features/auth/providers/auth_provider.dart';
 import 'package:smart_meal_management/features/student/dashboard/providers/student_dashboard_provider.dart';
 import 'package:smart_meal_management/shared/models/attendance_model.dart';
@@ -440,8 +441,9 @@ class _TodayMealCardState extends State<_TodayMealCard> {
                           ),
                           const SizedBox(width: 4),
                           Text(
-                            '${widget.meal.attendanceWindow.openTime}'
-                            ' – ${widget.meal.attendanceWindow.closeTime}',
+                            TimeFormat.window12(
+                                widget.meal.attendanceWindow.openTime,
+                                widget.meal.attendanceWindow.closeTime),
                             style: AppTypography.bodySmall.copyWith(
                               color: isDark
                                   ? AppColors.textSecondaryDark
@@ -476,11 +478,31 @@ class _TodayMealCardState extends State<_TodayMealCard> {
             ),
           ),
 
-          // ── Meal image gallery ─────────────────────────────────────────
-          if (widget.meal.imageBytes.isNotEmpty)
+          // ── Meal image (local bytes or backend base64 data URI) ────────
+          if (widget.meal.displayImageBytes != null)
             _MealImageGallery(
-              imageBytes: widget.meal.imageBytes,
+              imageBytes: [widget.meal.displayImageBytes!],
               isDark: isDark,
+            ),
+
+          // ── Description (premium) ──────────────────────────────────────
+          if ((widget.meal.description ?? '').trim().isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(
+                AppConstants.space16,
+                0,
+                AppConstants.space16,
+                AppConstants.space12,
+              ),
+              child: Text(
+                widget.meal.description!.trim(),
+                style: AppTypography.bodySmall.copyWith(
+                  color: isDark
+                      ? AppColors.textSecondaryDark
+                      : AppColors.textSecondary,
+                  height: 1.45,
+                ),
+              ),
             ),
 
           // ── Menu items preview ─────────────────────────────────────────

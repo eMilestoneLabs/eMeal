@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:smart_meal_management/core/theme/app_colors.dart';
 import 'package:smart_meal_management/core/theme/app_typography.dart';
+import 'package:smart_meal_management/core/utils/time_format.dart';
 import 'package:smart_meal_management/data/repositories/attendance_repository.dart';
 import 'package:smart_meal_management/data/repositories/meal_repository.dart';
 import 'package:smart_meal_management/data/repositories/group_repository.dart';
@@ -245,7 +246,7 @@ class _MemberBillingDetailScreenState extends State<MemberBillingDetailScreen> {
 
   String _fmtTime(DateTime? d) => d == null
       ? '—'
-      : '${d.hour.toString().padLeft(2, '0')}:${d.minute.toString().padLeft(2, '0')}';
+      : TimeFormat.tod12(TimeOfDay.fromDateTime(d));
 
   @override
   Widget build(BuildContext context) {
@@ -557,8 +558,7 @@ class _MemberBillingDetailScreenState extends State<MemberBillingDetailScreen> {
                 ),
                 if (meal != null)
                   Text(
-                    'Window ${meal.attendanceWindow.openTime}'
-                    ' – ${meal.attendanceWindow.closeTime}',
+                    'Window ${TimeFormat.window12(meal.attendanceWindow.openTime, meal.attendanceWindow.closeTime)}',
                     style: AppTypography.labelSmall
                         .copyWith(color: AppColors.textTertiary),
                   ),

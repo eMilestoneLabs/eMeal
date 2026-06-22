@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:smart_meal_management/core/constants/app_constants.dart';
 import 'package:smart_meal_management/core/theme/app_colors.dart';
 import 'package:smart_meal_management/core/theme/app_typography.dart';
+import 'package:smart_meal_management/core/utils/time_format.dart';
 import 'package:smart_meal_management/shared/models/attendance_model.dart';
 import 'package:smart_meal_management/shared/models/meal_model.dart';
 
@@ -154,7 +155,8 @@ class NextMealCard extends StatelessWidget {
                     ),
                     const SizedBox(height: 2),
                     Text(
-                      '${meal!.attendanceWindow.openTime} – ${meal!.attendanceWindow.closeTime}',
+                      TimeFormat.window12(meal!.attendanceWindow.openTime,
+                          meal!.attendanceWindow.closeTime),
                       style: AppTypography.bodySmall
                           .copyWith(color: textSecondary),
                     ),

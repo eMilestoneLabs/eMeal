@@ -766,6 +766,9 @@ class MealConfigProvider extends ChangeNotifier {
     List<String>? enabledPreferences,
     int? price,
     bool clearPrice = false,
+    String? description,
+    bool clearDescription = false,
+    List<Uint8List>? imageBytes,
   }) {
     if (_weekSchedule == null) return;
 
@@ -774,13 +777,24 @@ class MealConfigProvider extends ChangeNotifier {
 
       final updatedMeals = daySchedule.meals.map((entry) {
         if (entry.mealId != mealId) return entry;
+        // Persist the per-day photo as a base64 data URI in imageUrl (one image
+        // per entry, replaced on each edit). Empty list = photo removed → null
+        // (the meal then inherits the master photo). null param = untouched.
+        final String? nextImageUrl = imageBytes == null
+            ? entry.imageUrl
+            : (imageBytes.isEmpty
+                ? null
+                : 'data:image/jpeg;base64,${base64Encode(imageBytes.first)}');
         return DayMealEntry(
           mealId: entry.mealId,
           name: name ?? entry.name,
           slotKey: entry.slotKey,
           order: entry.order,
           menuItems: menuItems ?? entry.menuItems,
-          imageUrl: entry.imageUrl,
+          imageUrl: nextImageUrl,
+          description:
+              clearDescription ? null : (description ?? entry.description),
+          imageBytes: imageBytes ?? entry.imageBytes,
           openTime: openTime ?? entry.openTime,
           closeTime: closeTime ?? entry.closeTime,
           preferencesEnabled: preferencesEnabled ?? entry.preferencesEnabled,

@@ -3,6 +3,7 @@ import 'package:smart_meal_management/shared/models/attendance_model.dart';
 import 'package:go_router/go_router.dart';
 import 'package:smart_meal_management/app/router/route_names.dart';
 import 'package:smart_meal_management/core/theme/app_colors.dart';
+import 'package:smart_meal_management/core/utils/time_format.dart';
 import 'package:smart_meal_management/features/admin/meals/providers/meal_config_provider.dart';
 import 'package:smart_meal_management/features/admin/meals/widgets/meal_config_form.dart';
 import 'package:smart_meal_management/shared/models/meal_model.dart';
@@ -69,11 +70,29 @@ class _MealConfigScreenState extends State<MealConfigScreen> {
         centerTitle: false,
         actions: [
           if (_provider.selectedGroup != null)
-            TextButton.icon(
-              onPressed: () => context.push('${RouteNames.adminMealSchedule}?groupId=${_provider.selectedGroup!.id}'),
-              icon: const Icon(Icons.calendar_month_rounded, size: 16),
-              label: const Text('Schedule'),
-            ),
+            Builder(builder: (context) {
+              // Day-Wise Mode and Weekly Mode are mutually exclusive. When the
+              // group is in Day-Wise mode the weekly planner is hidden and the
+              // admin instead opens the Today/Tomorrow daily planner. Weekly
+              // mode behaviour is unchanged (mode param absent).
+              final dayWise =
+                  _provider.selectedGroup!.mealConfig.dayWiseMealsEnabled;
+              final id = _provider.selectedGroup!.id;
+              return TextButton.icon(
+                onPressed: () => context.push(
+                  dayWise
+                      ? '${RouteNames.adminMealSchedule}?groupId=$id&mode=daywise'
+                      : '${RouteNames.adminMealSchedule}?groupId=$id',
+                ),
+                icon: Icon(
+                  dayWise
+                      ? Icons.today_rounded
+                      : Icons.calendar_month_rounded,
+                  size: 16,
+                ),
+                label: Text(dayWise ? 'Daily Plan' : 'Schedule'),
+              );
+            }),
         ],
       ),
       floatingActionButton: _provider.mealsEnabled &&
@@ -403,9 +422,9 @@ class _MealConfigScreenState extends State<MealConfigScreen> {
                     ),
                     menuItems: data.menuItems,
                     availablePreferences: data.enablePreferences,
-                    imageBytes: data.imageBytes.isNotEmpty
-                        ? data.imageBytes
-                        : null,
+                    // Always pass the list (empty = photo removed) so the repo
+                    // can clear imageUrl server-side; non-empty = replace.
+                    imageBytes: data.imageBytes,
                     price: data.price,
                   );
                   if (mounted) nav.pop();
@@ -580,7 +599,7 @@ class _MealTile extends StatelessWidget {
                 Row(
                   children: [
                     Text(
-                      '${meal.attendanceWindow.openTime}–${meal.attendanceWindow.closeTime}',
+                      TimeFormat.window12(meal.attendanceWindow.openTime, meal.attendanceWindow.closeTime),
                       style: TextStyle(
                         fontSize: 11,
                         fontFamily: 'monospace',

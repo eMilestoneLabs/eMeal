@@ -6,6 +6,7 @@ import 'package:share_plus/share_plus.dart';
 import 'package:smart_meal_management/app/router/route_names.dart';
 import 'package:smart_meal_management/core/theme/app_colors.dart';
 import 'package:smart_meal_management/core/theme/app_typography.dart';
+import 'package:smart_meal_management/core/utils/time_format.dart';
 import 'package:smart_meal_management/core/utils/qr_payload_parser.dart';
 import 'package:smart_meal_management/features/admin/groups/providers/admin_group_provider.dart';
 import 'package:smart_meal_management/features/admin/groups/widgets/group_member_tile.dart';
@@ -913,12 +914,29 @@ class _MealsTab extends StatelessWidget {
           icon: Icons.settings_rounded,
           onPressed: () => context.push(RouteNames.adminMealConfig),
         ),
-        const SizedBox(height: 8),
-        AppPrimaryButton.outlined(
-          label: 'Weekly Schedule',
-          icon: Icons.calendar_month_rounded,
-          onPressed: () => context.push(RouteNames.adminMealSchedule),
-        ),
+        // Weekly Meal Mode and Day-Wise Meal Mode are mutually exclusive. The
+        // schedule entry point mirrors the active mode and is hidden entirely
+        // when meals are off or the weekly menu is disabled (so the weekly menu
+        // is hidden from the admin too, matching the student side).
+        if (config.mealsEnabled && config.dayWiseMealsEnabled) ...[
+          const SizedBox(height: 8),
+          AppPrimaryButton.outlined(
+            label: 'Daily Plan',
+            icon: Icons.today_rounded,
+            onPressed: () => context.push(
+              '${RouteNames.adminMealSchedule}?groupId=${group.id}&mode=daywise',
+            ),
+          ),
+        ] else if (config.mealsEnabled && config.weeklyMenuEnabled) ...[
+          const SizedBox(height: 8),
+          AppPrimaryButton.outlined(
+            label: 'Weekly Schedule',
+            icon: Icons.calendar_month_rounded,
+            onPressed: () => context.push(
+              '${RouteNames.adminMealSchedule}?groupId=${group.id}',
+            ),
+          ),
+        ],
       ],
     );
   }
@@ -933,8 +951,8 @@ class _MealRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
-    final window =
-        '${meal.attendanceWindow.openTime} – ${meal.attendanceWindow.closeTime}';
+    final window = TimeFormat.window12(
+        meal.attendanceWindow.openTime, meal.attendanceWindow.closeTime);
 
     return Column(
       children: [

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:smart_meal_management/core/utils/time_format.dart';
 import 'package:smart_meal_management/core/theme/app_colors.dart';
 import 'package:smart_meal_management/core/theme/app_typography.dart';
 import 'package:smart_meal_management/shared/models/attendance_model.dart';
@@ -144,5 +145,5 @@ class MemberAttendanceRow extends StatelessWidget {
   }
 
   String _formatTime(DateTime dt) =>
-      '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
+      TimeFormat.tod12(TimeOfDay.fromDateTime(dt));
 }

@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
@@ -59,6 +60,27 @@ class MealModel {
 
   /// True if at least one local image has been attached.
   bool get hasImages => imageBytes.isNotEmpty;
+
+  /// Single image bytes to display for this meal, from whichever source is
+  /// available: a locally-attached image (admin's own session) first, otherwise
+  /// the base64 JPEG data URI carried in [imageUrl] (how photos round-trip
+  /// through the backend today). Returns null when there's no photo or the
+  /// [imageUrl] is a plain network URL (left to network image widgets).
+  Uint8List? get displayImageBytes {
+    if (imageBytes.isNotEmpty) return imageBytes.first;
+    final u = imageUrl;
+    if (u != null && u.startsWith('data:image')) {
+      final comma = u.indexOf(',');
+      if (comma != -1) {
+        try {
+          return base64Decode(u.substring(comma + 1));
+        } catch (_) {
+          return null;
+        }
+      }
+    }
+    return null;
+  }
 
   /// Total size of all compressed image bytes in bytes.
   int get totalImageBytes =>

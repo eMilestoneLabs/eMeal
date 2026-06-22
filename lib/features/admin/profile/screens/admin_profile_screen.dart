@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
@@ -85,10 +86,18 @@ class _AdminProfileScreenState extends State<AdminProfileScreen> {
     );
 
     if (!mounted) return;
-    AuthProviderScope.of(context).setAvatarBytes(
-      compressed.isEmpty ? rawBytes : compressed,
-    );
-    setState(() => _uploadingAvatar = false);
+    final bytes = compressed.isEmpty ? rawBytes : compressed;
+    final auth = AuthProviderScope.of(context);
+    auth.setAvatarBytes(bytes); // instant local display
+    // Persist so the admin avatar uploads to object storage (MinIO) and is
+    // visible org-wide (members + all group screens) — single source of truth.
+    // The backend converts this base64 data URI into a stored URL.
+    final user = auth.currentUser;
+    if (user != null) {
+      final dataUri = 'data:image/jpeg;base64,${base64Encode(bytes)}';
+      await auth.updateProfile(user.copyWith(avatarUrl: dataUri));
+    }
+    if (mounted) setState(() => _uploadingAvatar = false);
   }
 
   /// Issue #2: real admin profile editing. Opens a sheet bound to the live

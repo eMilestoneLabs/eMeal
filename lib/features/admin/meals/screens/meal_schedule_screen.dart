@@ -1,7 +1,12 @@
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
+import 'package:flutter_image_compress/flutter_image_compress.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:smart_meal_management/core/constants/app_constants.dart';
 import 'package:smart_meal_management/core/theme/app_colors.dart';
 import 'package:smart_meal_management/core/theme/app_typography.dart';
+import 'package:smart_meal_management/core/utils/time_format.dart';
 import 'package:smart_meal_management/features/admin/meals/providers/meal_config_provider.dart';
 import 'package:smart_meal_management/shared/models/meal_model.dart';
 import 'package:smart_meal_management/shared/models/group_model.dart';
@@ -21,11 +26,20 @@ import 'package:smart_meal_management/features/auth/providers/auth_provider.dart
 /// Publish FAB: visible when schedule is in Draft state.
 /// Preview mode: read-only student-facing view of the same data.
 class MealScheduleScreen extends StatefulWidget {
-  const MealScheduleScreen({super.key, this.initialGroupId});
+  const MealScheduleScreen({
+    super.key,
+    this.initialGroupId,
+    this.dayWiseMode = false,
+  });
 
   /// Group whose weekly schedule to open — carried from Meal Config so the
   /// planner edits the SAME group the admin selected. Null -> first group.
   final String? initialGroupId;
+
+  /// When true, the planner runs in DAY-WISE mode: it shows ONLY Today and
+  /// Tomorrow (no weekly tabs, no recurring/copy-week actions). When false the
+  /// planner behaves exactly as the existing Weekly Planner (unchanged).
+  final bool dayWiseMode;
 
   @override
   State<MealScheduleScreen> createState() => _MealScheduleScreenState();
@@ -38,13 +52,24 @@ class _MealScheduleScreenState extends State<MealScheduleScreen>
   bool _initialized = false;
   bool _previewMode = false;
 
-  static const _days = DayOfWeek.values;
+  /// Days shown in the planner. Weekly mode = all 7 weekdays (unchanged).
+  /// Day-Wise mode = only [Today, Tomorrow] — strictly a two-day window.
+  List<DayOfWeek> get _days => widget.dayWiseMode
+      ? <DayOfWeek>[
+          DayOfWeek.fromWeekday(DateTime.now().weekday),
+          DayOfWeek.fromWeekday(
+              DateTime.now().add(const Duration(days: 1)).weekday),
+        ]
+      : DayOfWeek.values;
 
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: _days.length, vsync: this);
-    _tabController.index = DayOfWeek.fromWeekday(DateTime.now().weekday).index;
+    // Day-Wise opens on Today (index 0). Weekly opens on the current weekday.
+    _tabController.index = widget.dayWiseMode
+        ? 0
+        : DayOfWeek.fromWeekday(DateTime.now().weekday).index;
   }
 
   @override
@@ -248,6 +273,7 @@ class _MealScheduleScreenState extends State<MealScheduleScreen>
         entry: entry!,
         templateName: template!.name,
         templateMenuItems: template.menuItems,
+        templateDescription: template.description,
         templateOpenTime: template.attendanceWindow.openTime,
         templateCloseTime: template.attendanceWindow.closeTime,
         templatePreferenceOptions: template.enabledPreferences.isNotEmpty
@@ -258,6 +284,8 @@ class _MealScheduleScreenState extends State<MealScheduleScreen>
         onSave: ({
           required String name,
           required List<String> menuItems,
+          String? description,
+          List<Uint8List>? imageBytes,
           String? openTime,
           String? closeTime,
           required bool preferencesEnabled,
@@ -269,6 +297,9 @@ class _MealScheduleScreenState extends State<MealScheduleScreen>
             mealId,
             name: name,
             menuItems: menuItems,
+            description: description,
+            clearDescription: description == null,
+            imageBytes: imageBytes,
             openTime: openTime,
             closeTime: closeTime,
             preferencesEnabled: preferencesEnabled,
@@ -309,7 +340,11 @@ class _MealScheduleScreenState extends State<MealScheduleScreen>
                     )
                   : const Icon(Icons.publish_rounded, size: 20),
               label: Text(
-                _provider.isSaving ? 'Publishing…' : 'Publish Schedule',
+                _provider.isSaving
+                    ? 'Publishing…'
+                    : (widget.dayWiseMode
+                        ? 'Publish Day Plan'
+                        : 'Publish Schedule'),
                 style: AppTypography.labelLarge.copyWith(
                   color: Colors.white,
                   fontWeight: FontWeight.w600,
@@ -322,7 +357,8 @@ class _MealScheduleScreenState extends State<MealScheduleScreen>
           crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisSize: MainAxisSize.min,
           children: [
-            Text('Weekly Planner', style: AppTypography.titleLarge),
+            Text(widget.dayWiseMode ? 'Daily Meal Plan' : 'Weekly Planner',
+                style: AppTypography.titleLarge),
             if (_previewMode)
               Text(
                 'Preview · student view',
@@ -344,66 +380,72 @@ class _MealScheduleScreenState extends State<MealScheduleScreen>
               color: _previewMode ? AppColors.info : null,
             ),
           ),
-          PopupMenuButton<_ScheduleAction>(
-            icon: const Icon(Icons.more_vert_rounded),
-            itemBuilder: (_) => [
-              const PopupMenuItem(
-                value: _ScheduleAction.copyPrevious,
-                child: Row(
-                  children: [
-                    Icon(Icons.copy_all_rounded, size: 18),
-                    SizedBox(width: 10),
-                    Text('Copy from previous week'),
-                  ],
-                ),
-              ),
-              PopupMenuItem(
-                value: _ScheduleAction.toggleRecurring,
-                child: Row(
-                  children: [
-                    Icon(
-                      _provider.autoContinueLastWeek
-                          ? Icons.event_repeat_rounded
-                          : Icons.event_repeat_outlined,
-                      size: 18,
-                      color: _provider.autoContinueLastWeek
-                          ? AppColors.present
-                          : null,
+          // Weekly-only actions (copy previous week / recurring) are hidden in
+          // Day-Wise mode — those are weekly scheduling concepts. Revert-to-draft
+          // applies to both since publishing is shared.
+          if (!widget.dayWiseMode || isPublished)
+            PopupMenuButton<_ScheduleAction>(
+              icon: const Icon(Icons.more_vert_rounded),
+              itemBuilder: (_) => [
+                if (!widget.dayWiseMode)
+                  const PopupMenuItem(
+                    value: _ScheduleAction.copyPrevious,
+                    child: Row(
+                      children: [
+                        Icon(Icons.copy_all_rounded, size: 18),
+                        SizedBox(width: 10),
+                        Text('Copy from previous week'),
+                      ],
                     ),
-                    const SizedBox(width: 10),
-                    const Expanded(
-                      child: Text('Continue Recurring Weekly Menu'),
-                    ),
-                    if (_provider.autoContinueLastWeek)
-                      const Icon(Icons.check_rounded,
-                          size: 16, color: AppColors.present),
-                  ],
-                ),
-              ),
-              if (isPublished)
-                const PopupMenuItem(
-                  value: _ScheduleAction.revertToDraft,
-                  child: Row(
-                    children: [
-                      Icon(Icons.undo_rounded,
-                          size: 18, color: AppColors.warning),
-                      SizedBox(width: 10),
-                      Text('Revert to Draft'),
-                    ],
                   ),
-                ),
-            ],
-            onSelected: (action) {
-              switch (action) {
-                case _ScheduleAction.copyPrevious:
-                  _copyFromPreviousWeek();
-                case _ScheduleAction.revertToDraft:
-                  _revertSchedule();
-                case _ScheduleAction.toggleRecurring:
-                  _toggleRecurring();
-              }
-            },
-          ),
+                if (!widget.dayWiseMode)
+                  PopupMenuItem(
+                    value: _ScheduleAction.toggleRecurring,
+                    child: Row(
+                      children: [
+                        Icon(
+                          _provider.autoContinueLastWeek
+                              ? Icons.event_repeat_rounded
+                              : Icons.event_repeat_outlined,
+                          size: 18,
+                          color: _provider.autoContinueLastWeek
+                              ? AppColors.present
+                              : null,
+                        ),
+                        const SizedBox(width: 10),
+                        const Expanded(
+                          child: Text('Continue Recurring Weekly Menu'),
+                        ),
+                        if (_provider.autoContinueLastWeek)
+                          const Icon(Icons.check_rounded,
+                              size: 16, color: AppColors.present),
+                      ],
+                    ),
+                  ),
+                if (isPublished)
+                  const PopupMenuItem(
+                    value: _ScheduleAction.revertToDraft,
+                    child: Row(
+                      children: [
+                        Icon(Icons.undo_rounded,
+                            size: 18, color: AppColors.warning),
+                        SizedBox(width: 10),
+                        Text('Revert to Draft'),
+                      ],
+                    ),
+                  ),
+              ],
+              onSelected: (action) {
+                switch (action) {
+                  case _ScheduleAction.copyPrevious:
+                    _copyFromPreviousWeek();
+                  case _ScheduleAction.revertToDraft:
+                    _revertSchedule();
+                  case _ScheduleAction.toggleRecurring:
+                    _toggleRecurring();
+                }
+              },
+            ),
         ],
         bottom: TabBar(
           controller: _tabController,
@@ -422,12 +464,18 @@ class _MealScheduleScreenState extends State<MealScheduleScreen>
           indicatorColor: AppColors.primary,
           indicatorWeight: 2.5,
           dividerColor: isDark ? AppColors.borderDark : AppColors.border,
-          tabs: _days.map((d) {
+          tabs: _days.asMap().entries.map((e) {
+            final i = e.key;
+            final d = e.value;
             final isToday = d == today;
+            // Day-Wise: label tabs "Today"/"Tomorrow" + the weekday name.
+            final label = widget.dayWiseMode
+                ? '${i == 0 ? 'Today' : 'Tomorrow'} · ${d.label}'
+                : d.label;
             return Tab(
               height: 40,
               child: Text(
-                d.label,
+                label,
                 maxLines: 1,
                 overflow: TextOverflow.clip,
                 style: TextStyle(
@@ -442,11 +490,12 @@ class _MealScheduleScreenState extends State<MealScheduleScreen>
       body: _provider.isLoading
           ? const AppLoadingIndicator()
           : _provider.weekSchedule == null
-              ? const AppEmptyState(
+              ? AppEmptyState(
                   icon: Icons.calendar_month_outlined,
                   title: 'No schedule yet',
-                  subtitle:
-                      'Configure meals first, then build your weekly schedule here.',
+                  subtitle: widget.dayWiseMode
+                      ? 'Add meals in Meal Config first — they become the daily template for Today and Tomorrow.'
+                      : 'Configure meals first, then build your weekly schedule here.',
                 )
               : Column(
                   children: [
@@ -811,7 +860,7 @@ class _MealSlotCard extends StatelessWidget {
                             const SizedBox(width: 5),
                             Flexible(
                               child: Text(
-                                '$displayOpen – $displayClose',
+                                TimeFormat.window12(displayOpen, displayClose),
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
                                 style: AppTypography.bodySmall.copyWith(
@@ -1098,6 +1147,7 @@ class _DayMealEditSheet extends StatefulWidget {
     required this.entry,
     required this.templateName,
     required this.templateMenuItems,
+    this.templateDescription,
     required this.templateOpenTime,
     required this.templateCloseTime,
     required this.templatePreferenceOptions,
@@ -1110,6 +1160,9 @@ class _DayMealEditSheet extends StatefulWidget {
   final DayMealEntry entry;
   final String templateName;
   final List<String> templateMenuItems;
+
+  /// Master meal description used as the placeholder / inherited default.
+  final String? templateDescription;
   final String templateOpenTime;
   final String templateCloseTime;
   final List<String> templatePreferenceOptions;
@@ -1123,6 +1176,8 @@ class _DayMealEditSheet extends StatefulWidget {
   final void Function({
     required String name,
     required List<String> menuItems,
+    String? description,
+    List<Uint8List>? imageBytes,
     String? openTime,
     String? closeTime,
     required bool preferencesEnabled,
@@ -1136,6 +1191,7 @@ class _DayMealEditSheet extends StatefulWidget {
 
 class _DayMealEditSheetState extends State<_DayMealEditSheet> {
   late final TextEditingController _nameCtrl;
+  late final TextEditingController _descCtrl;
   late final TextEditingController _itemCtrl;
   late final TextEditingController _openCtrl;
   late final TextEditingController _closeCtrl;
@@ -1145,18 +1201,34 @@ class _DayMealEditSheetState extends State<_DayMealEditSheet> {
   bool _prefsEnabled = false;
   late List<String> _selectedPrefs;
 
+  // Per-day photo (max 1, ≤100 KB) — mirrors the master meal editor.
+  late List<Uint8List> _imageBytes;
+  bool _isPickingImage = false;
+  String? _imageError;
+
+  // Stored values stay strict 24-hour "HH:mm" (backend contract). The visible
+  // controllers show the AM/PM label only — saving reads these vars, never the
+  // controller text, so the contract is preserved.
+  late String _openHHmm;
+  late String _closeHHmm;
+
   @override
   void initState() {
     super.initState();
     _nameCtrl = TextEditingController(text: widget.entry.name);
+    _descCtrl = TextEditingController(
+      text: widget.entry.description ?? '',
+    );
+    // Preload this entry's OWN per-day photo (decoded from its imageUrl data
+    // URI). Empty = no per-day override → the meal inherits the master photo.
+    final existing = widget.entry.displayImageBytes;
+    _imageBytes = existing != null ? <Uint8List>[existing] : <Uint8List>[];
     _itemCtrl = TextEditingController();
     _useCustomTiming = widget.entry.hasCustomTiming;
-    _openCtrl = TextEditingController(
-      text: widget.entry.openTime ?? widget.templateOpenTime,
-    );
-    _closeCtrl = TextEditingController(
-      text: widget.entry.closeTime ?? widget.templateCloseTime,
-    );
+    _openHHmm = widget.entry.openTime ?? widget.templateOpenTime;
+    _closeHHmm = widget.entry.closeTime ?? widget.templateCloseTime;
+    _openCtrl = TextEditingController(text: TimeFormat.hm12(_openHHmm));
+    _closeCtrl = TextEditingController(text: TimeFormat.hm12(_closeHHmm));
     _menuItems = List<String>.from(widget.entry.menuItems);
     _prefsEnabled = widget.entry.preferencesEnabled;
     _selectedPrefs = List<String>.from(widget.entry.enabledPreferences);
@@ -1168,11 +1240,59 @@ class _DayMealEditSheetState extends State<_DayMealEditSheet> {
   @override
   void dispose() {
     _nameCtrl.dispose();
+    _descCtrl.dispose();
     _itemCtrl.dispose();
     _openCtrl.dispose();
     _closeCtrl.dispose();
     _priceCtrl.dispose();
     super.dispose();
+  }
+
+  /// Pick a single photo and compress to ≤100 KB (replaces any existing).
+  /// Mirrors the master meal editor's behaviour exactly.
+  Future<void> _pickImage() async {
+    setState(() {
+      _isPickingImage = true;
+      _imageError = null;
+    });
+    try {
+      final file =
+          await ImagePicker().pickImage(source: ImageSource.gallery);
+      if (file == null) {
+        setState(() => _isPickingImage = false);
+        return;
+      }
+      final raw = await file.readAsBytes();
+      Uint8List? out;
+      for (final q in const [70, 55, 40, 30, 20]) {
+        final c = await FlutterImageCompress.compressWithList(
+          raw,
+          quality: q,
+          minWidth: 1080,
+          minHeight: 720,
+          format: CompressFormat.jpeg,
+          keepExif: false,
+        );
+        if (c.isEmpty) continue;
+        out = c;
+        if (c.length <= AppConstants.maxMealImageBytes) break;
+      }
+      if (out == null || out.isEmpty) {
+        setState(() => _imageError = 'Could not process this photo.');
+        return;
+      }
+      if (out.length > AppConstants.maxMealImageBytes) {
+        setState(() => _imageError =
+            'Photo too large even after compression (limit '
+            '${AppConstants.maxMealImageBytes ~/ 1024} KB).');
+        return;
+      }
+      setState(() => _imageBytes = [out!]);
+    } catch (_) {
+      setState(() => _imageError = 'Could not pick the photo.');
+    } finally {
+      setState(() => _isPickingImage = false);
+    }
   }
 
   void _addItem() {
@@ -1188,19 +1308,6 @@ class _DayMealEditSheetState extends State<_DayMealEditSheet> {
     setState(() => _menuItems.removeAt(index));
   }
 
-  /// Issue 5: pad a time string to strict HH:mm so it passes the backend regex
-  /// (^([01]\d|2[0-3]):[0-5]\d$) — e.g. "9:0" -> "09:00". Prevents the
-  /// "Validation failed" publish error when a single-digit hour is entered.
-  String? _normalizeHHmm(String raw) {
-    final s = raw.trim();
-    if (s.isEmpty) return null;
-    final parts = s.split(':');
-    if (parts.length != 2) return s;
-    final h = parts[0].trim().padLeft(2, '0');
-    final m = parts[1].trim().padLeft(2, '0');
-    return '$h:$m';
-  }
-
   /// Issue 9: parse an "HH:mm" string into a [TimeOfDay], or null if invalid.
   TimeOfDay? _timeOfDayFromHHmm(String raw) {
     final parts = raw.trim().split(':');
@@ -1213,24 +1320,28 @@ class _DayMealEditSheetState extends State<_DayMealEditSheet> {
     return TimeOfDay(hour: h, minute: m);
   }
 
-  /// Issue 9: open a Material time picker and write the chosen "HH:mm" back into
-  /// [ctrl] — admins pick a time on the clock instead of typing it manually.
-  Future<void> _pickTime(TextEditingController ctrl, String fallback) async {
-    final initial = _timeOfDayFromHHmm(ctrl.text) ??
-        _timeOfDayFromHHmm(fallback) ??
-        TimeOfDay.now();
+  /// Open a Material time picker (AM/PM dial) and store the chosen time as a
+  /// strict "HH:mm" value, while showing the AM/PM label in the field.
+  Future<void> _pickTime({required bool isOpen}) async {
+    final current = isOpen ? _openHHmm : _closeHHmm;
+    final initial = _timeOfDayFromHHmm(current) ?? TimeOfDay.now();
     final picked = await showTimePicker(
       context: context,
       initialTime: initial,
-      builder: (ctx, child) => MediaQuery(
-        data: MediaQuery.of(ctx).copyWith(alwaysUse24HourFormat: true),
-        child: child!,
-      ),
+      builder: forceAmPmTimePicker,
     );
     if (picked == null) return;
     final hh = picked.hour.toString().padLeft(2, '0');
     final mm = picked.minute.toString().padLeft(2, '0');
-    setState(() => ctrl.text = '$hh:$mm');
+    setState(() {
+      if (isOpen) {
+        _openHHmm = '$hh:$mm';
+        _openCtrl.text = TimeFormat.hm12(_openHHmm);
+      } else {
+        _closeHHmm = '$hh:$mm';
+        _closeCtrl.text = TimeFormat.hm12(_closeHHmm);
+      }
+    });
   }
 
   /// Display label for a lowercase preference key (e.g. "veg" -> "Veg").
@@ -1264,11 +1375,14 @@ class _DayMealEditSheetState extends State<_DayMealEditSheet> {
   void _save() {
     final name = _nameCtrl.text.trim();
     if (name.isEmpty) return;
+    final desc = _descCtrl.text.trim();
     widget.onSave(
       name: name,
       menuItems: List<String>.from(_menuItems),
-      openTime: _useCustomTiming ? _normalizeHHmm(_openCtrl.text) : null,
-      closeTime: _useCustomTiming ? _normalizeHHmm(_closeCtrl.text) : null,
+      description: desc.isEmpty ? null : desc,
+      imageBytes: List<Uint8List>.from(_imageBytes),
+      openTime: _useCustomTiming ? _openHHmm : null,
+      closeTime: _useCustomTiming ? _closeHHmm : null,
       preferencesEnabled: _prefsEnabled,
       enabledPreferences:
           _prefsEnabled ? List<String>.from(_selectedPrefs) : <String>[],
@@ -1361,6 +1475,48 @@ class _DayMealEditSheetState extends State<_DayMealEditSheet> {
             ),
             const SizedBox(height: 16),
 
+            // ── Description (parity with master meal config) ─────────────────
+            Text(
+              'Description for this day',
+              style: AppTypography.labelMedium.copyWith(
+                color: isDark
+                    ? AppColors.textSecondaryDark
+                    : AppColors.textSecondary,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(height: 6),
+            TextField(
+              controller: _descCtrl,
+              minLines: 1,
+              maxLines: 3,
+              decoration: InputDecoration(
+                hintText: widget.templateDescription?.isNotEmpty == true
+                    ? widget.templateDescription
+                    : 'Optional — describe this day’s meal',
+                helperText: 'Leave blank to inherit the master description.',
+                border: OutlineInputBorder(
+                  borderRadius:
+                      BorderRadius.circular(AppConstants.inputRadius),
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
+
+            // ── Photo (1 only, ≤100 KB) — parity with master meal config ─────
+            _DayPhotoField(
+              imageBytes: _imageBytes,
+              isPicking: _isPickingImage,
+              error: _imageError,
+              onPick: _pickImage,
+              onRemove: () => setState(() {
+                _imageBytes = const [];
+                _imageError = null;
+              }),
+              isDark: isDark,
+            ),
+            const SizedBox(height: 16),
+
             // ── Custom timing toggle ─────────────────────────────────────────
             Row(
               children: [
@@ -1391,8 +1547,7 @@ class _DayMealEditSheetState extends State<_DayMealEditSheet> {
                     child: TextField(
                       controller: _openCtrl,
                       readOnly: true,
-                      onTap: () =>
-                          _pickTime(_openCtrl, widget.templateOpenTime),
+                      onTap: () => _pickTime(isOpen: true),
                       decoration: InputDecoration(
                         labelText: 'Open time',
                         hintText: widget.templateOpenTime,
@@ -1410,8 +1565,7 @@ class _DayMealEditSheetState extends State<_DayMealEditSheet> {
                     child: TextField(
                       controller: _closeCtrl,
                       readOnly: true,
-                      onTap: () =>
-                          _pickTime(_closeCtrl, widget.templateCloseTime),
+                      onTap: () => _pickTime(isOpen: false),
                       decoration: InputDecoration(
                         labelText: 'Close time',
                         hintText: widget.templateCloseTime,
@@ -1691,6 +1845,150 @@ class _DayMealEditSheetState extends State<_DayMealEditSheet> {
           ],
         ),
       ),
+    );
+  }
+}
+
+// ── Per-day photo field ─────────────────────────────────────────────────────
+
+/// Single-photo (≤100 KB) picker for the per-day meal editor. Mirrors the
+/// master meal config image rule: exactly one photo, replaced on each upload.
+class _DayPhotoField extends StatelessWidget {
+  const _DayPhotoField({
+    required this.imageBytes,
+    required this.isPicking,
+    required this.error,
+    required this.onPick,
+    required this.onRemove,
+    required this.isDark,
+  });
+
+  final List<Uint8List> imageBytes;
+  final bool isPicking;
+  final String? error;
+  final VoidCallback onPick;
+  final VoidCallback onRemove;
+  final bool isDark;
+
+  String _kb(int bytes) => '${(bytes / 1024).toStringAsFixed(1)} KB';
+
+  @override
+  Widget build(BuildContext context) {
+    final hasImage = imageBytes.isNotEmpty;
+    final border = isDark ? AppColors.borderDark : AppColors.border;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                'Meal photo for this day',
+                style: AppTypography.labelMedium.copyWith(
+                  color: isDark
+                      ? AppColors.textSecondaryDark
+                      : AppColors.textSecondary,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+            Text(
+              '1 photo · 100 KB',
+              style: AppTypography.labelSmall.copyWith(
+                color: isDark
+                    ? AppColors.textSecondaryDark
+                    : AppColors.textTertiary,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 6),
+        if (isPicking)
+          Container(
+            height: 64,
+            alignment: Alignment.center,
+            child: const SizedBox(
+              width: 20,
+              height: 20,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            ),
+          )
+        else if (hasImage)
+          Row(
+            children: [
+              ClipRRect(
+                borderRadius: BorderRadius.circular(10),
+                child: Image.memory(
+                  imageBytes.first,
+                  width: 64,
+                  height: 64,
+                  fit: BoxFit.cover,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  _kb(imageBytes.first.length),
+                  style: AppTypography.labelSmall.copyWith(
+                    color: isDark
+                        ? AppColors.textSecondaryDark
+                        : AppColors.textTertiary,
+                  ),
+                ),
+              ),
+              TextButton.icon(
+                onPressed: onPick,
+                icon: const Icon(Icons.swap_horiz_rounded, size: 16),
+                label: const Text('Replace'),
+              ),
+              IconButton(
+                onPressed: onRemove,
+                icon: const Icon(Icons.delete_outline_rounded, size: 18),
+                color: AppColors.error,
+                tooltip: 'Remove photo',
+              ),
+            ],
+          )
+        else
+          GestureDetector(
+            onTap: onPick,
+            child: Container(
+              height: 60,
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: border),
+              ),
+              child: Center(
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.add_photo_alternate_outlined,
+                        size: 18,
+                        color: isDark
+                            ? AppColors.textSecondaryDark
+                            : AppColors.textSecondary),
+                    const SizedBox(width: 8),
+                    Text(
+                      'Tap to add photo',
+                      style: AppTypography.bodySmall.copyWith(
+                        color: isDark
+                            ? AppColors.textSecondaryDark
+                            : AppColors.textSecondary,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        if (error != null) ...[
+          const SizedBox(height: 6),
+          Text(
+            error!,
+            style: AppTypography.labelSmall.copyWith(color: AppColors.error),
+          ),
+        ],
+      ],
     );
   }
 }

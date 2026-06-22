@@ -9,7 +9,9 @@ import 'package:smart_meal_management/data/contracts/i_meal_repository.dart';
 import 'package:smart_meal_management/data/repositories/attendance_repository.dart';
 import 'package:smart_meal_management/data/repositories/group_repository.dart';
 import 'package:smart_meal_management/data/repositories/meal_repository.dart';
+import 'package:smart_meal_management/data/repositories/vacation_repository.dart';
 import 'package:smart_meal_management/data/services/notification_service.dart';
+import 'package:smart_meal_management/shared/models/vacation_request_model.dart';
 import 'package:smart_meal_management/features/student/providers/group_config_provider.dart';
 import 'package:smart_meal_management/shared/models/attendance_model.dart';
 import 'package:smart_meal_management/shared/models/group_model.dart';
@@ -34,14 +36,17 @@ class StudentDashboardProvider extends ChangeNotifier {
     IMealRepository? mealRepo,
     IGroupRepository? groupRepo,
     GroupConfigProvider? groupConfigProvider,
+    VacationRepository? vacationRepo,
   })  : _attendanceRepo = attendanceRepo ?? AttendanceRepository(),
         _mealRepo = mealRepo ?? MealRepository(),
         _groupRepo = groupRepo ?? GroupRepository(),
+        _vacationRepo = vacationRepo ?? VacationRepository(),
         _groupConfigProvider = groupConfigProvider;
 
   final IAttendanceRepository _attendanceRepo;
   final IMealRepository _mealRepo;
   final IGroupRepository _groupRepo;
+  final VacationRepository _vacationRepo;
 
   /// Optional reference to the shell-owned provider; updated after group load.
   final GroupConfigProvider? _groupConfigProvider;
@@ -59,6 +64,12 @@ class StudentDashboardProvider extends ChangeNotifier {
   List<AttendanceModel> _weekHistory = [];
   AttendanceSummary? _summary;
   int _streakDays = 0;
+
+  /// The student's currently-active approved vacation (covers today), used to
+  /// show the "Approved: dd Mon → dd Mon" range on the dashboard badge. Null
+  /// when not on vacation. Additive — never affects attendance/meals.
+  VacationRequestModel? _activeVacation;
+  VacationRequestModel? get activeVacation => _activeVacation;
   bool _isVacationMode = false;
   bool _remindersEnabled = true;
   GroupMealConfig _groupConfig = const GroupMealConfig();
@@ -280,6 +291,27 @@ class StudentDashboardProvider extends ChangeNotifier {
     // Streak from week history
     _streakDays = _computeStreak(_weekHistory);
 
+    // Additive: when on vacation, resolve the active approved request so the
+    // dashboard badge can show its "Approved: dd Mon → dd Mon" range. Members
+    // only ever receive their own requests (backend-scoped). Never blocks load.
+    _activeVacation = null;
+    if (_isVacationMode) {
+      final vres = await _vacationRepo.list(status: 'approved', limit: 50);
+      if (vres case Ok(:final value)) {
+        final now = DateTime.now();
+        final todayOnly = DateTime(now.year, now.month, now.day);
+        for (final v in value.data) {
+          if (!v.startDate.isAfter(todayOnly) &&
+              !v.endDate.isBefore(todayOnly)) {
+            _activeVacation = v;
+            break;
+          }
+        }
+        _activeVacation ??=
+            value.data.isNotEmpty ? value.data.first : null;
+      }
+    }
+
     // Sync local reminders (skip during vacation mode, skip already-marked meals)
     if (_remindersEnabled && !_isVacationMode && _todayMeals.isNotEmpty) {
       NotificationService.instance.syncReminders(
@@ -451,6 +483,25 @@ class StudentDashboardProvider extends ChangeNotifier {
                 a.date.day == today.day,
           )
           .price;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Today's attendance record for [mealId], or null when the student has not
+  /// acted on it yet. Source of truth for the marked-state UI (status +
+  /// preference + submitted time) so the screen always renders from backend
+  /// attendance state rather than transient local UI flags.
+  AttendanceModel? recordForMeal(String mealId) {
+    final today = DateTime.now();
+    try {
+      return _todayAttendance.firstWhere(
+        (a) =>
+            a.mealId == mealId &&
+            a.date.year == today.year &&
+            a.date.month == today.month &&
+            a.date.day == today.day,
+      );
     } catch (_) {
       return null;
     }

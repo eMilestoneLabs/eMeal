@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:typed_data';
 import 'dart:ui';
 
@@ -64,9 +65,19 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
     );
 
     if (!mounted) return;
-    AuthProviderScope.of(context)
-        .setAvatarBytes(compressed.isEmpty ? rawBytes : compressed);
-    setState(() => _uploadingAvatar = false);
+    final bytes = compressed.isEmpty ? rawBytes : compressed;
+    final auth = AuthProviderScope.of(context);
+    auth.setAvatarBytes(bytes); // instant local display
+    // Persist so the avatar uploads to object storage (MinIO) and every other
+    // screen (admin member list, attendance, group screens) sees the new image
+    // — single source of truth. The backend converts this base64 data URI into
+    // a stored URL; updateProfile patches the session with that URL.
+    final user = auth.currentUser;
+    if (user != null) {
+      final dataUri = 'data:image/jpeg;base64,${base64Encode(bytes)}';
+      await auth.updateProfile(user.copyWith(avatarUrl: dataUri));
+    }
+    if (mounted) setState(() => _uploadingAvatar = false);
   }
 
   Future<void> _openEditProfile() async {

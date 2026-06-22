@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:smart_meal_management/core/constants/app_constants.dart';
 import 'package:smart_meal_management/core/theme/app_colors.dart';
 import 'package:smart_meal_management/core/theme/app_typography.dart';
+import 'package:smart_meal_management/core/utils/time_format.dart';
 import 'package:smart_meal_management/features/auth/providers/auth_provider.dart';
 import 'package:smart_meal_management/features/student/meals/providers/student_meal_provider.dart';
 import 'package:smart_meal_management/features/student/providers/group_config_provider.dart';
@@ -372,34 +373,55 @@ class MealDetailScreen extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // ── Hero banner ────────────────────────────────────────────
-            Container(
-              width: double.infinity,
-              height: 160,
-              decoration: BoxDecoration(
-                color: MealModel.iconBgColor(entry.order),
-                borderRadius: BorderRadius.circular(AppConstants.cardRadius),
-              ),
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(
-                    MealModel.slotIcon(entry.slotKey),
-                    size: 56,
-                    color: MealModel.iconFgColor(entry.order),
-                  ),
-                  const SizedBox(height: AppConstants.space8),
-                  Text(
-                    entry.name,
-                    style: AppTypography.titleSmall.copyWith(
-                      color: MealModel.iconFgColor(entry.order),
-                      fontWeight: FontWeight.w600,
+            // ── Hero banner — real photo when present, else icon ───────
+            ClipRRect(
+              borderRadius: BorderRadius.circular(AppConstants.cardRadius),
+              child: entry.displayImageBytes != null
+                  ? Image.memory(
+                      entry.displayImageBytes!,
+                      width: double.infinity,
+                      height: 180,
+                      fit: BoxFit.cover,
+                    )
+                  : Container(
+                      width: double.infinity,
+                      height: 160,
+                      color: MealModel.iconBgColor(entry.order),
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(
+                            MealModel.slotIcon(entry.slotKey),
+                            size: 56,
+                            color: MealModel.iconFgColor(entry.order),
+                          ),
+                          const SizedBox(height: AppConstants.space8),
+                          Text(
+                            entry.name,
+                            style: AppTypography.titleSmall.copyWith(
+                              color: MealModel.iconFgColor(entry.order),
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
-                  ),
-                ],
-              ),
             ),
             const SizedBox(height: AppConstants.space24),
+
+            // ── Description (premium) ──────────────────────────────────
+            if ((entry.description ?? '').trim().isNotEmpty) ...[
+              Text(
+                entry.description!.trim(),
+                style: AppTypography.bodyMedium.copyWith(
+                  color: isDark
+                      ? AppColors.textSecondaryDark
+                      : AppColors.textSecondary,
+                  height: 1.5,
+                ),
+              ),
+              const SizedBox(height: AppConstants.space20),
+            ],
 
             _InfoRow(
               icon: Icons.schedule_rounded,
@@ -466,7 +488,7 @@ class MealDetailScreen extends StatelessWidget {
               _InfoRow(
                 icon: Icons.access_time_rounded,
                 label: 'Attendance Window',
-                value: '${entry.openTime} – ${entry.closeTime}',
+                value: TimeFormat.window12(entry.openTime, entry.closeTime),
                 isDark: isDark,
               ),
               const SizedBox(height: AppConstants.space20),

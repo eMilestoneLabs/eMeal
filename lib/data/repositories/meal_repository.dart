@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:smart_meal_management/core/config/env_config.dart';
@@ -29,6 +30,13 @@ import 'package:smart_meal_management/shared/models/result.dart';
 /// ## Mock mode ([EnvConfig.mockAuthEnabled] == true — instant rollback)
 /// In-memory store seeded from [MockMealsData]. Static backing stores so
 /// multiple [MealConfigProvider] instances share the same data. 250 ms latency.
+///
+/// Encodes a single compressed meal photo (≤100 KB) as a base64 JPEG data URI
+/// carried in the existing `imageUrl` field — works end-to-end with no schema
+/// or contract change (server stores the string, clients decode it for display).
+String _mealImageDataUri(Uint8List bytes) =>
+    'data:image/jpeg;base64,${base64Encode(bytes)}';
+
 class MealRepository implements IMealRepository {
   MealRepository() {
     if (_isMock && _mealsStore.isEmpty) {
@@ -128,6 +136,11 @@ class MealRepository implements IMealRepository {
           'order': order,
           'attendanceWindow': attendanceWindow.toJson(),
           if (description != null) 'description': description,
+          // One photo, sent as a base64 data URI in the existing imageUrl field
+          // (≤100 KB, compressed). Student/admin decode it for display. Server-
+          // side R2 upload remains the future optimisation (B11) — contract-safe.
+          if (imageBytes.isNotEmpty)
+            'imageUrl': _mealImageDataUri(imageBytes.first),
           'menuItems': menuItems,
           'preferencesEnabled': availablePreferences.isNotEmpty,
           'enabledPreferences': availablePreferences,
@@ -187,6 +200,11 @@ class MealRepository implements IMealRepository {
         body: {
           if (name != null) 'name': name,
           if (description != null) 'description': description,
+          // One photo as base64 data URI in imageUrl. Empty list = photo removed
+          // → send null to clear it. Null param = field untouched.
+          if (imageBytes != null)
+            'imageUrl':
+                imageBytes.isEmpty ? null : _mealImageDataUri(imageBytes.first),
           if (menuItems != null) 'menuItems': menuItems,
           if (attendanceWindow != null)
             'attendanceWindow': attendanceWindow.toJson(),
@@ -316,6 +334,12 @@ class MealRepository implements IMealRepository {
             // Issue 2: persist per-day menu items so they survive publish and
             // show to students + admin (independent of the master meal menu).
             'menuItems': e.menuItems,
+            // Additive: per-day meal description override (null = inherit).
+            if (e.description != null) 'description': e.description,
+            // Additive: per-day meal photo override (base64 data URI). Absent =
+            // inherit master photo; replaceEntries recreates so a removed photo
+            // (null) is naturally cleared. One image per entry.
+            if (e.imageUrl != null) 'imageUrl': e.imageUrl,
             // Additive: per-day ₹ price override (null = inherit master price).
             if (e.price != null) 'price': e.price,
           });
@@ -388,6 +412,8 @@ class MealRepository implements IMealRepository {
               'preferencesEnabled': e.preferencesEnabled,
               'enabledPreferences': e.enabledPreferences,
               'menuItems': e.menuItems,
+              if (e.description != null) 'description': e.description,
+              if (e.imageUrl != null) 'imageUrl': e.imageUrl,
               if (e.price != null) 'price': e.price,
             });
           }

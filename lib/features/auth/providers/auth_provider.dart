@@ -299,6 +299,19 @@ class AuthProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Re-fetches the authenticated user from the backend (GET /auth/me) and
+  /// patches the live session — so server-driven changes (e.g. an admin
+  /// approving a vacation request flips isVacationMode ON) appear immediately,
+  /// without an app restart. Safe no-op on failure (keeps the current user).
+  Future<void> refreshCurrentUser() async {
+    final user = currentUser;
+    if (user == null) return;
+    final result = await _repo.getProfile(userId: user.id);
+    if (result case Ok(:final value)) {
+      await refreshUser(value);
+    }
+  }
+
   /// Refreshes the JWT using the stored refresh token so server-side claim
   /// changes (e.g. organizationId set on first group join — the backend
   /// re-reads the user when refreshing) enter the active session. Without this

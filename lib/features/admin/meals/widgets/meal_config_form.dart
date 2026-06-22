@@ -5,13 +5,14 @@ import 'package:flutter_image_compress/flutter_image_compress.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:smart_meal_management/core/constants/app_constants.dart';
 import 'package:smart_meal_management/core/theme/app_colors.dart';
+import 'package:smart_meal_management/core/utils/time_format.dart';
 import 'package:smart_meal_management/shared/models/meal_model.dart';
 
 /// Form for creating or editing a meal.
 ///
 /// Collects: name, slot key, display order, attendance window (open/close times
 /// with validation + visual timeline), description, menu items, preference tags,
-/// and up to 3 compressed images (≤200 KB combined).
+/// and a single compressed image (≤100 KB, replaced on each upload).
 class MealConfigForm extends StatefulWidget {
   const MealConfigForm({
     super.key,
@@ -69,8 +70,7 @@ class _MealConfigFormState extends State<MealConfigForm> {
   bool _isPickingImages = false;
   String? _imageError;
 
-  static const int _maxImages = 3;
-  static const int _maxTotalBytes = AppConstants.maxMealImageBytes; // 200 KB
+  static const int _maxTotalBytes = AppConstants.maxMealImageBytes; // 100 KB
 
   // ── Validation ─────────────────────────────────────────────────────────────
   String? _windowError;
@@ -91,9 +91,11 @@ class _MealConfigFormState extends State<MealConfigForm> {
           ? List.of(m.enabledPreferences)
           : List.of(_kDefaultPreferenceTags);
       _priceCtrl.text = m.price?.toString() ?? '';
-      // Restore compressed bytes if editing
-      if (m.imageBytes.isNotEmpty) {
-        _imageBytesList.addAll(m.imageBytes);
+      // Restore the existing photo when editing — from local bytes or the
+      // base64 data URI returned by the backend (so the current photo shows).
+      final existing = m.displayImageBytes;
+      if (existing != null) {
+        _imageBytesList.add(existing);
       }
       // Parse window times
       final openParts = m.attendanceWindow.openTime.split(':');
@@ -190,6 +192,7 @@ class _MealConfigFormState extends State<MealConfigForm> {
     final picked = await showTimePicker(
       context: context,
       initialTime: isOpen ? _openTime : _closeTime,
+      builder: forceAmPmTimePicker,
     );
     if (picked != null) {
       setState(() {
@@ -230,7 +233,6 @@ class _MealConfigFormState extends State<MealConfigForm> {
   // ── Image picking + compression ────────────────────────────────────────────
 
   Future<void> _pickImages() async {
-    if (_imageBytesList.length >= _maxImages) return;
     setState(() {
       _isPickingImages = true;
       _imageError = null;
@@ -238,61 +240,56 @@ class _MealConfigFormState extends State<MealConfigForm> {
 
     try {
       final picker = ImagePicker();
-      final remaining = _maxImages - _imageBytesList.length;
-      final files = await picker.pickMultiImage(limit: remaining);
+      // One photo per meal — pick a single image; a new pick REPLACES the
+      // previous one (old bytes discarded) so storage never keeps copies.
+      final file = await picker.pickImage(source: ImageSource.gallery);
 
-      if (files.isEmpty) {
+      if (file == null) {
         setState(() => _isPickingImages = false);
         return;
       }
 
-      final List<Uint8List> newBytes = [];
-      for (final file in files) {
-        final rawBytes = await file.readAsBytes();
+      final rawBytes = await file.readAsBytes();
 
-        // Compress — target 200 KB budget shared across all images;
-        // use quality 70 + maxWidth 1080 which is production-safe on low-end
-        // Android (avoids large raw RGBA buffers).
-        final compressed = await FlutterImageCompress.compressWithList(
+      // Compress to fit the 100 KB cap. Step the quality down until it fits or
+      // we hit a low floor — production-safe on low-end Android (no huge RGBA
+      // buffers; maxWidth 1080).
+      Uint8List? compressed;
+      for (final q in const [70, 55, 40, 30, 20]) {
+        final out = await FlutterImageCompress.compressWithList(
           rawBytes,
-          quality: 70,
+          quality: q,
           minWidth: 1080,
           minHeight: 720,
           format: CompressFormat.jpeg,
           keepExif: false,
         );
-
-        if (compressed.isEmpty) continue;
-        newBytes.add(compressed);
+        if (out.isEmpty) continue;
+        compressed = out;
+        if (out.length <= _maxTotalBytes) break;
       }
 
-      // Enforce combined 200 KB cap
-      final projectedTotal = _totalImageBytes +
-          newBytes.fold(0, (s, b) => s + b.length);
-
-      if (projectedTotal > _maxTotalBytes) {
-        // Try to add as many as fit within budget
-        int budget = _maxTotalBytes - _totalImageBytes;
-        final fitting = <Uint8List>[];
-        for (final b in newBytes) {
-          if (b.length <= budget) {
-            fitting.add(b);
-            budget -= b.length;
-          }
-        }
-        setState(() {
-          _imageBytesList.addAll(fitting);
-          _imageError = fitting.isEmpty
-              ? 'Images too large even after compression. '
-                'Try smaller photos.'
-              : 'Some images were skipped — combined size would exceed '
-                '${_maxTotalBytes ~/ 1024} KB.';
-        });
-      } else {
-        setState(() => _imageBytesList.addAll(newBytes));
+      if (compressed == null || compressed.isEmpty) {
+        setState(() => _imageError =
+            'Could not process this photo. Please try another.');
+        return;
       }
+
+      if (compressed.length > _maxTotalBytes) {
+        setState(() => _imageError =
+            'Photo is too large even after compression (limit '
+            '${_maxTotalBytes ~/ 1024} KB). Try a smaller image.');
+        return;
+      }
+
+      // Replace any existing image with the new single photo.
+      setState(() {
+        _imageBytesList
+          ..clear()
+          ..add(compressed!);
+      });
     } catch (_) {
-      setState(() => _imageError = 'Could not pick images. Please try again.');
+      setState(() => _imageError = 'Could not pick the photo. Please try again.');
     } finally {
       setState(() => _isPickingImages = false);
     }
@@ -649,8 +646,6 @@ class _MealConfigFormState extends State<MealConfigForm> {
     final limitKb = _maxTotalBytes;
     final usageRatio = (usedKb / limitKb).clamp(0.0, 1.0);
     final isNearLimit = usageRatio > 0.8;
-    final canAdd = _imageBytesList.length < _maxImages &&
-        _totalImageBytes < _maxTotalBytes;
 
     return Container(
       decoration: BoxDecoration(
@@ -686,12 +681,12 @@ class _MealConfigFormState extends State<MealConfigForm> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       const Text(
-                        'Meal Images',
+                        'Meal Image',
                         style: TextStyle(
                             fontWeight: FontWeight.w600, fontSize: 13),
                       ),
                       Text(
-                        'Up to $_maxImages photos · ${limitKb ~/ 1024} KB combined',
+                        'One photo · ${limitKb ~/ 1024} KB max',
                         style: TextStyle(
                           fontSize: 11,
                           color: colorScheme.onSurfaceVariant,
@@ -700,27 +695,32 @@ class _MealConfigFormState extends State<MealConfigForm> {
                     ],
                   ),
                 ),
-                if (canAdd)
-                  _isPickingImages
-                      ? const SizedBox(
-                          width: 20,
-                          height: 20,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : TextButton.icon(
-                          onPressed: _pickImages,
-                          icon: const Icon(Icons.add_photo_alternate_rounded,
-                              size: 16),
-                          label: const Text('Add',
-                              style: TextStyle(fontSize: 12)),
-                          style: TextButton.styleFrom(
-                            foregroundColor: AppColors.primary,
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 10, vertical: 6),
-                            tapTargetSize:
-                                MaterialTapTargetSize.shrinkWrap,
-                          ),
+                // Always allow picking — a new pick replaces the existing photo.
+                _isPickingImages
+                    ? const SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : TextButton.icon(
+                        onPressed: _pickImages,
+                        icon: Icon(
+                          _imageBytesList.isEmpty
+                              ? Icons.add_photo_alternate_rounded
+                              : Icons.swap_horiz_rounded,
+                          size: 16,
                         ),
+                        label: Text(
+                          _imageBytesList.isEmpty ? 'Add' : 'Replace',
+                          style: const TextStyle(fontSize: 12),
+                        ),
+                        style: TextButton.styleFrom(
+                          foregroundColor: AppColors.primary,
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 10, vertical: 6),
+                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        ),
+                      ),
               ],
             ),
           ),
@@ -811,7 +811,7 @@ class _MealConfigFormState extends State<MealConfigForm> {
                                   color: colorScheme.onSurfaceVariant),
                               const SizedBox(width: 8),
                               Text(
-                                'Tap to add photos',
+                                'Tap to add photo',
                                 style: TextStyle(
                                   fontSize: 12,
                                   color: colorScheme.onSurfaceVariant,
@@ -1029,7 +1029,7 @@ class _AttendanceTimeline extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          'Window: ${openTime.format(context)} → ${closeTime.format(context)} '
+          'Window: ${TimeFormat.tod12(openTime)} → ${TimeFormat.tod12(closeTime)} '
           '($durationMin min)',
           style: TextStyle(
             fontSize: 11,
@@ -1226,7 +1226,7 @@ class _TimePicker extends StatelessWidget {
                   ),
                 ),
                 Text(
-                  time.format(context),
+                  TimeFormat.tod12(time),
                   style: TextStyle(
                     fontSize: 13,
                     fontWeight: FontWeight.w700,

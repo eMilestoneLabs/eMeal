@@ -16,6 +16,7 @@ class GroupConfigProvider extends ChangeNotifier {
 
   bool get mealsEnabled => _config.mealsEnabled;
   bool get weeklyMenuEnabled => _config.weeklyMenuEnabled;
+  bool get dayWiseMealsEnabled => _config.dayWiseMealsEnabled;
   bool get preferencesEnabled => _config.preferencesEnabled;
   List<MealPreferenceOption> get enabledPreferences =>
       _config.enabledPreferences;

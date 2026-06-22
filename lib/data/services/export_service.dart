@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'package:smart_meal_management/core/utils/time_format.dart';
 import 'package:excel/excel.dart' as xls;
 import 'package:path_provider/path_provider.dart';
 import 'package:pdf/pdf.dart';
@@ -427,7 +428,7 @@ class ExportService {
       '${dt.day.toString().padLeft(2, '0')}/${dt.month.toString().padLeft(2, '0')}/${dt.year}';
 
   String _formatDateTime(DateTime dt) =>
-      '${_formatDate(dt)} ${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
+      "${_formatDate(dt)} ${TimeFormat.hm12('${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}')}";
 
   String _statusLabel(AttendanceStatus status) {
     switch (status) {

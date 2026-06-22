@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter/foundation.dart';
 
 enum DayOfWeek {
@@ -71,6 +73,8 @@ class DayMealEntry {
     required this.order,
     this.menuItems = const [],
     this.imageUrl,
+    this.description,
+    this.imageBytes = const [],
     this.openTime,
     this.closeTime,
     this.preferencesEnabled = false,
@@ -84,6 +88,15 @@ class DayMealEntry {
   final int order;
   final List<String> menuItems;
   final String? imageUrl;
+
+  /// Per-day meal description override. Null = inherit the master meal's
+  /// description. Persisted via the schedule entry (additive backend field).
+  final String? description;
+
+  /// Session-local compressed image bytes for this day's meal (max 1, ≤100 KB),
+  /// mirroring the master meal editor. Not serialized — image persistence is
+  /// handled by the shared (B11) upload path, identical to master meals.
+  final List<Uint8List> imageBytes;
 
   /// Per-day attendance window open time (e.g. "07:30").
   /// Null means use the parent [MealModel] template window.
@@ -103,6 +116,25 @@ class DayMealEntry {
   /// True when this entry carries its own time window (overrides template).
   bool get hasCustomTiming => openTime != null && closeTime != null;
 
+  /// Single image bytes to display: local session bytes first, otherwise the
+  /// base64 JPEG data URI carried in [imageUrl] (how photos round-trip through
+  /// the backend). Null when there's no photo or [imageUrl] is a network URL.
+  Uint8List? get displayImageBytes {
+    if (imageBytes.isNotEmpty) return imageBytes.first;
+    final u = imageUrl;
+    if (u != null && u.startsWith('data:image')) {
+      final comma = u.indexOf(',');
+      if (comma != -1) {
+        try {
+          return base64Decode(u.substring(comma + 1));
+        } catch (_) {
+          return null;
+        }
+      }
+    }
+    return null;
+  }
+
   factory DayMealEntry.fromJson(Map<String, dynamic> j) => DayMealEntry(
         mealId: j['mealId'] ?? '',
         name: j['name'] ?? '',
@@ -110,6 +142,7 @@ class DayMealEntry {
         order: j['order'] ?? 0,
         menuItems: List<String>.from(j['menuItems'] ?? []),
         imageUrl: j['imageUrl'],
+        description: j['description'] as String?,
         openTime: j['openTime'] as String?,
         closeTime: j['closeTime'] as String?,
         preferencesEnabled: j['preferencesEnabled'] ?? false,
@@ -128,6 +161,7 @@ class DayMealEntry {
         'order': order,
         'menuItems': menuItems,
         'imageUrl': imageUrl,
+        if (description != null) 'description': description,
         if (openTime != null) 'openTime': openTime,
         if (closeTime != null) 'closeTime': closeTime,
         'preferencesEnabled': preferencesEnabled,
@@ -139,6 +173,8 @@ class DayMealEntry {
     String? name,
     List<String>? menuItems,
     String? imageUrl,
+    String? description,
+    List<Uint8List>? imageBytes,
     String? openTime,
     String? closeTime,
     bool? preferencesEnabled,
@@ -152,6 +188,8 @@ class DayMealEntry {
         order: order,
         menuItems: menuItems ?? this.menuItems,
         imageUrl: imageUrl ?? this.imageUrl,
+        description: description ?? this.description,
+        imageBytes: imageBytes ?? this.imageBytes,
         openTime: openTime ?? this.openTime,
         closeTime: closeTime ?? this.closeTime,
         preferencesEnabled: preferencesEnabled ?? this.preferencesEnabled,

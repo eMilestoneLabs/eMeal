@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:smart_meal_management/core/utils/time_format.dart';
 import 'package:go_router/go_router.dart';
 import 'package:smart_meal_management/app/router/route_names.dart';
 import 'package:smart_meal_management/core/theme/app_colors.dart';
@@ -527,7 +528,7 @@ class _ActivityRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final time = record.markedAt != null
-        ? '${record.markedAt!.hour.toString().padLeft(2, '0')}:${record.markedAt!.minute.toString().padLeft(2, '0')}'
+        ? TimeFormat.tod12(TimeOfDay.fromDateTime(record.markedAt!))
         : '--:--';
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),

@@ -20,7 +20,20 @@ import 'package:smart_meal_management/shared/models/meal_model.dart';
 import 'package:smart_meal_management/shared/models/meal_schedule_model.dart';
 import 'package:smart_meal_management/features/student/meals/screens/meal_detail_screen.dart';
 import 'package:smart_meal_management/shared/models/user_model.dart';
+import 'package:smart_meal_management/shared/models/vacation_request_model.dart';
 import 'package:smart_meal_management/shared/widgets/app_glass_card.dart';
+
+/// Formats an approved vacation as "22 Jun → 30 Jun" for the dashboard badge.
+/// Returns null when there is no active vacation.
+String? _vacationRangeLabel(VacationRequestModel? v) {
+  if (v == null) return null;
+  const months = [
+    'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+    'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
+  ];
+  String f(DateTime d) => '${d.day} ${months[d.month - 1]}';
+  return '${f(v.startDate)} → ${f(v.endDate)}';
+}
 
 /// Primary student dashboard — the home tab of the student shell.
 ///
@@ -64,6 +77,11 @@ class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
     // so the dashboard reflects them immediately without requiring a full reload.
     _authProvider = AuthProviderScope.of(context);
     _authProvider!.addListener(_onUserChanged);
+
+    // Reflect server-driven user changes (e.g. an admin approving a vacation
+    // request flips isVacationMode ON) without an app restart — the banner +
+    // greeting read currentUser.isVacationMode live and rebuild via the listener.
+    _authProvider!.refreshCurrentUser();
 
     // Trigger initial load via the shell-level shared provider.
     final provider = StudentDashboardScope.of(context);
@@ -121,9 +139,15 @@ class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
   }
 
   Future<void> _onRefresh() async {
-    final user = AuthProviderScope.of(context).currentUser;
+    final auth = AuthProviderScope.of(context);
+    // Capture the shared provider BEFORE the await so we never touch
+    // BuildContext across an async gap (use_build_context_synchronously).
+    final provider = StudentDashboardScope.of(context);
+    // Pull-to-refresh also re-syncs the user so an approved vacation (or an
+    // early return) is reflected immediately.
+    await auth.refreshCurrentUser();
+    final user = auth.currentUser;
     if (user != null) {
-      final provider = StudentDashboardScope.of(context);
       await provider.load(user: _userWithActiveGroup(user));
     }
   }
@@ -152,6 +176,7 @@ class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
             order: meal.order,
             menuItems: meal.menuItems,
             imageUrl: meal.imageUrl,
+            description: meal.description,
             openTime: meal.attendanceWindow.openTime,
             closeTime: meal.attendanceWindow.closeTime,
             preferencesEnabled: meal.preferencesEnabled,
@@ -331,6 +356,7 @@ class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
                         padding: const EdgeInsets.symmetric(
                             horizontal: AppConstants.space20),
                         child: _VacationBanner(
+                          dateRange: _vacationRangeLabel(provider.activeVacation),
                           onDisable: () =>
                               context.go(RouteNames.studentSettings),
                         ),
@@ -533,8 +559,11 @@ class _SectionHeader extends StatelessWidget {
 }
 
 class _VacationBanner extends StatelessWidget {
-  const _VacationBanner({this.onDisable});
+  const _VacationBanner({this.onDisable, this.dateRange});
   final VoidCallback? onDisable;
+
+  /// Approved vacation range, e.g. "22 Jun → 30 Jun". Null hides the line.
+  final String? dateRange;
 
   @override
   Widget build(BuildContext context) {
@@ -557,14 +586,31 @@ class _VacationBanner extends StatelessWidget {
               size: 20, color: AppColors.vacation),
           const SizedBox(width: AppConstants.space12),
           Expanded(
-            child: Text(
-              'Vacation Mode is ON — attendance paused.',
-              style: AppTypography.bodySmall.copyWith(
-                color: AppColors.vacation,
-                fontWeight: FontWeight.w600,
-              ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  'Vacation Mode Active — attendance paused.',
+                  style: AppTypography.bodySmall.copyWith(
+                    color: AppColors.vacation,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                if (dateRange != null) ...[
+                  const SizedBox(height: 2),
+                  Text(
+                    'Approved: $dateRange',
+                    style: AppTypography.labelSmall.copyWith(
+                      color: AppColors.vacation.withValues(alpha: 0.85),
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ],
+              ],
             ),
           ),
+          const SizedBox(width: AppConstants.space8),
           if (onDisable != null)
             GestureDetector(
               onTap: onDisable,
@@ -660,6 +706,15 @@ class _AttendanceSummaryCard extends StatelessWidget {
                   label: 'Pending',
                   value: summary.pendingCount,
                   color: AppColors.skipped),
+              // Additive: excused vacation days, shown only when present so the
+              // row stays clean for non-vacation students.
+              if (summary.vacationDays > 0) ...[
+                const SizedBox(width: AppConstants.space8),
+                _StatPill(
+                    label: 'Vacation',
+                    value: summary.vacationDays,
+                    color: AppColors.vacation),
+              ],
             ],
           ),
         ],

@@ -216,9 +216,13 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
                                       : groupEnabledPrefs
                                           .map((e) => e.name)
                                           .toList();
+                              final record =
+                                  dashProvider.recordForMeal(meal.id);
                               return AttendanceActionCard(
                                 meal: meal,
                                 status: dashProvider.statusForMeal(meal.id),
+                                markedPreference: record?.preference,
+                                markedAt: record?.markedAt,
                                 isWindowOpen: dashProvider.isWindowOpen(meal),
                                 isWindowClosed:
                                     dashProvider.isWindowPast(meal),

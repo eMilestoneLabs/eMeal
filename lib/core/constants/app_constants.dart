@@ -46,8 +46,12 @@ abstract final class AppConstants {
   static const double space64 = 64.0;
 
   // ── Image constraints ──────────────────────────────────────────────────────
-  /// Max file size for admin-uploaded meal images (bytes).
-  static const int maxMealImageBytes = 200 * 1024; // 200 KB
+  /// Max file size for the single admin-uploaded meal image (bytes).
+  /// One photo per meal, replaced on each upload (no historical copies).
+  static const int maxMealImageBytes = 100 * 1024; // 100 KB
+
+  /// Maximum number of images a meal may carry. Exactly one.
+  static const int maxMealImages = 1;
 
   // ── Attendance window ──────────────────────────────────────────────────────
   /// Minutes before a meal window closes that reminders fire.

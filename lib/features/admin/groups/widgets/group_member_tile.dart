@@ -63,17 +63,9 @@ class GroupMemberTile extends StatelessWidget {
       ),
       child: Row(
         children: [
-          // ── Avatar ─────────────────────────────────────────────────────
-          Container(
-            width: 40,
-            height: 40,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: isAdmin
-                  ? AppColors.primary.withValues(alpha: 0.12)
-                  : colorScheme.primaryContainer,
-            ),
-            child: Center(
+          // ── Avatar (member photo if set, else initials) ─────────────────
+          Builder(builder: (context) {
+            final initials = Center(
               child: Text(
                 member.initials,
                 style: TextStyle(
@@ -84,8 +76,32 @@ class GroupMemberTile extends StatelessWidget {
                       : colorScheme.onPrimaryContainer,
                 ),
               ),
-            ),
-          ),
+            );
+            final url = member.avatarUrl;
+            return Container(
+              width: 40,
+              height: 40,
+              clipBehavior: Clip.antiAlias,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: isAdmin
+                    ? AppColors.primary.withValues(alpha: 0.12)
+                    : colorScheme.primaryContainer,
+              ),
+              // Avatars are stored URLs (MinIO); fall back to initials on
+              // empty/non-URL values or load errors. Single source of truth —
+              // updates everywhere once the member's avatarUrl changes.
+              child: (url != null && url.startsWith('http'))
+                  ? Image.network(
+                      url,
+                      width: 40,
+                      height: 40,
+                      fit: BoxFit.cover,
+                      errorBuilder: (context, error, stack) => initials,
+                    )
+                  : initials,
+            );
+          }),
           const SizedBox(width: 12),
 
           // ── Name + badges ──────────────────────────────────────────────

@@ -144,15 +144,26 @@ class _MealChip extends StatelessWidget {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Container(
-              width: 36,
-              height: 36,
-              decoration: BoxDecoration(
-                color: bgColor,
+            if (meal.displayImageBytes != null)
+              ClipRRect(
                 borderRadius: BorderRadius.circular(10),
+                child: Image.memory(
+                  meal.displayImageBytes!,
+                  width: 36,
+                  height: 36,
+                  fit: BoxFit.cover,
+                ),
+              )
+            else
+              Container(
+                width: 36,
+                height: 36,
+                decoration: BoxDecoration(
+                  color: bgColor,
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Icon(meal.icon, color: fgColor, size: 18),
               ),
-              child: Icon(meal.icon, color: fgColor, size: 18),
-            ),
             const SizedBox(height: 6),
             Text(
               meal.name,

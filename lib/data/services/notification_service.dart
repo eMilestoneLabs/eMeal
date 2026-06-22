@@ -1,5 +1,6 @@
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:smart_meal_management/app/router/route_names.dart';
+import 'package:smart_meal_management/core/utils/time_format.dart';
 import 'package:smart_meal_management/shared/models/meal_model.dart';
 import 'package:timezone/timezone.dart' as tz;
 import 'package:timezone/data/latest.dart' as tz_data;
@@ -180,7 +181,7 @@ class NotificationService {
           id: notifId++,
           title: '${meal.name} window closes in 1 hour',
           body:
-              'Remember to mark your attendance before ${meal.attendanceWindow.closeTime}.',
+              'Remember to mark your attendance before ${TimeFormat.hm12(meal.attendanceWindow.closeTime)}.',
           scheduledAt: remind60,
           payload: RouteNames.studentAttendance,
         );
@@ -195,7 +196,7 @@ class NotificationService {
           id: notifId++,
           title: '${meal.name} window closes soon',
           body:
-              'Mark your attendance before ${meal.attendanceWindow.closeTime}.',
+              'Mark your attendance before ${TimeFormat.hm12(meal.attendanceWindow.closeTime)}.',
           scheduledAt: remind30,
           payload: RouteNames.studentAttendance,
         );
@@ -210,7 +211,7 @@ class NotificationService {
           id: notifId++,
           title: 'Last chance — ${meal.name}',
           body:
-              'Attendance window closes at ${meal.attendanceWindow.closeTime}!',
+              'Attendance window closes at ${TimeFormat.hm12(meal.attendanceWindow.closeTime)}!',
           scheduledAt: remind10,
           payload: RouteNames.studentAttendance,
         );

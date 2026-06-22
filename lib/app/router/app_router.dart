@@ -282,6 +282,8 @@ GoRouter buildRouter(AuthProvider auth) {
                 path: 'schedule',
                 builder: (context, state) => MealScheduleScreen(
                   initialGroupId: state.uri.queryParameters['groupId'],
+                  dayWiseMode:
+                      state.uri.queryParameters['mode'] == 'daywise',
                 ),
               ),
             ],

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:smart_meal_management/core/constants/app_constants.dart';
 import 'package:smart_meal_management/core/theme/app_colors.dart';
 import 'package:smart_meal_management/core/theme/app_typography.dart';
+import 'package:smart_meal_management/core/utils/time_format.dart';
 import 'package:smart_meal_management/shared/models/attendance_model.dart';
 import 'package:smart_meal_management/shared/models/group_model.dart';
 import 'package:smart_meal_management/shared/models/meal_model.dart';
@@ -30,10 +31,20 @@ class AttendanceActionCard extends StatefulWidget {
     this.isLoading = false,
     this.preferencesEnabled = false,
     this.enabledPreferences = const [],
+    this.markedPreference,
+    this.markedAt,
   });
 
   final MealModel meal;
   final AttendanceStatus? status;
+
+  /// The preference the student actually submitted (from the backend record).
+  /// Rendered under the marked status so the card reflects the stored choice.
+  final String? markedPreference;
+
+  /// Submission timestamp from the backend record (local time). Rendered as a
+  /// "Submitted at h:mm AM" line on the marked card.
+  final DateTime? markedAt;
 
   /// True when the attendance window has already CLOSED for today (past close
   /// time). Used to show an explicit "Attendance closed" note on a marked meal.
@@ -84,6 +95,14 @@ class _AttendanceActionCardState extends State<AttendanceActionCard> {
       status,
       preference: widget.preferencesEnabled ? _selectedPreference : null,
     );
+  }
+
+  /// Display label for a stored preference key (e.g. "veg" -> "Veg"). Custom
+  /// admin tag names are shown as-is apart from capitalising the first letter.
+  String _prefLabel(String key) {
+    final k = key.trim();
+    if (k.isEmpty) return k;
+    return k[0].toUpperCase() + k.substring(1);
   }
 
   @override
@@ -144,8 +163,9 @@ class _AttendanceActionCardState extends State<AttendanceActionCard> {
                           ),
                           const SizedBox(width: 4),
                           Text(
-                            '${widget.meal.attendanceWindow.openTime}'
-                            ' - ${widget.meal.attendanceWindow.closeTime}',
+                            TimeFormat.window12(
+                                widget.meal.attendanceWindow.openTime,
+                                widget.meal.attendanceWindow.closeTime),
                             style: AppTypography.bodySmall.copyWith(
                               color: isDark
                                   ? AppColors.textSecondaryDark
@@ -200,6 +220,27 @@ class _AttendanceActionCardState extends State<AttendanceActionCard> {
                     canChange: widget.isWindowOpen && !widget.isVacationMode,
                     onMark: (s) => _markWithPreference(s),
                   ),
+                  // Submitted preference + time, rendered from the backend
+                  // attendance record so the marked state is fully reflected.
+                  if (widget.status == AttendanceStatus.present &&
+                      (widget.markedPreference?.isNotEmpty ?? false)) ...[
+                    const SizedBox(height: 6),
+                    _MarkedMetaLine(
+                      icon: Icons.local_dining_rounded,
+                      text: 'Preference: '
+                          '${_prefLabel(widget.markedPreference!)}',
+                      isDark: isDark,
+                    ),
+                  ],
+                  if (widget.markedAt != null) ...[
+                    const SizedBox(height: 4),
+                    _MarkedMetaLine(
+                      icon: Icons.check_rounded,
+                      text:
+                          'Submitted at ${TimeFormat.tod12(TimeOfDay.fromDateTime(widget.markedAt!))}',
+                      isDark: isDark,
+                    ),
+                  ],
                   // Once the window has closed, the student can no longer change
                   // attendance — show that clearly instead of a silent state.
                   if (widget.isWindowClosed) ...[
@@ -725,4 +766,36 @@ class _StatusBadge extends StatelessWidget {
           ),
         ),
       );
+}
+
+// Marked meta line (preference / submitted time)
+
+class _MarkedMetaLine extends StatelessWidget {
+  const _MarkedMetaLine({
+    required this.icon,
+    required this.text,
+    required this.isDark,
+  });
+
+  final IconData icon;
+  final String text;
+  final bool isDark;
+
+  @override
+  Widget build(BuildContext context) {
+    final color =
+        isDark ? AppColors.textSecondaryDark : AppColors.textSecondary;
+    return Row(
+      children: [
+        Icon(icon, size: 13, color: color),
+        const SizedBox(width: 6),
+        Expanded(
+          child: Text(
+            text,
+            style: AppTypography.labelSmall.copyWith(color: color),
+          ),
+        ),
+      ],
+    );
+  }
 }

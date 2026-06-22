@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:smart_meal_management/core/theme/app_colors.dart';
 import 'package:smart_meal_management/core/theme/app_typography.dart';
+import 'package:smart_meal_management/core/utils/time_format.dart';
 import 'package:smart_meal_management/data/repositories/attendance_repository.dart';
 import 'package:smart_meal_management/data/repositories/group_repository.dart';
 import 'package:smart_meal_management/data/repositories/meal_repository.dart';
@@ -109,7 +110,13 @@ class _StaffAttendanceScreenState extends State<StaffAttendanceScreen> {
       _error = failure.message;
     }
     List<AttendanceModel> records = [];
-    if (recRes case Ok(:final value)) records = value;
+    if (recRes case Ok(:final value)) {
+      // GET /attendance/today is role-scoped server-side: for an admin it
+      // returns GROUP-WIDE records (every member). This screen marks the
+      // ADMIN'S OWN attendance, so keep ONLY the signed-in admin's records —
+      // otherwise a member's status would surface as the admin's own.
+      records = value.where((r) => r.userId == _userId).toList();
+    }
 
     setState(() {
       _meals = meals;
@@ -340,7 +347,7 @@ class _StaffAttendanceScreenState extends State<StaffAttendanceScreen> {
           ),
           const SizedBox(height: 4),
           Text(
-            'Window  $open – $close',
+            'Window  ${TimeFormat.window12(open, close)}',
             style: AppTypography.bodySmall.copyWith(
               color: isDark
                   ? AppColors.textSecondaryDark

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:smart_meal_management/core/constants/app_constants.dart';
 import 'package:smart_meal_management/core/theme/app_colors.dart';
 import 'package:smart_meal_management/core/theme/app_typography.dart';
+import 'package:smart_meal_management/core/utils/time_format.dart';
 import 'package:smart_meal_management/data/repositories/group_repository.dart';
 import 'package:smart_meal_management/data/repositories/attendance_repository.dart';
 import 'package:smart_meal_management/data/repositories/meal_repository.dart';
@@ -587,6 +588,10 @@ class _MyAttendanceSheetState extends State<_MyAttendanceSheet> {
     if (results[0] case Ok(:final value)) meals = value as List<MealModel>;
     if (results[1] case Ok(:final value)) {
       for (final r in value as List<AttendanceModel>) {
+        // GET /attendance/today is role-scoped: for an admin it returns
+        // GROUP-WIDE records. This is the admin's OWN "Mark My Attendance"
+        // sheet, so ignore everyone else's records — only reflect the admin's.
+        if (r.userId != widget.userId) continue;
         _status[r.mealId] = r.status;
         if (r.preference != null) _selectedPref[r.mealId] = r.preference;
       }
@@ -776,7 +781,7 @@ class _MySelfMealCard extends StatelessWidget {
           ),
           const SizedBox(height: 4),
           Text(
-              'Window  ${meal.attendanceWindow.openTime} - ${meal.attendanceWindow.closeTime}',
+              'Window  ${TimeFormat.window12(meal.attendanceWindow.openTime, meal.attendanceWindow.closeTime)}',
               style: AppTypography.bodySmall
                   .copyWith(color: AppColors.textTertiary)),
           // Menu details (Issue 2: parity with what students can see).

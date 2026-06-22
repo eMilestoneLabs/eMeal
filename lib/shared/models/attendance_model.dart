@@ -138,12 +138,17 @@ class AttendanceSummary {
     required this.presentDays,
     required this.absentDays,
     required this.skippedDays,
+    this.vacationDays = 0,
   });
 
   final int totalDays;
   final int presentDays;
   final int absentDays;
   final int skippedDays;
+
+  /// Additive: excused vacation days in the period — counted separately and
+  /// NEVER part of [attendanceRate]'s denominator.
+  final int vacationDays;
 
   /// Attendance rate as a fraction (0.0 – 1.0).
   ///
@@ -162,6 +167,7 @@ class AttendanceSummary {
         presentDays: j['presentDays'] ?? 0,
         absentDays: j['absentDays'] ?? 0,
         skippedDays: j['skippedDays'] ?? 0,
+        vacationDays: j['vacationDays'] ?? 0,
       );
 
   Map<String, dynamic> toJson() => {
@@ -169,6 +175,7 @@ class AttendanceSummary {
         'presentDays': presentDays,
         'absentDays': absentDays,
         'skippedDays': skippedDays,
+        'vacationDays': vacationDays,
       };
 }
 
