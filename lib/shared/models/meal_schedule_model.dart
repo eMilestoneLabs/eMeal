@@ -135,6 +135,21 @@ class DayMealEntry {
     return null;
   }
 
+  /// The plain network URL for this entry's photo, when [imageUrl] is an http(s)
+  /// link (MinIO/CDN) rather than a base64 data URI. Null otherwise. Pairs with
+  /// [displayImageBytes] (local/base64) — network image widgets render this.
+  String? get networkImageUrl {
+    final u = imageUrl;
+    if (u != null && (u.startsWith('http://') || u.startsWith('https://'))) {
+      return u;
+    }
+    return null;
+  }
+
+  /// True when this entry has a photo from any source (local/base64 or network).
+  bool get hasDisplayImage =>
+      displayImageBytes != null || networkImageUrl != null;
+
   factory DayMealEntry.fromJson(Map<String, dynamic> j) => DayMealEntry(
         mealId: j['mealId'] ?? '',
         name: j['name'] ?? '',

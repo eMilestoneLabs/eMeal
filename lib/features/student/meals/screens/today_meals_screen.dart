@@ -12,6 +12,7 @@ import 'package:smart_meal_management/features/student/dashboard/providers/stude
 import 'package:smart_meal_management/shared/models/attendance_model.dart';
 import 'package:smart_meal_management/shared/models/group_model.dart';
 import 'package:smart_meal_management/shared/models/meal_model.dart';
+import 'package:smart_meal_management/shared/widgets/cached_photo.dart';
 
 /// Student "Meals" tab screen — today's meal cards with attendance marking.
 ///
@@ -478,10 +479,13 @@ class _TodayMealCardState extends State<_TodayMealCard> {
             ),
           ),
 
-          // ── Meal image (local bytes or backend base64 data URI) ────────
-          if (widget.meal.displayImageBytes != null)
+          // ── Meal image (local bytes, base64 data URI, or network URL) ──
+          if (widget.meal.hasDisplayImage)
             _MealImageGallery(
-              imageBytes: [widget.meal.displayImageBytes!],
+              imageBytes: widget.meal.displayImageBytes != null
+                  ? [widget.meal.displayImageBytes!]
+                  : const [],
+              networkUrl: widget.meal.networkImageUrl,
               isDark: isDark,
             ),
 
@@ -1478,13 +1482,25 @@ class _MealImageGallery extends StatelessWidget {
   const _MealImageGallery({
     required this.imageBytes,
     required this.isDark,
+    this.networkUrl,
   });
 
   final List<Uint8List> imageBytes;
   final bool isDark;
 
+  /// Network image URL used when there are no local [imageBytes] (e.g. a meal
+  /// photo migrated to MinIO/CDN). Rendered with on-disk caching.
+  final String? networkUrl;
+
+  /// True when the only image to show is a remote URL (no local bytes).
+  bool get _networkOnly =>
+      imageBytes.isEmpty &&
+      networkUrl != null &&
+      (networkUrl!.startsWith('http://') || networkUrl!.startsWith('https://'));
+
   @override
   Widget build(BuildContext context) {
+    final count = _networkOnly ? 1 : imageBytes.length;
     return Padding(
       padding: const EdgeInsets.only(bottom: AppConstants.space12),
       child: SizedBox(
@@ -1493,18 +1509,21 @@ class _MealImageGallery extends StatelessWidget {
           scrollDirection: Axis.horizontal,
           padding: const EdgeInsets.symmetric(
               horizontal: AppConstants.space16),
-          itemCount: imageBytes.length,
+          itemCount: count,
           separatorBuilder: (_, _) => const SizedBox(width: 8),
           itemBuilder: (context, i) {
-            final tag = 'meal_img_${imageBytes[i].hashCode}_$i';
+            final tag = _networkOnly
+                ? 'meal_img_net_${networkUrl.hashCode}'
+                : 'meal_img_${imageBytes[i].hashCode}_$i';
             return GestureDetector(
               onTap: () => _openViewer(context, i),
               child: Hero(
                 tag: tag,
                 child: ClipRRect(
                   borderRadius: BorderRadius.circular(10),
-                  child: Image.memory(
-                    imageBytes[i],
+                  child: CachedPhoto(
+                    bytes: _networkOnly ? null : imageBytes[i],
+                    url: _networkOnly ? networkUrl : null,
                     width: 110,
                     height: 100,
                     fit: BoxFit.cover,
@@ -1527,6 +1546,7 @@ class _MealImageGallery extends StatelessWidget {
         barrierDismissible: true,
         pageBuilder: (context, _, _) => _ImageViewerPage(
           imageBytes: imageBytes,
+          networkUrl: networkUrl,
           initialIndex: initialIndex,
         ),
         transitionsBuilder: (context, animation, _, child) =>
@@ -1542,10 +1562,14 @@ class _ImageViewerPage extends StatefulWidget {
   const _ImageViewerPage({
     required this.imageBytes,
     required this.initialIndex,
+    this.networkUrl,
   });
 
   final List<Uint8List> imageBytes;
   final int initialIndex;
+
+  /// Network image URL used when there are no local [imageBytes].
+  final String? networkUrl;
 
   @override
   State<_ImageViewerPage> createState() => _ImageViewerPageState();
@@ -1554,6 +1578,15 @@ class _ImageViewerPage extends StatefulWidget {
 class _ImageViewerPageState extends State<_ImageViewerPage> {
   late final PageController _pageCtrl;
   late int _current;
+
+  /// True when the only image to show is a remote URL (no local bytes).
+  bool get _networkOnly =>
+      widget.imageBytes.isEmpty &&
+      widget.networkUrl != null &&
+      (widget.networkUrl!.startsWith('http://') ||
+          widget.networkUrl!.startsWith('https://'));
+
+  int get _count => _networkOnly ? 1 : widget.imageBytes.length;
 
   @override
   void initState() {
@@ -1578,13 +1611,14 @@ class _ImageViewerPageState extends State<_ImageViewerPage> {
           children: [
             PageView.builder(
               controller: _pageCtrl,
-              itemCount: widget.imageBytes.length,
+              itemCount: _count,
               onPageChanged: (i) => setState(() => _current = i),
               itemBuilder: (context, i) {
                 return Center(
                   child: InteractiveViewer(
-                    child: Image.memory(
-                      widget.imageBytes[i],
+                    child: CachedPhoto(
+                      bytes: _networkOnly ? null : widget.imageBytes[i],
+                      url: _networkOnly ? widget.networkUrl : null,
                       fit: BoxFit.contain,
                     ),
                   ),
@@ -1610,7 +1644,7 @@ class _ImageViewerPageState extends State<_ImageViewerPage> {
               ),
             ),
             // Page indicator
-            if (widget.imageBytes.length > 1)
+            if (_count > 1)
               Positioned(
                 bottom: MediaQuery.paddingOf(context).bottom + 24,
                 left: 0,
@@ -1618,7 +1652,7 @@ class _ImageViewerPageState extends State<_ImageViewerPage> {
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: List.generate(
-                    widget.imageBytes.length,
+                    _count,
                     (i) => AnimatedContainer(
                       duration: const Duration(milliseconds: 200),
                       margin: const EdgeInsets.symmetric(horizontal: 3),

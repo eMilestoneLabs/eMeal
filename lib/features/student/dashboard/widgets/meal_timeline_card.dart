@@ -4,6 +4,7 @@ import 'package:smart_meal_management/core/theme/app_colors.dart';
 import 'package:smart_meal_management/core/theme/app_typography.dart';
 import 'package:smart_meal_management/shared/models/attendance_model.dart';
 import 'package:smart_meal_management/shared/models/meal_model.dart';
+import 'package:smart_meal_management/shared/widgets/cached_photo.dart';
 import 'package:smart_meal_management/features/student/dashboard/providers/student_dashboard_provider.dart';
 
 /// Horizontal scrollable timeline of today's meals.
@@ -144,26 +145,25 @@ class _MealChip extends StatelessWidget {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            if (meal.displayImageBytes != null)
-              ClipRRect(
-                borderRadius: BorderRadius.circular(10),
-                child: Image.memory(
-                  meal.displayImageBytes!,
-                  width: 36,
-                  height: 36,
-                  fit: BoxFit.cover,
-                ),
-              )
-            else
-              Container(
+            ClipRRect(
+              borderRadius: BorderRadius.circular(10),
+              child: CachedPhoto(
+                bytes: meal.displayImageBytes,
+                url: meal.networkImageUrl,
                 width: 36,
                 height: 36,
-                decoration: BoxDecoration(
-                  color: bgColor,
-                  borderRadius: BorderRadius.circular(10),
+                cacheWidth: 72,
+                placeholder: Container(
+                  width: 36,
+                  height: 36,
+                  decoration: BoxDecoration(
+                    color: bgColor,
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Icon(meal.icon, color: fgColor, size: 18),
                 ),
-                child: Icon(meal.icon, color: fgColor, size: 18),
               ),
+            ),
             const SizedBox(height: 6),
             Text(
               meal.name,

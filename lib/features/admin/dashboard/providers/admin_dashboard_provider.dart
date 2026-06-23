@@ -218,6 +218,29 @@ class AdminDashboardProvider extends ChangeNotifier {
         return;
     }
 
+    // Kick off the recent-activity (history) fetch NOW. It only depends on the
+    // group list — not on meals or summaries — so we start it here and await it
+    // later, letting it run concurrently with steps 2 + 3a instead of waiting
+    // for them to finish first (removes one sequential round-trip). Additive:
+    // same call, same params, only the await is deferred.
+    final today = _today();
+    final now = DateTime.now();
+    Future<List<Result<PaginatedResponse<AttendanceModel>>>>? historyResultsFuture;
+    if (_groups.isNotEmpty) {
+      historyResultsFuture = Future.wait(
+        _groups.map(
+          (g) => _attendanceRepo.getAttendanceHistory(
+            userId: '',
+            groupId: g.id,
+            organizationId: organizationId,
+            from: today,
+            to: now,
+            params: const PaginationParams(page: 1, limit: 5),
+          ),
+        ),
+      );
+    }
+
     // 2. Fetch today's meals across ALL groups in parallel (used for window
     //    alerts). Each group may have its own meal schedule so we union them.
     if (_groups.isNotEmpty) {
@@ -243,9 +266,6 @@ class AdminDashboardProvider extends ChangeNotifier {
     // 3. Fetch today's attendance summary across ALL groups in parallel and
     //    aggregate the counts — admins with 10+ groups get correct totals.
     if (_groups.isNotEmpty) {
-      final today = _today();
-      final now = DateTime.now();
-
       // 3a. Meal-wise attendance summaries — reuse GET /attendance/meal-summary
       // for each active meal today. Fixes Issue 1 (the group /attendance/summary
       // endpoint resolved userId to the admin's OWN id -> always 0) and powers
@@ -300,18 +320,10 @@ class AdminDashboardProvider extends ChangeNotifier {
             : _groups.first.id;
       }
 
-      // 3b. Recent activity feed — fetch from all groups, merge, sort, cap at 5
-      final historyFutures = _groups.map(
-        (g) => _attendanceRepo.getAttendanceHistory(
-          userId: '',
-          groupId: g.id,
-          organizationId: organizationId,
-          from: today,
-          to: now,
-          params: const PaginationParams(page: 1, limit: 5),
-        ),
-      );
-      final historyResults = await Future.wait(historyFutures);
+      // 3b. Recent activity feed — await the history fetch started above (it ran
+      // concurrently with steps 2 + 3a), then merge, sort, cap at 5.
+      final historyResults = await (historyResultsFuture ??
+          Future.value(<Result<PaginatedResponse<AttendanceModel>>>[]));
 
       final allRecords = <AttendanceModel>[];
       for (final result in historyResults) {

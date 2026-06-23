@@ -12,6 +12,7 @@ import 'package:smart_meal_management/shared/models/meal_model.dart';
 import 'package:smart_meal_management/shared/models/meal_schedule_model.dart';
 import 'package:smart_meal_management/shared/widgets/app_empty_state.dart';
 import 'package:smart_meal_management/shared/widgets/app_loading_indicator.dart';
+import 'package:smart_meal_management/shared/widgets/cached_photo.dart';
 
 /// Student "Weekly Menu" screen — 7-day horizontal scroll with today highlighted.
 ///
@@ -376,36 +377,36 @@ class MealDetailScreen extends StatelessWidget {
             // ── Hero banner — real photo when present, else icon ───────
             ClipRRect(
               borderRadius: BorderRadius.circular(AppConstants.cardRadius),
-              child: entry.displayImageBytes != null
-                  ? Image.memory(
-                      entry.displayImageBytes!,
-                      width: double.infinity,
-                      height: 180,
-                      fit: BoxFit.cover,
-                    )
-                  : Container(
-                      width: double.infinity,
-                      height: 160,
-                      color: MealModel.iconBgColor(entry.order),
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(
-                            MealModel.slotIcon(entry.slotKey),
-                            size: 56,
-                            color: MealModel.iconFgColor(entry.order),
-                          ),
-                          const SizedBox(height: AppConstants.space8),
-                          Text(
-                            entry.name,
-                            style: AppTypography.titleSmall.copyWith(
-                              color: MealModel.iconFgColor(entry.order),
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ],
+              child: CachedPhoto(
+                bytes: entry.displayImageBytes,
+                url: entry.networkImageUrl,
+                width: double.infinity,
+                height: 180,
+                cacheWidth: 720,
+                placeholder: Container(
+                  width: double.infinity,
+                  height: 160,
+                  color: MealModel.iconBgColor(entry.order),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(
+                        MealModel.slotIcon(entry.slotKey),
+                        size: 56,
+                        color: MealModel.iconFgColor(entry.order),
                       ),
-                    ),
+                      const SizedBox(height: AppConstants.space8),
+                      Text(
+                        entry.name,
+                        style: AppTypography.titleSmall.copyWith(
+                          color: MealModel.iconFgColor(entry.order),
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
             ),
             const SizedBox(height: AppConstants.space24),
 

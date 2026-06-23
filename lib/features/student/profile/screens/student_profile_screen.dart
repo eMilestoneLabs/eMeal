@@ -12,6 +12,7 @@ import 'package:smart_meal_management/core/theme/app_colors.dart';
 import 'package:smart_meal_management/core/theme/app_typography.dart';
 import 'package:smart_meal_management/features/auth/providers/auth_provider.dart';
 import 'package:smart_meal_management/features/student/profile/providers/student_profile_provider.dart';
+import 'package:smart_meal_management/shared/widgets/cached_photo.dart';
 
 /// Student profile screen — premium gradient header, stats, account info.
 ///
@@ -503,22 +504,14 @@ class _AvatarCircle extends StatelessWidget {
                     ),
                   )
                 : ClipOval(
-                    child: avatarBytes != null
-                        ? Image.memory(
-                            avatarBytes!,
-                            fit: BoxFit.cover,
-                            width: 80,
-                            height: 80,
-                          )
-                        : provider.hasAvatar
-                            ? Image.network(
-                                provider.avatarUrl!,
-                                fit: BoxFit.cover,
-                                errorBuilder: (_, _, _) => _InitialsText(
-                                  initials: provider.initials,
-                                ),
-                              )
-                            : _InitialsText(initials: provider.initials),
+                    child: CachedPhoto(
+                      bytes: avatarBytes,
+                      url: provider.hasAvatar ? provider.avatarUrl : null,
+                      width: 80,
+                      height: 80,
+                      cacheWidth: 160,
+                      placeholder: _InitialsText(initials: provider.initials),
+                    ),
                   ),
           ),
           if (!isUploading)

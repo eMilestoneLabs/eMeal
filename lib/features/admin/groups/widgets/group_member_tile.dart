@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:smart_meal_management/core/theme/app_colors.dart';
 import 'package:smart_meal_management/shared/models/user_model.dart';
 import 'package:smart_meal_management/shared/widgets/app_status_chip.dart';
+import 'package:smart_meal_management/shared/widgets/cached_photo.dart';
 
 /// Single member row in admin group detail Members tab.
 ///
@@ -92,12 +93,12 @@ class GroupMemberTile extends StatelessWidget {
               // empty/non-URL values or load errors. Single source of truth —
               // updates everywhere once the member's avatarUrl changes.
               child: (url != null && url.startsWith('http'))
-                  ? Image.network(
-                      url,
+                  ? CachedPhoto(
+                      url: url,
                       width: 40,
                       height: 40,
-                      fit: BoxFit.cover,
-                      errorBuilder: (context, error, stack) => initials,
+                      cacheWidth: 80,
+                      placeholder: initials,
                     )
                   : initials,
             );

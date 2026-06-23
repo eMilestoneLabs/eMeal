@@ -7,6 +7,7 @@ import 'package:smart_meal_management/core/constants/app_constants.dart';
 import 'package:smart_meal_management/core/theme/app_colors.dart';
 import 'package:smart_meal_management/core/utils/time_format.dart';
 import 'package:smart_meal_management/shared/models/meal_model.dart';
+import 'package:smart_meal_management/shared/widgets/cached_photo.dart';
 
 /// Form for creating or editing a meal.
 ///
@@ -67,6 +68,10 @@ class _MealConfigFormState extends State<MealConfigForm> {
 
   // ── Image state ────────────────────────────────────────────────────────────
   final List<Uint8List> _imageBytesList = [];
+  /// Existing photo when it is a network URL (MinIO/CDN) rather than base64 —
+  /// shown as a preview and preserved on save unless the admin replaces or
+  /// removes it. Null once replaced/removed or for base64/no-photo meals.
+  String? _existingImageUrl;
   bool _isPickingImages = false;
   String? _imageError;
 
@@ -91,11 +96,14 @@ class _MealConfigFormState extends State<MealConfigForm> {
           ? List.of(m.enabledPreferences)
           : List.of(_kDefaultPreferenceTags);
       _priceCtrl.text = m.price?.toString() ?? '';
-      // Restore the existing photo when editing — from local bytes or the
-      // base64 data URI returned by the backend (so the current photo shows).
+      // Restore the existing photo when editing. Local/base64 photos decode to
+      // bytes; a migrated network URL (MinIO/CDN) is kept as [_existingImageUrl]
+      // so it shows as a preview and is preserved on save (not wiped).
       final existing = m.displayImageBytes;
       if (existing != null) {
         _imageBytesList.add(existing);
+      } else {
+        _existingImageUrl = m.networkImageUrl;
       }
       // Parse window times
       final openParts = m.attendanceWindow.openTime.split(':');
@@ -282,8 +290,10 @@ class _MealConfigFormState extends State<MealConfigForm> {
         return;
       }
 
-      // Replace any existing image with the new single photo.
+      // Replace any existing image with the new single photo (this also
+      // supersedes a migrated network photo, if any).
       setState(() {
+        _existingImageUrl = null;
         _imageBytesList
           ..clear()
           ..add(compressed!);
@@ -298,6 +308,14 @@ class _MealConfigFormState extends State<MealConfigForm> {
   void _removeImage(int index) {
     setState(() {
       _imageBytesList.removeAt(index);
+      _imageError = null;
+    });
+  }
+
+  /// Remove the existing (migrated network) photo — clears it on save.
+  void _removeExistingImage() {
+    setState(() {
+      _existingImageUrl = null;
       _imageError = null;
     });
   }
@@ -613,6 +631,10 @@ class _MealConfigFormState extends State<MealConfigForm> {
                           ? List.of(_preferenceTags)
                           : const [],
                       imageBytes: List.of(_imageBytesList),
+                      // No new bytes but an existing network photo remains →
+                      // leave the server's imageUrl untouched (don't wipe it).
+                      imageUntouched:
+                          _imageBytesList.isEmpty && _existingImageUrl != null,
                       price: widget.pricingEnabled
                           ? int.tryParse(_priceCtrl.text.trim())
                           : null,
@@ -705,13 +727,15 @@ class _MealConfigFormState extends State<MealConfigForm> {
                     : TextButton.icon(
                         onPressed: _pickImages,
                         icon: Icon(
-                          _imageBytesList.isEmpty
+                          (_imageBytesList.isEmpty && _existingImageUrl == null)
                               ? Icons.add_photo_alternate_rounded
                               : Icons.swap_horiz_rounded,
                           size: 16,
                         ),
                         label: Text(
-                          _imageBytesList.isEmpty ? 'Add' : 'Replace',
+                          (_imageBytesList.isEmpty && _existingImageUrl == null)
+                              ? 'Add'
+                              : 'Replace',
                           style: const TextStyle(fontSize: 12),
                         ),
                         style: TextButton.styleFrom(
@@ -743,6 +767,18 @@ class _MealConfigFormState extends State<MealConfigForm> {
                     onRemove: () => _removeImage(i),
                   );
                 },
+              ),
+            ),
+            const SizedBox(height: 10),
+          ]
+          // Existing photo stored as a network URL (migrated to MinIO/CDN) —
+          // shown with caching; preserved on save unless replaced/removed.
+          else if (_existingImageUrl != null) ...[
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 14),
+              child: _NetworkImageThumb(
+                url: _existingImageUrl!,
+                onRemove: _removeExistingImage,
               ),
             ),
             const SizedBox(height: 10),
@@ -1171,6 +1207,59 @@ class _ImageThumb extends StatelessWidget {
   }
 }
 
+// ── Network image thumbnail (existing migrated photo) ───────────────────────────
+
+class _NetworkImageThumb extends StatelessWidget {
+  const _NetworkImageThumb({
+    required this.url,
+    required this.onRemove,
+  });
+
+  final String url;
+  final VoidCallback onRemove;
+
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      children: [
+        ClipRRect(
+          borderRadius: BorderRadius.circular(10),
+          child: CachedPhoto(
+            url: url,
+            width: 80,
+            height: 80,
+            cacheWidth: 160, // 2x for sharp rendering, no larger
+            placeholder: Container(
+              width: 80,
+              height: 80,
+              color: Theme.of(context).colorScheme.surfaceContainerHighest,
+              child: const Icon(Icons.image_outlined, size: 22),
+            ),
+          ),
+        ),
+        // Remove button
+        Positioned(
+          top: 2,
+          right: 2,
+          child: GestureDetector(
+            onTap: onRemove,
+            child: Container(
+              width: 20,
+              height: 20,
+              decoration: BoxDecoration(
+                color: Colors.black.withValues(alpha: 0.6),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(Icons.close_rounded,
+                  size: 13, color: Colors.white),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
 // ── Time picker tile ──────────────────────────────────────────────────────────
 
 class _TimePicker extends StatelessWidget {
@@ -1320,6 +1409,7 @@ class MealFormData {
     this.menuItems = const [],
     this.enablePreferences = const [],
     this.imageBytes = const [],
+    this.imageUntouched = false,
     this.price,
   });
 
@@ -1333,6 +1423,11 @@ class MealFormData {
   final List<String> enablePreferences;
   /// Compressed image bytes ready for storage. Empty list = no images.
   final List<Uint8List> imageBytes;
+
+  /// True when [imageBytes] is empty only because an existing network photo was
+  /// kept as-is (not replaced/removed). Callers should then leave the server's
+  /// imageUrl untouched (pass null) instead of clearing it.
+  final bool imageUntouched;
 
   /// Additive: ₹ meal price (null when pricing disabled or left blank).
   final int? price;

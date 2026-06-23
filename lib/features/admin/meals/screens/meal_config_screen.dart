@@ -422,9 +422,10 @@ class _MealConfigScreenState extends State<MealConfigScreen> {
                     ),
                     menuItems: data.menuItems,
                     availablePreferences: data.enablePreferences,
-                    // Always pass the list (empty = photo removed) so the repo
-                    // can clear imageUrl server-side; non-empty = replace.
-                    imageBytes: data.imageBytes,
+                    // null = leave the existing photo untouched (an unchanged
+                    // network/migrated photo); empty list = photo removed (clear
+                    // server-side); non-empty = replace.
+                    imageBytes: data.imageUntouched ? null : data.imageBytes,
                     price: data.price,
                   );
                   if (mounted) nav.pop();
