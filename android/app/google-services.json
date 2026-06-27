@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "226326737213",
+    "project_id": "emeal-144d4",
+    "storage_bucket": "emeal-144d4.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:226326737213:android:b5279fd366c374cd4c9554",
+        "android_client_info": {
+          "package_name": "com.emilestone.mealattend"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAtEtx8Km15EGCkLsco_TxDsTRyeQvLyLk"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

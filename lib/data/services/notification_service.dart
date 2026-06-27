@@ -60,6 +60,15 @@ class NotificationService {
     _onNotificationTap = handler;
   }
 
+  /// Invokes the registered tap handler with [payload].
+  ///
+  /// Used by [PushNotificationService] so that a tap on an FCM-drawn
+  /// notification (background / terminated) deep-links through the SAME router
+  /// wiring as a local-notification tap. No-op if no handler is registered.
+  static void handleRoutePayload(String? payload) {
+    if (payload != null) _onNotificationTap?.call(payload);
+  }
+
   // ── Init ───────────────────────────────────────────────────────────────────
 
   /// Initialises the notification plugin, wires the tap callback, and
@@ -261,14 +270,22 @@ class NotificationService {
     await _plugin.cancelAll();
   }
 
-  /// Shows an immediate (non-scheduled) notification — useful for feedback.
+  /// Shows an immediate (non-scheduled) notification — useful for feedback,
+  /// and for displaying FCM **foreground** pushes (Android does not draw a
+  /// system notification while the app is open, so we draw one ourselves).
+  ///
+  /// [payload] is forwarded to the tap handler registered via
+  /// [setNotificationTapHandler] so a tap can deep-link (e.g. a route path).
+  /// [id] lets callers avoid clobbering each other (each push gets a unique id).
   Future<void> showInstant({
     required String title,
     required String body,
+    String? payload,
+    int id = 0,
   }) async {
     if (!_initialized) return;
     await _plugin.show(
-      0,
+      id,
       title,
       body,
       const NotificationDetails(
@@ -280,6 +297,7 @@ class NotificationService {
         ),
         iOS: DarwinNotificationDetails(),
       ),
+      payload: payload,
     );
   }
 }
