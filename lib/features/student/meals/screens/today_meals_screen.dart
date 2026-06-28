@@ -1528,6 +1528,7 @@ class _MealImageGallery extends StatelessWidget {
                     height: 100,
                     fit: BoxFit.cover,
                     cacheWidth: 220,
+                    useThumbnail: true,
                   ),
                 ),
               ),

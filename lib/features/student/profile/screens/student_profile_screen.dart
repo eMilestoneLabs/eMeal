@@ -510,6 +510,7 @@ class _AvatarCircle extends StatelessWidget {
                       width: 80,
                       height: 80,
                       cacheWidth: 160,
+                      useThumbnail: true,
                       placeholder: _InitialsText(initials: provider.initials),
                     ),
                   ),

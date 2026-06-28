@@ -3,6 +3,7 @@ import 'dart:typed_data';
 import 'package:flutter/widgets.dart';
 import 'package:smart_meal_management/data/repositories/auth_repository.dart';
 import 'package:smart_meal_management/data/services/realtime_service.dart';
+import 'package:smart_meal_management/data/services/response_cache_service.dart';
 import 'package:smart_meal_management/features/auth/models/auth_session.dart';
 import 'package:smart_meal_management/features/auth/models/auth_state.dart';
 import 'package:smart_meal_management/features/auth/services/auth_storage_service.dart';
@@ -252,6 +253,8 @@ class AuthProvider extends ChangeNotifier {
     notifyListeners();
     // Clear persisted avatar on logout — fire-and-forget.
     AuthStorageService.instance.clearAvatarBytes();
+    // Clear SWR response cache so a new account never reads cached data.
+    ResponseCacheService.instance.clear();
   }
 
   /// Stores locally-picked avatar bytes in memory, notifies listeners,

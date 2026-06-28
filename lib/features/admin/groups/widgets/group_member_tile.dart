@@ -98,6 +98,7 @@ class GroupMemberTile extends StatelessWidget {
                       width: 40,
                       height: 40,
                       cacheWidth: 80,
+                      useThumbnail: true,
                       placeholder: initials,
                     )
                   : initials,

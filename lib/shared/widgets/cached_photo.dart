@@ -21,6 +21,7 @@ class CachedPhoto extends StatelessWidget {
     this.fit = BoxFit.cover,
     this.cacheWidth,
     this.placeholder,
+    this.useThumbnail = false,
   });
 
   /// Local image bytes (highest priority — admin's own session / base64).
@@ -39,9 +40,34 @@ class CachedPhoto extends StatelessWidget {
   /// Shown while loading, on error, or when there is no image.
   final Widget? placeholder;
 
+  /// When true and [url] is a stored image, load the ~320px thumbnail variant
+  /// (≈15 KB) for fast list/grid rendering, falling back to the full image if
+  /// the thumbnail does not exist (e.g. older uploads).
+  final bool useThumbnail;
+
   bool get _hasNetwork =>
       url != null &&
       (url!.startsWith('http://') || url!.startsWith('https://'));
+
+  /// Derives the thumbnail URL by the backend's naming convention
+  /// (`<name>.<ext>` -> `<name>_thumb.jpg`).
+  String _thumbUrl(String u) => u.replaceFirst(RegExp(r'\.\w+$'), '_thumb.jpg');
+
+  Widget _networkImage(String imageUrl, {Widget Function()? onError}) {
+    return CachedNetworkImage(
+      imageUrl: imageUrl,
+      width: width,
+      height: height,
+      fit: fit,
+      memCacheWidth: cacheWidth,
+      // Snap the image in instead of the default 500ms fade.
+      fadeInDuration: const Duration(milliseconds: 120),
+      fadeOutDuration: const Duration(milliseconds: 120),
+      placeholder: placeholder == null ? null : (_, _) => placeholder!,
+      errorWidget: (_, _, _) =>
+          onError != null ? onError() : (placeholder ?? const SizedBox.shrink()),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -55,16 +81,13 @@ class CachedPhoto extends StatelessWidget {
       );
     }
     if (_hasNetwork) {
-      return CachedNetworkImage(
-        imageUrl: url!,
-        width: width,
-        height: height,
-        fit: fit,
-        memCacheWidth: cacheWidth,
-        placeholder:
-            placeholder == null ? null : (_, _) => placeholder!,
-        errorWidget: (_, _, _) => placeholder ?? const SizedBox.shrink(),
-      );
+      final original = url!;
+      if (useThumbnail) {
+        // Thumb first; on miss (404 / older upload) fall back to the original.
+        return _networkImage(_thumbUrl(original),
+            onError: () => _networkImage(original));
+      }
+      return _networkImage(original);
     }
     return placeholder ?? const SizedBox.shrink();
   }

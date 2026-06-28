@@ -18,6 +18,7 @@ import 'package:smart_meal_management/shared/models/group_model.dart';
 import 'package:smart_meal_management/shared/models/meal_model.dart';
 import 'package:smart_meal_management/shared/models/paginated_response.dart';
 import 'package:smart_meal_management/shared/models/result.dart';
+import 'package:smart_meal_management/data/services/response_cache_service.dart';
 import 'package:smart_meal_management/shared/models/user_model.dart';
 import 'package:smart_meal_management/data/services/realtime_service.dart';
 import 'package:smart_meal_management/core/constants/realtime_events.dart';
@@ -195,8 +196,15 @@ class StudentDashboardProvider extends ChangeNotifier {
 
   // ── Load ──────────────────────────────────────────────────────────────────
 
+  /// Concurrency lock — separate from [_isLoading] (which only drives the
+  /// full loading view) so a cache-first paint can clear [_isLoading] while
+  /// still preventing a second concurrent load.
+  bool _isFetching = false;
+  bool _menuPrefetched = false; // one-shot weekly-menu cache-warm per session
+
   Future<void> load({required UserModel user}) async {
-    if (_isLoading) return;
+    if (_isFetching) return;
+    _isFetching = true;
     _isLoading = true;
     _error = null;
 
@@ -213,6 +221,7 @@ class StudentDashboardProvider extends ChangeNotifier {
         user.groupId ?? (user.groupIds.isNotEmpty ? user.groupIds.first : null);
     if (groupId == null) {
       _isLoading = false;
+      _isFetching = false;
       notifyListeners();
       return;
     }
@@ -220,6 +229,42 @@ class StudentDashboardProvider extends ChangeNotifier {
     final today = DateTime.now();
     final thirtyDaysAgo = today.subtract(const Duration(days: 30));
     final sevenDaysAgo = today.subtract(const Duration(days: 7));
+
+    // Cache-first (stale-while-revalidate): paint the last-known dashboard
+    // core (today's meals + attendance + streak) instantly from local
+    // storage; the network fetch below then overwrites everything. Atomic +
+    // best-effort — absent/corrupt cache changes nothing and the loading view
+    // shows as before.
+    final dashCacheKey = 'student_dashboard:$orgId:$groupId:$userId';
+    if (_todayMeals.isEmpty) {
+      final cached = await ResponseCacheService.instance
+          .read(dashCacheKey, maxAge: const Duration(hours: 12));
+      if (cached is Map) {
+        try {
+          final meals = (cached['meals'] as List)
+              .whereType<Map<String, dynamic>>()
+              .map(MealModel.fromJson)
+              .toList();
+          final att = (cached['todayAtt'] as List)
+              .whereType<Map<String, dynamic>>()
+              .map(AttendanceModel.fromJson)
+              .toList();
+          final hist = (cached['weekHist'] as List)
+              .whereType<Map<String, dynamic>>()
+              .map(AttendanceModel.fromJson)
+              .toList();
+          final gn = cached['groupName'];
+          _todayMeals = meals..sort((a, b) => a.order.compareTo(b.order));
+          _todayAttendance = att;
+          _weekHistory = hist;
+          _streakDays = _computeStreak(_weekHistory);
+          if (gn is String) _groupName = gn;
+        } catch (_) {/* ignore corrupt cache; fetch will populate */}
+      }
+    }
+    // Only show the full loading view when there is nothing cached to show.
+    _isLoading = _todayMeals.isEmpty;
+    notifyListeners();
 
     // ── Five parallel requests ─────────────────────────────────────────────
     final results = await Future.wait([
@@ -324,8 +369,44 @@ class StudentDashboardProvider extends ChangeNotifier {
     // B10: subscribe to live updates for this group (no-op in mock mode).
     _bindRealtime(user, groupId);
 
+    // Persist the dashboard core for instant cache-first paint next session.
+    // Fire-and-forget; only real data (mirrors the no-empty rule).
+    if (_todayMeals.isNotEmpty) {
+      ResponseCacheService.instance.write(dashCacheKey, {
+        'meals': _todayMeals.map((m) => m.toJson()).toList(),
+        'todayAtt': _todayAttendance.map((a) => a.toJson()).toList(),
+        'weekHist': _weekHistory.map((a) => a.toJson()).toList(),
+        'groupName': _groupName,
+      });
+    }
+
     _isLoading = false;
+    _isFetching = false;
     notifyListeners();
+
+    // Prefetch the weekly menu once per session so the Menu tab is instant on
+    // its FIRST open (cache-first only covers 2nd+ visits). Fire-and-forget.
+    if (!_menuPrefetched) {
+      _menuPrefetched = true;
+      unawaited(_prefetchWeeklyMenu(orgId, groupId));
+    }
+  }
+
+  /// Background cache-warm for the weekly menu. Best-effort; never affects the
+  /// dashboard. Writes the same key the Menu provider reads.
+  Future<void> _prefetchWeeklyMenu(String orgId, String groupId) async {
+    try {
+      final res = await _mealRepo.getCurrentWeekSchedule(
+        organizationId: orgId,
+        groupId: groupId,
+      );
+      if (res case Ok(:final value)) {
+        if (value.id.isNotEmpty) {
+          ResponseCacheService.instance
+              .write('weekly_menu:$orgId:$groupId', value.toJson());
+        }
+      }
+    } catch (_) {/* best-effort prefetch */}
   }
 
   // ── Sync attendance (called from StudentAttendanceProvider) ───────────────
@@ -564,7 +645,7 @@ class StudentDashboardProvider extends ChangeNotifier {
     _rtDebounce?.cancel();
     _rtDebounce = Timer(const Duration(milliseconds: 800), () {
       final user = _rtUser;
-      if (user != null && !_isLoading) load(user: user);
+      if (user != null && !_isFetching) load(user: user);
     });
   }
 

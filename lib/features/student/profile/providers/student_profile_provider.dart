@@ -3,6 +3,7 @@ import 'package:smart_meal_management/data/repositories/attendance_repository.da
 import 'package:smart_meal_management/features/auth/providers/auth_provider.dart';
 import 'package:smart_meal_management/shared/models/attendance_model.dart';
 import 'package:smart_meal_management/shared/models/result.dart';
+import 'package:smart_meal_management/data/services/response_cache_service.dart';
 import 'package:smart_meal_management/shared/models/user_model.dart';
 
 /// Manages the student profile view — wraps [AuthProvider]'s currentUser
@@ -55,7 +56,19 @@ class StudentProfileProvider extends ChangeNotifier {
     final orgId = u?.organizationId;
     if (u == null || groupId == null || orgId == null || orgId.isEmpty) return;
 
-    _isLoadingSummary = true;
+    // Cache-first (stale-while-revalidate): show the last-known 30-day summary
+    // instantly, then refresh below. Best-effort; the fetch always wins.
+    final cacheKey = 'profile_summary:$orgId:$groupId:${u.id}';
+    if (_summary == null) {
+      final cached = await ResponseCacheService.instance
+          .read(cacheKey, maxAge: const Duration(hours: 12));
+      if (cached is Map<String, dynamic>) {
+        try {
+          _summary = AttendanceSummary.fromJson(cached);
+        } catch (_) {/* ignore corrupt cache */}
+      }
+    }
+    _isLoadingSummary = _summary == null;
     notifyListeners();
 
     final now = DateTime.now();
@@ -69,6 +82,7 @@ class StudentProfileProvider extends ChangeNotifier {
     switch (result) {
       case Ok(:final value):
         _summary = value;
+        ResponseCacheService.instance.write(cacheKey, value.toJson());
       case Err():
         break; // keep zeros on failure
     }

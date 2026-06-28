@@ -1229,6 +1229,7 @@ class _NetworkImageThumb extends StatelessWidget {
             width: 80,
             height: 80,
             cacheWidth: 160, // 2x for sharp rendering, no larger
+            useThumbnail: true,
             placeholder: Container(
               width: 80,
               height: 80,

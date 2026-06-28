@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:smart_meal_management/data/repositories/meal_repository.dart';
 import 'package:smart_meal_management/shared/models/meal_schedule_model.dart';
 import 'package:smart_meal_management/shared/models/result.dart';
+import 'package:smart_meal_management/data/services/response_cache_service.dart';
 
 /// Drives the student "Weekly Menu" and "Meal Detail" screens.
 ///
@@ -63,7 +64,27 @@ class StudentMealProvider extends ChangeNotifier {
     _organizationId = organizationId;
     _groupId = groupId;
 
-    _isLoading = true;
+    // Cache-first (stale-while-revalidate): paint the last-known schedule
+    // instantly from local storage, then refresh from the network below.
+    // Only real (published) schedules are cached, mirroring the rule above.
+    if (_schedule == null) {
+      final cached = await ResponseCacheService.instance
+          .read(_menuCacheKey(organizationId, groupId),
+              maxAge: const Duration(days: 7));
+      if (cached is Map<String, dynamic>) {
+        try {
+          final m = MealScheduleModel.fromJson(cached);
+          if (m.id.isNotEmpty) {
+            _schedule = m;
+            _ensureValidDay();
+          }
+        } catch (_) {/* ignore corrupt cache */}
+      }
+    }
+
+    // Only show a full-screen spinner when there is nothing cached to show;
+    // with cached data we display it immediately and refresh silently.
+    _isLoading = _schedule == null;
     _error = null;
     notifyListeners();
 
@@ -77,6 +98,12 @@ class StudentMealProvider extends ChangeNotifier {
         _schedule = value;
         _error = null;
         _ensureValidDay();
+        // Persist real (published) schedules for instant cache-first paint
+        // next session. Fire-and-forget; never blocks.
+        if (value.id.isNotEmpty) {
+          ResponseCacheService.instance
+              .write(_menuCacheKey(_organizationId, _groupId), value.toJson());
+        }
       case Err(:final failure):
         _error = failure.message;
     }
@@ -91,6 +118,12 @@ class StudentMealProvider extends ChangeNotifier {
         groupId: _groupId,
         forceRefresh: true,
       );
+
+  /// Cache key for the group's weekly menu. Weekly-menu data is group-level
+  /// (shared by every member of the group), so org+group scoping is correct
+  /// and leaks nothing across tenants.
+  String _menuCacheKey(String orgId, String groupId) =>
+      'weekly_menu:$orgId:$groupId';
 
   // ── Day selection ──────────────────────────────────────────────────────────
 

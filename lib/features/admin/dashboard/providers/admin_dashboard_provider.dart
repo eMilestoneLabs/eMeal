@@ -11,6 +11,7 @@ import 'package:smart_meal_management/shared/models/meal_attendance_summary.dart
 import 'package:smart_meal_management/shared/models/meal_model.dart';
 import 'package:smart_meal_management/shared/models/paginated_response.dart';
 import 'package:smart_meal_management/shared/models/result.dart';
+import 'package:smart_meal_management/data/services/response_cache_service.dart';
 import 'package:smart_meal_management/data/services/realtime_service.dart';
 import 'package:smart_meal_management/core/constants/realtime_events.dart';
 
@@ -36,6 +37,7 @@ class AdminDashboardProvider extends ChangeNotifier {
   // ── State ──────────────────────────────────────────────────────────────────
 
   bool _isLoading = false;
+  bool _isFetching = false; // concurrency lock (separate from spinner)
   String? _error;
   List<GroupModel> _groups = [];
   List<MealModel> _todayMeals = [];
@@ -185,7 +187,8 @@ class AdminDashboardProvider extends ChangeNotifier {
     /// 'Your Organisation' — never derived from a group name.
     String organizationName = 'Your Organisation',
   }) async {
-    if (_isLoading) return;
+    if (_isFetching) return;
+    _isFetching = true;
     _isLoading = true;
     _error = null;
     _adminName = name;
@@ -194,6 +197,44 @@ class AdminDashboardProvider extends ChangeNotifier {
     _rtOrgId = organizationId;
     _rtName = name;
     _rtOrgName = organizationName;
+    notifyListeners();
+
+    // Cache-first (stale-while-revalidate): paint last-known KPIs + recent
+    // activity instantly; the fetches below overwrite. Atomic + best-effort.
+    final dashKey = 'admin_dashboard:$organizationId';
+    if (_groups.isEmpty) {
+      final cached = await ResponseCacheService.instance
+          .read(dashKey, maxAge: const Duration(hours: 12));
+      if (cached is Map) {
+        try {
+          final groups = (cached['groups'] as List)
+              .whereType<Map<String, dynamic>>()
+              .map(GroupModel.fromJson)
+              .toList();
+          final meals = (cached['meals'] as List)
+              .whereType<Map<String, dynamic>>()
+              .map(MealModel.fromJson)
+              .toList();
+          final activity = (cached['activity'] as List)
+              .whereType<Map<String, dynamic>>()
+              .map(AttendanceModel.fromJson)
+              .toList();
+          // All list parses succeeded — assign atomically (no partial state).
+          _groups = groups;
+          _todayMeals = meals;
+          _recentActivity = activity;
+          _presentToday = (cached['present'] as num?)?.toInt() ?? 0;
+          _absentToday = (cached['absent'] as num?)?.toInt() ?? 0;
+          _todayTotal = (cached['total'] as num?)?.toInt() ?? 0;
+          _restoreIntMap(_presentByGroup, cached['presentByGroup']);
+          _restoreIntMap(_absentByGroup, cached['absentByGroup']);
+          _restoreIntMap(_totalByGroup, cached['totalByGroup']);
+          final sg = cached['selectedGroupId'];
+          if (sg is String) _selectedGroupId = sg;
+        } catch (_) {/* ignore corrupt cache */}
+      }
+    }
+    _isLoading = _groups.isEmpty;
     notifyListeners();
 
     // 1. Fetch groups for this organisation
@@ -214,6 +255,7 @@ class AdminDashboardProvider extends ChangeNotifier {
       case Err(:final failure):
         _error = failure.message;
         _isLoading = false;
+        _isFetching = false;
         notifyListeners();
         return;
     }
@@ -342,7 +384,24 @@ class AdminDashboardProvider extends ChangeNotifier {
     // B10: join group rooms + subscribe to live events (no-op in mock mode).
     _bindRealtime();
 
+    // Persist the dashboard KPI core for instant cache-first paint next time.
+    if (_groups.isNotEmpty) {
+      ResponseCacheService.instance.write(dashKey, {
+        'groups': _groups.map((g) => g.toJson()).toList(),
+        'meals': _todayMeals.map((m) => m.toJson()).toList(),
+        'activity': _recentActivity.map((a) => a.toJson()).toList(),
+        'present': _presentToday,
+        'absent': _absentToday,
+        'total': _todayTotal,
+        'presentByGroup': _presentByGroup,
+        'absentByGroup': _absentByGroup,
+        'totalByGroup': _totalByGroup,
+        'selectedGroupId': _selectedGroupId,
+      });
+    }
+
     _isLoading = false;
+    _isFetching = false;
     notifyListeners();
   }
 
@@ -367,6 +426,16 @@ class AdminDashboardProvider extends ChangeNotifier {
     return DateTime(now.year, now.month, now.day);
   }
 
+  /// Restores an int-valued map from cached JSON (best-effort).
+  void _restoreIntMap(Map<String, int> target, dynamic src) {
+    target.clear();
+    if (src is Map) {
+      src.forEach((k, v) {
+        if (k is String && v is num) target[k] = v.toInt();
+      });
+    }
+  }
+
   // ── B10 realtime binding ───────────────────────────────────────────────────
 
   /// Connects, joins every loaded group room (admins bypass membership
@@ -388,7 +457,7 @@ class AdminDashboardProvider extends ChangeNotifier {
     _rtDebounce = Timer(const Duration(milliseconds: 800), () {
       final adminId = _rtAdminId;
       final orgId = _rtOrgId;
-      if (adminId != null && orgId != null && !_isLoading) {
+      if (adminId != null && orgId != null && !_isFetching) {
         load(
           adminId: adminId,
           organizationId: orgId,

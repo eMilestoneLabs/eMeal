@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:smart_meal_management/data/repositories/attendance_repository.dart';
 import 'package:smart_meal_management/shared/models/attendance_model.dart';
 import 'package:smart_meal_management/shared/models/result.dart';
+import 'package:smart_meal_management/data/services/response_cache_service.dart';
 
 /// Student attendance state manager with optimistic update + rollback.
 class StudentAttendanceProvider extends ChangeNotifier {
@@ -46,7 +47,24 @@ class StudentAttendanceProvider extends ChangeNotifier {
     required String groupId,
     required String organizationId,
   }) async {
-    _isLoading = true;
+    // Cache-first (stale-while-revalidate): paint last-known today-records
+    // instantly, then refresh below. Best-effort; the fetch always wins.
+    final cacheKey = _attendanceCacheKey(organizationId, groupId, userId);
+    if (_records.isEmpty) {
+      final cached = await ResponseCacheService.instance
+          .read(cacheKey, maxAge: const Duration(hours: 12));
+      if (cached is List) {
+        try {
+          _records = cached
+              .whereType<Map<String, dynamic>>()
+              .map(AttendanceModel.fromJson)
+              .toList();
+        } catch (_) {
+          _records = [];
+        }
+      }
+    }
+    _isLoading = _records.isEmpty;
     _error = null;
     notifyListeners();
 
@@ -59,12 +77,20 @@ class StudentAttendanceProvider extends ChangeNotifier {
     switch (result) {
       case Ok(:final value):
         _records = value;
+        ResponseCacheService.instance
+            .write(cacheKey, value.map((r) => r.toJson()).toList());
       case Err(:final failure):
         _error = failure.message;
     }
 
     _isLoading = false;
     notifyListeners();
+  }
+
+  /// Per-user, per-day cache key for today's attendance records.
+  String _attendanceCacheKey(String orgId, String groupId, String userId) {
+    final d = DateTime.now();
+    return 'attendance_today:$orgId:$groupId:$userId:${d.year}-${d.month}-${d.day}';
   }
 
   // ── Mark attendance with optimistic update ─────────────────────────────────

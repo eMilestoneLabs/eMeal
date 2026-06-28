@@ -153,6 +153,7 @@ class _MealChip extends StatelessWidget {
                 width: 36,
                 height: 36,
                 cacheWidth: 72,
+                useThumbnail: true,
                 placeholder: Container(
                   width: 36,
                   height: 36,
