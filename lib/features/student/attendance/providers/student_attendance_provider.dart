@@ -51,18 +51,8 @@ class StudentAttendanceProvider extends ChangeNotifier {
     // instantly, then refresh below. Best-effort; the fetch always wins.
     final cacheKey = _attendanceCacheKey(organizationId, groupId, userId);
     if (_records.isEmpty) {
-      final cached = await ResponseCacheService.instance
-          .read(cacheKey, maxAge: const Duration(hours: 12));
-      if (cached is List) {
-        try {
-          _records = cached
-              .whereType<Map<String, dynamic>>()
-              .map(AttendanceModel.fromJson)
-              .toList();
-        } catch (_) {
-          _records = [];
-        }
-      }
+      _records = await ResponseCacheService.instance.readList(
+          cacheKey, AttendanceModel.fromJson, maxAge: const Duration(hours: 12));
     }
     _isLoading = _records.isEmpty;
     _error = null;
@@ -78,7 +68,7 @@ class StudentAttendanceProvider extends ChangeNotifier {
       case Ok(:final value):
         _records = value;
         ResponseCacheService.instance
-            .write(cacheKey, value.map((r) => r.toJson()).toList());
+            .writeList(cacheKey, value, (r) => r.toJson());
       case Err(:final failure):
         _error = failure.message;
     }

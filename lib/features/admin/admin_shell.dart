@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:smart_meal_management/app/router/route_names.dart';
+import 'package:smart_meal_management/data/services/cache_warmer.dart';
+import 'package:smart_meal_management/features/auth/providers/auth_provider.dart';
 import 'package:smart_meal_management/shared/widgets/app_bottom_nav_bar.dart';
 
 /// Persistent shell for admin/manager roles.
@@ -99,6 +101,13 @@ class _AdminShellState extends State<AdminShell> {
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
+    // Warm the non-landing tabs' caches once per account (self-guarded), so the
+    // first open of Groups/Meals/Attendance is an instant cache hit instead of
+    // a cold network fetch. Fire-and-forget; never blocks the UI.
+    final user = AuthProviderScope.of(context).currentUser;
+    if (user != null) {
+      CacheWarmer.instance.warmAdmin(user);
+    }
     final location = GoRouterState.of(context).uri.toString();
     final derived = _indexFromLocation(location);
     if (derived != _currentIndex) {

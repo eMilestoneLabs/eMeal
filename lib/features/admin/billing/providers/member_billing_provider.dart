@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:smart_meal_management/data/repositories/attendance_repository.dart';
 import 'package:smart_meal_management/data/repositories/group_repository.dart';
+import 'package:smart_meal_management/data/services/response_cache_service.dart';
 import 'package:smart_meal_management/shared/models/billing_series.dart';
 import 'package:smart_meal_management/shared/models/billing_summary.dart';
 import 'package:smart_meal_management/shared/models/group_model.dart';
@@ -107,16 +108,38 @@ class MemberBillingProvider extends ChangeNotifier {
 
   Future<void> init(UserModel user) async {
     _organizationId = user.organizationId;
+
+    // Cache-first for the GROUP SELECTOR only: paint the dropdown instantly from
+    // the shared org-groups cache (the same key admin Groups/Meals populate — so
+    // this also de-duplicates that list across tabs). The financial numbers
+    // below (getBillingSummaryV2 / series) are intentionally NEVER cached — they
+    // are always fetched live so billing figures are never stale.
+    final cachedGroups = await ResponseCacheService.instance.readList(
+        _orgGroupsCacheKey, GroupModel.fromJson,
+        maxAge: const Duration(hours: 12));
+    if (cachedGroups.isNotEmpty) {
+      groups = cachedGroups;
+      groupId = groups.first.id;
+      loadingGroups = false;
+      notifyListeners();
+    }
+
     final res =
         await _groupRepo.getOrganisationGroups(organizationId: _organizationId);
     loadingGroups = false;
     if (res case Ok(:final value)) {
       groups = value.data;
-      groupId = groups.isNotEmpty ? groups.first.id : null;
+      groupId ??= groups.isNotEmpty ? groups.first.id : null;
+      ResponseCacheService.instance
+          .writeList(_orgGroupsCacheKey, value.data, (g) => g.toJson());
     }
     notifyListeners();
     if (groupId != null) await compute();
   }
+
+  /// Shared org-groups cache key (same one admin Groups/Meals use), so the
+  /// group selector is warm regardless of which admin tab was opened first.
+  String get _orgGroupsCacheKey => 'admin_groups:$_organizationId';
 
   void selectGroup(String? id) {
     if (id == null || id == groupId) return;

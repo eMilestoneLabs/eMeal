@@ -5,6 +5,7 @@ import 'package:smart_meal_management/data/repositories/meal_repository.dart';
 import 'package:smart_meal_management/shared/models/group_model.dart';
 import 'package:smart_meal_management/shared/models/meal_model.dart';
 import 'package:smart_meal_management/shared/models/result.dart';
+import 'package:smart_meal_management/data/services/response_cache_service.dart';
 import 'package:smart_meal_management/shared/models/user_model.dart';
 
 /// State manager for admin group management.
@@ -57,7 +58,13 @@ class AdminGroupProvider extends ChangeNotifier {
 
   Future<void> loadGroups({required String organizationId}) async {
     if (_isLoading) return;
-    _isLoading = true;
+    // Cache-first: paint last-known groups instantly, then refresh.
+    final cacheKey = 'admin_groups:$organizationId';
+    if (_groups.isEmpty) {
+      _groups = await ResponseCacheService.instance.readList(
+          cacheKey, GroupModel.fromJson, maxAge: const Duration(hours: 12));
+    }
+    _isLoading = _groups.isEmpty;
     _error = null;
     notifyListeners();
 
@@ -68,6 +75,8 @@ class AdminGroupProvider extends ChangeNotifier {
     switch (result) {
       case Ok(:final value):
         _groups = value.data;
+        ResponseCacheService.instance
+            .writeList(cacheKey, value.data, (g) => g.toJson());
       case Err(:final failure):
         _error = failure.message;
     }
@@ -149,11 +158,30 @@ class AdminGroupProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Per-org, per-group cache key for the member directory.
+  String _membersCacheKey(String orgId, String groupId) =>
+      'group_members:$orgId:$groupId';
+
+  /// Write-through: persist the current member list so the next open of this
+  /// group's directory paints instantly. Called after load AND every member
+  /// mutation, so the cache never lags what the admin just changed.
+  void _cacheMembers(String orgId, String groupId) {
+    ResponseCacheService.instance.writeList(
+        _membersCacheKey(orgId, groupId), _selectedGroupMembers, (m) => m.toJson());
+  }
+
   Future<void> loadGroupMembers({
     required String groupId,
     required String organizationId,
   }) async {
-    _isLoadingMembers = true;
+    // Cache-first (SWR): paint the last-known member directory instantly, then
+    // refresh below. The network result always overwrites.
+    if (_selectedGroupMembers.isEmpty) {
+      _selectedGroupMembers = await ResponseCacheService.instance.readList(
+          _membersCacheKey(organizationId, groupId), UserModel.fromJson,
+          maxAge: const Duration(hours: 12));
+    }
+    _isLoadingMembers = _selectedGroupMembers.isEmpty;
     notifyListeners();
 
     final result = await _groupRepo.getGroupMembers(
@@ -164,6 +192,7 @@ class AdminGroupProvider extends ChangeNotifier {
     switch (result) {
       case Ok(:final value):
         _selectedGroupMembers = value.data;
+        _cacheMembers(organizationId, groupId);
       case Err(:final failure):
         _error = failure.message;
     }
@@ -300,6 +329,7 @@ class AdminGroupProvider extends ChangeNotifier {
         // Remove from members list
         _selectedGroupMembers =
             _selectedGroupMembers.where((m) => m.id != userId).toList();
+        _cacheMembers(organizationId, groupId); // write-through: no stale list
         notifyListeners();
         return true;
       case Err(:final failure):
@@ -360,6 +390,7 @@ class AdminGroupProvider extends ChangeNotifier {
         // Remove from UI member list immediately
         _selectedGroupMembers =
             _selectedGroupMembers.where((m) => m.id != userId).toList();
+        _cacheMembers(orgId, groupId); // write-through: no stale list
         // Update the local _groups copy to reflect blockedMemberIds change
         final idx = _groups.indexWhere((g) => g.id == groupId);
         if (idx != -1) {

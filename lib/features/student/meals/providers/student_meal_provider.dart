@@ -68,17 +68,12 @@ class StudentMealProvider extends ChangeNotifier {
     // instantly from local storage, then refresh from the network below.
     // Only real (published) schedules are cached, mirroring the rule above.
     if (_schedule == null) {
-      final cached = await ResponseCacheService.instance
-          .read(_menuCacheKey(organizationId, groupId),
-              maxAge: const Duration(days: 7));
-      if (cached is Map<String, dynamic>) {
-        try {
-          final m = MealScheduleModel.fromJson(cached);
-          if (m.id.isNotEmpty) {
-            _schedule = m;
-            _ensureValidDay();
-          }
-        } catch (_) {/* ignore corrupt cache */}
+      final m = await ResponseCacheService.instance.readObject(
+          _menuCacheKey(organizationId, groupId), MealScheduleModel.fromJson,
+          maxAge: const Duration(days: 7));
+      if (m != null && m.id.isNotEmpty) {
+        _schedule = m;
+        _ensureValidDay();
       }
     }
 

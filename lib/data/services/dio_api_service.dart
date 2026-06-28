@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:dio/dio.dart';
+import 'package:dio_http2_adapter/dio_http2_adapter.dart';
 import 'package:flutter/foundation.dart';
 import 'package:smart_meal_management/core/config/env_config.dart';
 import 'package:smart_meal_management/core/errors/failure.dart';
@@ -75,11 +76,16 @@ class DioApiService {
   /// previously surfaced as "random" Authentication-required failures.
   Future<String?>? _refreshFuture;
 
+  /// In-flight GET requests, keyed by method+path+query, for request
+  /// deduplication. Entries are removed as soon as each call settles, so the
+  /// map only ever holds genuinely concurrent reads (no growth, no leak).
+  final Map<String, Future<Response<dynamic>>> _inflightGets = {};
+
   // ── Dio factory ───────────────────────────────────────────────────────────
 
   static Dio _buildDio() {
     final env = EnvConfig.current;
-    return Dio(
+    final dio = Dio(
       BaseOptions(
         baseUrl: env.apiV1,
         connectTimeout: env.connectTimeout,
@@ -92,6 +98,25 @@ class DioApiService {
             status != null && status >= 200 && status < 300,
       ),
     );
+
+    // HTTP/2 transport (HTTPS only): multiplexes the parallel calls a dashboard
+    // fires over a single TLS connection, cutting cold-load latency on a
+    // high-RTT link. Safe by construction:
+    //   • Gated on [EnvConfig.useHttp2] (master flag + https check) so local
+    //     http:// dev and any future kill-switch keep the default adapter.
+    //   • [Http2Adapter] auto-falls back to HTTP/1.1 (its default
+    //     `fallbackAdapter` = IOHttpClientAdapter) per-connection if the
+    //     server/proxy does not negotiate h2 via ALPN — so this can never hard
+    //     break requests.
+    //   • Idle connections are kept warm for [EnvConfig.http2IdleTimeout] to
+    //     avoid a fresh handshake on the next burst, then released (no leak).
+    if (env.useHttp2) {
+      dio.httpClientAdapter = Http2Adapter(
+        ConnectionManager(idleTimeout: env.http2IdleTimeout),
+      );
+    }
+
+    return dio;
   }
 
   // ── Public API ────────────────────────────────────────────────────────────
@@ -180,9 +205,10 @@ class DioApiService {
         },
       );
 
-      final response = await _dio.request<T>(
-        path,
-        data: body,
+      final response = await _send(
+        path: path,
+        method: method,
+        body: body,
         queryParameters: queryParameters,
         options: options,
       );
@@ -197,6 +223,99 @@ class DioApiService {
     } catch (e) {
       return Err(UnexpectedFailure(message: e.toString(), cause: e));
     }
+  }
+
+  /// Dispatches the network call. **Idempotent GETs** get two production-grade
+  /// enhancements (both configurable, both no-ops when disabled):
+  ///   • **Request deduplication** — concurrent identical GETs share one
+  ///     in-flight call, so the prefetch-then-navigate race (and any double
+  ///     screen-load) never double-hits the backend.
+  ///   • **Transient-retry with exponential backoff** — a timeout / 5xx /
+  ///     connection error is retried up to [EnvConfig.maxRequestRetries] times.
+  /// Mutations (POST/PUT/PATCH/DELETE) are **never** deduped or auto-retried, so
+  /// no write is ever duplicated (idempotency preserved). The existing 401
+  /// token-refresh retry happens inside Dio and is unaffected.
+  Future<Response<dynamic>> _send({
+    required String path,
+    required String method,
+    Object? body,
+    Map<String, dynamic>? queryParameters,
+    required Options options,
+  }) {
+    if (method != 'GET') {
+      return _dio.request<dynamic>(
+        path,
+        data: body,
+        queryParameters: queryParameters,
+        options: options,
+      );
+    }
+
+    final env = EnvConfig.current;
+    if (!env.enableRequestDedup) {
+      return _getWithRetry(path, queryParameters, options, env);
+    }
+
+    // Coalesce concurrent identical GETs.
+    final key = _getKey(path, queryParameters);
+    final existing = _inflightGets[key];
+    if (existing != null) return existing;
+
+    final future = _getWithRetry(path, queryParameters, options, env);
+    _inflightGets[key] = future;
+    // Remove the entry once settled (success OR failure) so the map never grows.
+    return future.whenComplete(() => _inflightGets.remove(key));
+  }
+
+  /// Runs a GET, retrying only **transient** failures with exponential backoff
+  /// (`delay = base × 2^attempt`). Never retries validation/auth/4xx errors.
+  Future<Response<dynamic>> _getWithRetry(
+    String path,
+    Map<String, dynamic>? queryParameters,
+    Options options,
+    EnvConfig env,
+  ) async {
+    var attempt = 0;
+    while (true) {
+      try {
+        return await _dio.request<dynamic>(
+          path,
+          queryParameters: queryParameters,
+          options: options,
+        );
+      } on DioException catch (e) {
+        if (attempt >= env.maxRequestRetries || !_isTransient(e)) rethrow;
+        final delayMs = env.retryBaseDelayMs * (1 << attempt);
+        await Future<void>.delayed(Duration(milliseconds: delayMs));
+        attempt++;
+      }
+    }
+  }
+
+  /// Transient = worth retrying: network timeouts, connection errors, and 5xx.
+  /// Validation (4xx), auth (401/403), and cancellations are NEVER retried.
+  bool _isTransient(DioException e) {
+    switch (e.type) {
+      case DioExceptionType.connectionTimeout:
+      case DioExceptionType.receiveTimeout:
+      case DioExceptionType.sendTimeout:
+      case DioExceptionType.connectionError:
+        return true;
+      case DioExceptionType.badResponse:
+        return (e.response?.statusCode ?? 0) >= 500;
+      default:
+        return false;
+    }
+  }
+
+  /// Stable dedup key for a GET (path + sorted query params).
+  String _getKey(String path, Map<String, dynamic>? queryParameters) {
+    if (queryParameters == null || queryParameters.isEmpty) return 'GET $path';
+    final parts = queryParameters.entries
+        .map((e) => '${e.key}=${e.value}')
+        .toList()
+      ..sort();
+    return 'GET $path?${parts.join('&')}';
   }
 
   // ── Token refresh ─────────────────────────────────────────────────────────

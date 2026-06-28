@@ -6,6 +6,7 @@ import 'package:smart_meal_management/core/theme/app_colors.dart';
 import 'package:smart_meal_management/core/theme/app_typography.dart';
 import 'package:smart_meal_management/data/repositories/notice_repository.dart';
 import 'package:smart_meal_management/data/services/realtime_service.dart';
+import 'package:smart_meal_management/data/services/response_cache_service.dart';
 import 'package:smart_meal_management/features/notices/screens/notice_composer_screen.dart';
 import 'package:smart_meal_management/shared/models/notice_model.dart';
 import 'package:smart_meal_management/shared/models/result.dart';
@@ -56,7 +57,22 @@ class _NoticeFeedScreenState extends State<NoticeFeedScreen> {
     super.dispose();
   }
 
+  /// Per-org, per-group cache key for the notice feed (null group = org-wide).
+  String get _cacheKey =>
+      'notices:${widget.organizationId}:${widget.groupId ?? 'org'}';
+
   Future<void> _load() async {
+    // Cache-first (SWR): paint the last-known feed instantly, then refresh.
+    if (_notices.isEmpty) {
+      final cached = await ResponseCacheService.instance.readList(
+          _cacheKey, NoticeModel.fromJson, maxAge: const Duration(hours: 12));
+      if (cached.isNotEmpty && mounted) {
+        setState(() {
+          _notices = cached;
+          _unavailable = false;
+        });
+      }
+    }
     if (mounted) setState(() => _loading = _notices.isEmpty);
     final res = await _repo.getNotices(
       organizationId: widget.organizationId,
@@ -73,6 +89,10 @@ class _NoticeFeedScreenState extends State<NoticeFeedScreen> {
           _error = null;
           _unavailable = false;
         });
+        // Write-through so the next open is instant. Only successful results
+        // are cached, so an undeployed backend never poisons the cache.
+        ResponseCacheService.instance
+            .writeList(_cacheKey, value.data, (n) => n.toJson());
       case Err():
         // Notice Board is future work — degrade gracefully (no error page).
         setState(() {

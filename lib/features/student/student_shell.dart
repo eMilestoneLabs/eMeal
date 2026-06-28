@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:smart_meal_management/app/router/route_names.dart';
+import 'package:smart_meal_management/data/services/cache_warmer.dart';
 import 'package:smart_meal_management/features/auth/providers/auth_provider.dart';
 import 'package:smart_meal_management/features/student/dashboard/providers/student_dashboard_provider.dart';
 import 'package:smart_meal_management/features/student/providers/group_config_provider.dart';
@@ -183,7 +184,14 @@ class _StudentShellState extends State<StudentShell> {
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    final user = AuthProviderScope.of(context).currentUser;
+    final auth = AuthProviderScope.of(context);
+    final user = auth.currentUser;
+    // Warm the non-landing tabs' caches once per account (self-guarded), so the
+    // first open of Attendance/Profile/Groups is an instant cache hit instead
+    // of a cold network fetch. Fire-and-forget; never blocks the UI.
+    if (user != null) {
+      CacheWarmer.instance.warmStudent(user, auth: auth);
+    }
     final hasGroup = user?.effectiveGroupIds.isNotEmpty ?? false;
     final routes = _buildRoutes(hasGroup);
     final location = GoRouterState.of(context).uri.toString();

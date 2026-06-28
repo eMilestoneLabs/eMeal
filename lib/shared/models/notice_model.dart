@@ -74,6 +74,26 @@ class NoticeModel {
         updatedAt: _parse(j['updatedAt']),
       );
 
+  /// Serializes back to the backend/JSON shape so the feed can be cached
+  /// locally (round-trips exactly through [NoticeModel.fromJson]).
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'organizationId': organizationId,
+        'groupId': groupId,
+        'createdBy': createdBy,
+        'title': title,
+        'body': body,
+        'priority': priority,
+        'pinned': pinned,
+        'isActive': isActive,
+        'isRead': isRead,
+        'readCount': readCount,
+        'publishedAt': publishedAt.toUtc().toIso8601String(),
+        'expiresAt': expiresAt?.toUtc().toIso8601String(),
+        'createdAt': createdAt.toUtc().toIso8601String(),
+        'updatedAt': updatedAt.toUtc().toIso8601String(),
+      };
+
   NoticeModel copyWith({bool? isRead}) => NoticeModel(
         id: id,
         organizationId: organizationId,

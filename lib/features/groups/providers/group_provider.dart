@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:smart_meal_management/data/repositories/group_repository.dart';
 import 'package:smart_meal_management/shared/models/group_model.dart';
 import 'package:smart_meal_management/shared/models/result.dart';
+import 'package:smart_meal_management/data/services/response_cache_service.dart';
 
 /// Drives the student-side group join flow and group listing.
 ///
@@ -43,7 +44,13 @@ class GroupProvider extends ChangeNotifier {
     if (_isLoading) return;
     if (!forceRefresh && _myGroups.isNotEmpty) return;
 
-    _isLoading = true;
+    // Cache-first (modular helper): paint last-known groups instantly.
+    final cacheKey = 'my_groups:$organizationId:$userId';
+    if (_myGroups.isEmpty) {
+      _myGroups = await ResponseCacheService.instance.readList(
+          cacheKey, GroupModel.fromJson, maxAge: const Duration(hours: 12));
+    }
+    _isLoading = _myGroups.isEmpty;
     _error = null;
     notifyListeners();
 
@@ -56,6 +63,8 @@ class GroupProvider extends ChangeNotifier {
       case Ok(:final value):
         _myGroups = value;
         _error = null;
+        ResponseCacheService.instance
+            .writeList(cacheKey, value, (g) => g.toJson());
       case Err(:final failure):
         _error = failure.message;
     }

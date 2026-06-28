@@ -10,6 +10,7 @@ import 'package:smart_meal_management/shared/models/group_model.dart';
 import 'package:smart_meal_management/shared/models/meal_model.dart';
 import 'package:smart_meal_management/shared/models/meal_schedule_model.dart';
 import 'package:smart_meal_management/shared/models/result.dart';
+import 'package:smart_meal_management/data/services/response_cache_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 /// Default preference tags used when enabling preferences globally.
@@ -73,7 +74,13 @@ class MealConfigProvider extends ChangeNotifier {
 
   Future<void> loadGroups({required String organizationId}) async {
     if (_isLoading) return;
-    _isLoading = true;
+    // Cache-first: paint last-known groups instantly, then refresh.
+    final cacheKey = 'meal_config_groups:$organizationId';
+    if (_groups.isEmpty) {
+      _groups = await ResponseCacheService.instance.readList(
+          cacheKey, GroupModel.fromJson, maxAge: const Duration(hours: 12));
+    }
+    _isLoading = _groups.isEmpty;
     _error = null;
     notifyListeners();
 
@@ -84,6 +91,8 @@ class MealConfigProvider extends ChangeNotifier {
     switch (result) {
       case Ok(:final value):
         _groups = value.data;
+        ResponseCacheService.instance
+            .writeList(cacheKey, value.data, (g) => g.toJson());
         if (_selectedGroup == null && _groups.isNotEmpty) {
           await _loadForGroup(_groups.first, organizationId: organizationId);
         }
@@ -126,10 +135,31 @@ class MealConfigProvider extends ChangeNotifier {
     await _loadRecurringFlag(group.id);
   }
 
+  /// Per-org, per-group cache key for the configured meals list.
+  String _mealsCacheKey(String orgId, String groupId) =>
+      'meal_config_meals:$orgId:$groupId';
+
+  /// Write-through: persist the current [_meals] so the next open of this group
+  /// paints instantly. Called after load AND every mutation, so the cache never
+  /// goes stale relative to what the admin just changed.
+  void _cacheMeals(String orgId, String groupId) {
+    ResponseCacheService.instance
+        .writeList(_mealsCacheKey(orgId, groupId), _meals, (m) => m.toJson());
+  }
+
   Future<void> _loadMeals({
     required String organizationId,
     required String groupId,
   }) async {
+    // Cache-first (SWR): paint the last-known meals for this group instantly,
+    // then refresh below. The network result always overwrites.
+    if (_meals.isEmpty) {
+      _meals = await ResponseCacheService.instance.readList(
+          _mealsCacheKey(organizationId, groupId), MealModel.fromJson,
+          maxAge: const Duration(hours: 12));
+      if (_meals.isNotEmpty) notifyListeners();
+    }
+
     final result = await _mealRepo.getGroupMeals(
       organizationId: organizationId,
       groupId: groupId,
@@ -140,6 +170,7 @@ class MealConfigProvider extends ChangeNotifier {
         // Sort by admin-set order for consistent display
         _meals = List.of(value)
           ..sort((a, b) => a.order.compareTo(b.order));
+        _cacheMeals(organizationId, groupId);
       case Err(:final failure):
         _error = failure.message;
     }
@@ -328,6 +359,7 @@ class MealConfigProvider extends ChangeNotifier {
       case Ok(:final value):
         _meals = [..._meals, value]
           ..sort((a, b) => a.order.compareTo(b.order));
+        _cacheMeals(organizationId, groupId);
         _isSaving = false;
         notifyListeners();
         return value;
@@ -387,6 +419,7 @@ class MealConfigProvider extends ChangeNotifier {
         if (idx != -1) {
           _meals = List.of(_meals)..[idx] = value;
         }
+        _cacheMeals(organizationId, groupId);
         _isSaving = false;
         notifyListeners();
         return true;
@@ -412,6 +445,7 @@ class MealConfigProvider extends ChangeNotifier {
     switch (result) {
       case Ok():
         _meals = _meals.where((m) => m.id != mealId).toList();
+        _cacheMeals(organizationId, groupId);
         notifyListeners();
         return true;
       case Err(:final failure):

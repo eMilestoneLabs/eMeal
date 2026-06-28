@@ -67,6 +67,52 @@ class ResponseCacheService {
     }
   }
 
+  // ── Modular cache-first helpers ─────────────────────────────────────────────
+  // Encapsulate the read→parse and serialize→write boilerplate so providers
+  // stay DRY. All are atomic + best-effort (never throw, never partial).
+
+  /// Reads a cached JSON list and maps each element via [fromJson].
+  /// Returns `[]` on miss / corrupt / expired.
+  Future<List<T>> readList<T>(
+    String key,
+    T Function(Map<String, dynamic>) fromJson, {
+    Duration? maxAge,
+  }) async {
+    final cached = await read(key, maxAge: maxAge);
+    if (cached is List) {
+      try {
+        return cached
+            .whereType<Map<String, dynamic>>()
+            .map(fromJson)
+            .toList();
+      } catch (_) {/* corrupt cache → ignore */}
+    }
+    return <T>[];
+  }
+
+  /// Writes a list of models as JSON (each via [toJson]). Fire-and-forget.
+  Future<void> writeList<T>(
+    String key,
+    List<T> items,
+    Map<String, dynamic> Function(T) toJson,
+  ) =>
+      write(key, items.map(toJson).toList());
+
+  /// Reads + maps a single cached object via [fromJson]. Null on miss/corrupt.
+  Future<T?> readObject<T>(
+    String key,
+    T Function(Map<String, dynamic>) fromJson, {
+    Duration? maxAge,
+  }) async {
+    final cached = await read(key, maxAge: maxAge);
+    if (cached is Map<String, dynamic>) {
+      try {
+        return fromJson(cached);
+      } catch (_) {/* corrupt cache → ignore */}
+    }
+    return null;
+  }
+
   /// Removes a single cached entry.
   Future<void> remove(String key) async {
     try {

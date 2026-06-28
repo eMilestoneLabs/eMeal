@@ -59,15 +59,9 @@ class StudentProfileProvider extends ChangeNotifier {
     // Cache-first (stale-while-revalidate): show the last-known 30-day summary
     // instantly, then refresh below. Best-effort; the fetch always wins.
     final cacheKey = 'profile_summary:$orgId:$groupId:${u.id}';
-    if (_summary == null) {
-      final cached = await ResponseCacheService.instance
-          .read(cacheKey, maxAge: const Duration(hours: 12));
-      if (cached is Map<String, dynamic>) {
-        try {
-          _summary = AttendanceSummary.fromJson(cached);
-        } catch (_) {/* ignore corrupt cache */}
-      }
-    }
+    _summary ??= await ResponseCacheService.instance.readObject(
+        cacheKey, AttendanceSummary.fromJson,
+        maxAge: const Duration(hours: 12));
     _isLoadingSummary = _summary == null;
     notifyListeners();
 

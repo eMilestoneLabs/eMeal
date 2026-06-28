@@ -26,6 +26,10 @@ dependencies:
 
   # Networking
   dio: ^5.7.0
+  # HTTP/2 transport for Dio — multiplexes parallel requests over one TLS
+  # connection (cuts cold-load latency on high-RTT links). Used only for HTTPS
+  # environments, behind the EnvConfig.enableHttp2 flag. BSD-licensed.
+  dio_http2_adapter: ^2.5.1
 
   # Realtime — Socket.IO client for the B7 gateway (live dashboards)
   socket_io_client: ^2.0.3+1

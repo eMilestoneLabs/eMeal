@@ -3,6 +3,7 @@ import 'package:smart_meal_management/data/repositories/attendance_repository.da
 import 'package:smart_meal_management/data/repositories/group_repository.dart';
 import 'package:smart_meal_management/shared/models/attendance_model.dart';
 import 'package:smart_meal_management/shared/models/result.dart';
+import 'package:smart_meal_management/data/services/response_cache_service.dart';
 
 /// State manager for admin attendance management screen.
 ///
@@ -58,7 +59,14 @@ class AdminAttendanceProvider extends ChangeNotifier {
     required String groupId,
     required String organizationId,
   }) async {
-    _isLoading = true;
+    // Cache-first: paint last-known records instantly, then refresh.
+    final cacheKey =
+        'admin_attendance:$organizationId:$groupId:${_selectedDate.year}-${_selectedDate.month}-${_selectedDate.day}';
+    if (_records.isEmpty) {
+      _records = await ResponseCacheService.instance.readList(
+          cacheKey, AttendanceModel.fromJson, maxAge: const Duration(hours: 12));
+    }
+    _isLoading = _records.isEmpty;
     _error = null;
     notifyListeners();
 
@@ -71,6 +79,8 @@ class AdminAttendanceProvider extends ChangeNotifier {
     switch (result) {
       case Ok(:final value):
         _records = value;
+        ResponseCacheService.instance
+            .writeList(cacheKey, value, (r) => r.toJson());
       case Err(:final failure):
         _error = failure.message;
     }
