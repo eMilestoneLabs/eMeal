@@ -61,6 +61,7 @@ class AdminGroupProvider extends ChangeNotifier {
     // Cache-first: paint last-known groups instantly, then refresh.
     final cacheKey = 'admin_groups:$organizationId';
     if (_groups.isEmpty) {
+      _isLoading = true; // sync: first build shows the loader, never empty state
       _groups = await ResponseCacheService.instance.readList(
           cacheKey, GroupModel.fromJson, maxAge: const Duration(hours: 12));
     }
@@ -177,6 +178,7 @@ class AdminGroupProvider extends ChangeNotifier {
     // Cache-first (SWR): paint the last-known member directory instantly, then
     // refresh below. The network result always overwrites.
     if (_selectedGroupMembers.isEmpty) {
+      _isLoadingMembers = true; // sync: loader, never an empty members flash
       _selectedGroupMembers = await ResponseCacheService.instance.readList(
           _membersCacheKey(organizationId, groupId), UserModel.fromJson,
           maxAge: const Duration(hours: 12));

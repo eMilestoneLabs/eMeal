@@ -14,6 +14,7 @@ import 'package:smart_meal_management/features/admin/attendance/widgets/member_a
 import 'package:smart_meal_management/shared/models/attendance_model.dart';
 import 'package:smart_meal_management/shared/models/group_model.dart';
 import 'package:smart_meal_management/shared/models/result.dart';
+import 'package:smart_meal_management/data/services/response_cache_service.dart';
 import 'package:smart_meal_management/shared/widgets/app_empty_state.dart';
 import 'package:smart_meal_management/shared/widgets/app_loading_indicator.dart';
 import 'package:smart_meal_management/features/auth/providers/auth_provider.dart';
@@ -54,7 +55,6 @@ class _AdminAttendanceScreenState extends State<AdminAttendanceScreen> {
   }
 
   Future<void> _loadGroups() async {
-    setState(() => _loadingGroups = true);
     final auth = AuthProviderScope.of(context);
     final user = auth.currentUser;
     if (user == null) {
@@ -62,6 +62,31 @@ class _AdminAttendanceScreenState extends State<AdminAttendanceScreen> {
       return;
     }
     final orgId = user.organizationId;
+
+    String? resolveSelected(List<GroupModel> groups) {
+      final userGroupId = auth.currentUser?.effectiveGroupIds.firstOrNull;
+      final match = groups.any((g) => g.id == userGroupId);
+      return match ? userGroupId : (groups.isNotEmpty ? groups.first.id : null);
+    }
+
+    // Cache-first: paint the group selector + start attendance from the
+    // last-known groups instantly (shared 'admin_groups:$org' cache), so
+    // returning to this tab never blocks on a fresh groups round-trip first.
+    if (_groups.isEmpty) {
+      final cached = await ResponseCacheService.instance.readList(
+          'admin_groups:$orgId', GroupModel.fromJson,
+          maxAge: const Duration(hours: 12));
+      if (!mounted) return;
+      if (cached.isNotEmpty) {
+        setState(() {
+          _groups = cached;
+          _selectedGroupId = resolveSelected(cached);
+        });
+        if (_selectedGroupId != null) await _loadAttendance(orgId);
+      } else {
+        setState(() => _loadingGroups = true);
+      }
+    }
 
     final result = await _groupRepo.getOrganisationGroups(
       organizationId: orgId,
@@ -72,19 +97,17 @@ class _AdminAttendanceScreenState extends State<AdminAttendanceScreen> {
     switch (result) {
       case Ok(:final value):
         final groups = value.data;
+        ResponseCacheService.instance
+            .writeList('admin_groups:$orgId', groups, (g) => g.toJson());
+        final prevSel = _selectedGroupId;
         setState(() {
           _groups = groups;
           _loadingGroups = false;
-          // Default to the user's first effective group, falling back to the
-          // first group in the list. Uses effectiveGroupIds.firstOrNull for
-          // multi-group correctness (consistent with all other screens).
-          final userGroupId = auth.currentUser?.effectiveGroupIds.firstOrNull;
-          final match = groups.any((g) => g.id == userGroupId);
-          _selectedGroupId = match
-              ? userGroupId
-              : (groups.isNotEmpty ? groups.first.id : null);
+          _selectedGroupId = resolveSelected(groups);
         });
-        if (_selectedGroupId != null) {
+        // Only (re)load attendance here if the cache path hadn't already, or the
+        // resolved group changed — avoids a duplicate attendance fetch warm.
+        if (_selectedGroupId != null && _selectedGroupId != prevSel) {
           await _loadAttendance(orgId);
         }
       case Err():

@@ -47,6 +47,7 @@ class GroupProvider extends ChangeNotifier {
     // Cache-first (modular helper): paint last-known groups instantly.
     final cacheKey = 'my_groups:$organizationId:$userId';
     if (_myGroups.isEmpty) {
+      _isLoading = true; // sync: first build shows the loader, never empty state
       _myGroups = await ResponseCacheService.instance.readList(
           cacheKey, GroupModel.fromJson, maxAge: const Duration(hours: 12));
     }

@@ -3,6 +3,8 @@ import 'package:go_router/go_router.dart';
 import 'package:smart_meal_management/app/router/route_names.dart';
 import 'package:smart_meal_management/core/theme/app_colors.dart';
 import 'package:smart_meal_management/core/theme/app_typography.dart';
+import 'package:smart_meal_management/features/auth/models/auth_state.dart';
+import 'package:smart_meal_management/features/auth/providers/auth_provider.dart';
 
 // ── SplashScreen ───────────────────────────────────────────────────────────────
 
@@ -46,6 +48,7 @@ class _SplashScreenState extends State<SplashScreen>
   late final Animation<double> _dotsFade;
 
   bool _navigated = false;
+  bool _introDone = false;
 
   @override
   void initState() {
@@ -123,14 +126,34 @@ class _SplashScreenState extends State<SplashScreen>
     _dotsCtrl.forward();
     await Future<void>.delayed(const Duration(milliseconds: 900));
 
-    // Navigate
+    // Intro finished. Navigate now if the session has resolved; otherwise wait
+    // — didChangeDependencies retries the moment auth state arrives.
+    _introDone = true;
     _navigate();
   }
 
   void _navigate() {
     if (_navigated || !mounted) return;
+    final auth = AuthProviderScope.of(context);
+    // Wait until the persisted session resolves. While AuthUnknown the router
+    // keeps us on splash; navigating now would flash the role-select screen for
+    // a logged-in user before their dashboard loads (cold-boot regression).
+    if (auth.state is AuthUnknown) return;
+    // Authenticated users are routed to their dashboard by the router's redirect
+    // (splash is an auth route) — never bounce them through role-select.
+    if (auth.isAuthenticated) return;
     _navigated = true;
     context.go(RouteNames.roleSelect);
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // AuthProviderScope is an InheritedNotifier, so this re-runs when the
+    // session resolves (AuthUnknown -> authenticated/unauthenticated). Re-decide
+    // the post-intro navigation once the real auth state is known.
+    AuthProviderScope.of(context);
+    if (_introDone) _navigate();
   }
 
   @override

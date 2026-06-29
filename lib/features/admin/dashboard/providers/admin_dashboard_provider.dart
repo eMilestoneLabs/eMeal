@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/widgets.dart' show BuildContext, InheritedNotifier;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:smart_meal_management/data/repositories/attendance_repository.dart';
 import 'package:smart_meal_management/data/repositories/group_repository.dart';
@@ -477,4 +478,29 @@ class AdminDashboardProvider extends ChangeNotifier {
     }
     super.dispose();
   }
+}
+
+// ── AdminDashboardScope ─────────────────────────────────────────────────────
+
+/// Provides a shell-level [AdminDashboardProvider] to the admin subtree so all
+/// admin tabs share ONE instance. Created once in [AdminShell]; its in-memory
+/// state (incl. the non-cacheable meal-wise summaries) survives tab switches —
+/// so returning to the dashboard shows the last data instantly instead of
+/// flashing zeros (Issue 1). Mirrors `StudentDashboardScope`.
+class AdminDashboardScope extends InheritedNotifier<AdminDashboardProvider> {
+  const AdminDashboardScope({
+    super.key,
+    required AdminDashboardProvider notifier,
+    required super.child,
+  }) : super(notifier: notifier);
+
+  static AdminDashboardProvider of(BuildContext context) {
+    final scope =
+        context.dependOnInheritedWidgetOfExactType<AdminDashboardScope>();
+    assert(scope != null, 'AdminDashboardScope not found in widget tree');
+    return scope!.notifier!;
+  }
+
+  @override
+  bool updateShouldNotify(AdminDashboardScope oldWidget) => true;
 }

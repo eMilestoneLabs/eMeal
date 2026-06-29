@@ -120,6 +120,32 @@ class ResponseCacheService {
     } catch (_) {/* ignore */}
   }
 
+  /// Removes expired + corrupt SWR entries. Self-heals after a bad write and
+  /// bounds the growth of date-keyed caches (e.g. per-day attendance): any entry
+  /// older than [maxAge] by its stored timestamp, or that fails to decode, is
+  /// dropped. Legacy/untimestamped entries are left untouched. Best-effort —
+  /// never throws. Call fire-and-forget at startup.
+  Future<void> prune(Duration maxAge) async {
+    try {
+      final p = await _store;
+      final now = DateTime.now().millisecondsSinceEpoch;
+      for (final k in p.getKeys().where((k) => k.startsWith(_prefix)).toList()) {
+        final raw = p.getString(k);
+        if (raw == null) continue;
+        try {
+          final decoded = jsonDecode(raw);
+          if (decoded is Map &&
+              decoded['__ts'] is int &&
+              now - (decoded['__ts'] as int) > maxAge.inMilliseconds) {
+            await p.remove(k);
+          }
+        } catch (_) {
+          await p.remove(k); // corrupt JSON -> drop it (self-heal)
+        }
+      }
+    } catch (_) {/* best-effort: pruning must never break startup */}
+  }
+
   /// Clears every SWR-cached entry — call on logout so a new account never
   /// sees a previous account's cached data.
   Future<void> clear() async {

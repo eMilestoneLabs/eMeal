@@ -33,9 +33,14 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
+    // The provider is owned by [AdminShell] via [AdminDashboardScope] so its
+    // in-memory state survives tab switches — returning to Home shows the last
+    // data instantly instead of flashing zeros (Issue 1). This screen reads it
+    // and triggers the (SWR) load: load() shows no spinner when data already
+    // exists, so a return visit silently refreshes in the background.
     if (!_initialized) {
       _initialized = true;
-      _provider = AdminDashboardProvider();
+      _provider = AdminDashboardScope.of(context);
       final auth = AuthProviderScope.of(context);
       final user = auth.currentUser;
       if (user == null) return;
@@ -47,11 +52,8 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     }
   }
 
-  @override
-  void dispose() {
-    _provider.dispose();
-    super.dispose();
-  }
+  // No dispose of _provider — it is owned by [AdminShell] (AdminDashboardScope)
+  // and lives for the whole admin session.
 
   void _refresh(AuthProvider auth) {
     final user = auth.currentUser;

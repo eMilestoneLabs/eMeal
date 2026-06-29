@@ -70,6 +70,14 @@ class AdminAttendanceProvider extends ChangeNotifier {
     _error = null;
     notifyListeners();
 
+    // Issue 4: fetch members IN PARALLEL with attendance instead of after it, so
+    // the spinner waits for one round-trip, not two. The vacation count (derived
+    // from members) lands a moment later and updates in place.
+    final membersFuture = _groupRepo.getGroupMembers(
+      organizationId: organizationId,
+      groupId: groupId,
+    );
+
     final result = await _repo.getGroupAttendance(
       groupId: groupId,
       organizationId: organizationId,
@@ -85,21 +93,21 @@ class AdminAttendanceProvider extends ChangeNotifier {
         _error = failure.message;
     }
 
+    // Records are in — drop the spinner now; the vacation count updates when its
+    // parallel fetch lands below.
+    _isLoading = false;
+    notifyListeners();
+
     // Issue 4: surface a separate "Vacation = X" count. Members on vacation are
     // tracked apart from present/absent/pending (they are not absentees).
-    final membersResult = await _groupRepo.getGroupMembers(
-      organizationId: organizationId,
-      groupId: groupId,
-    );
+    final membersResult = await membersFuture;
     if (membersResult case Ok(:final value)) {
       final onVacation =
           value.data.where((u) => u.isVacationMode).map((u) => u.id).toSet();
       _vacationUserIds = onVacation;
       _vacationCount = onVacation.length;
+      notifyListeners();
     }
-
-    _isLoading = false;
-    notifyListeners();
   }
 
   // ── Filters ────────────────────────────────────────────────────────────────

@@ -26,6 +26,7 @@ class EnvConfig {
     required this.enableRequestDedup,
     required this.maxRequestRetries,
     required this.retryBaseDelayMs,
+    required this.cacheMaxAgeMs,
   });
 
   // ── API ────────────────────────────────────────────────────────────────────
@@ -83,6 +84,11 @@ class EnvConfig {
   /// (delay = base × 2^attempt). Configurable; never hardcoded.
   final int retryBaseDelayMs;
 
+  /// Max age (ms) before a timestamped SWR cache entry is pruned at startup.
+  /// Self-heals corrupt entries and bounds date-keyed cache growth (e.g. the
+  /// per-day attendance cache). Configurable; never hardcoded.
+  final int cacheMaxAgeMs;
+
   // ── Derived helpers ────────────────────────────────────────────────────────
 
   /// Full versioned API prefix. e.g. `https://api.emilestone.com/v1`
@@ -92,6 +98,7 @@ class EnvConfig {
   Duration get receiveTimeout => Duration(milliseconds: receiveTimeoutMs);
   Duration get sendTimeout => Duration(milliseconds: sendTimeoutMs);
   Duration get http2IdleTimeout => Duration(milliseconds: http2IdleTimeoutMs);
+  Duration get cacheMaxAge => Duration(milliseconds: cacheMaxAgeMs);
 
   /// HTTP/2 only works over TLS (h2 via ALPN), so it is enabled only when the
   /// master flag is on AND the base URL is HTTPS (never for local http dev).
@@ -119,6 +126,7 @@ class EnvConfig {
     enableRequestDedup: true,
     maxRequestRetries: 2,
     retryBaseDelayMs: 300,
+    cacheMaxAgeMs: 604800000, // 7 days
   );
 
   static const EnvConfig _staging = EnvConfig._(
@@ -136,6 +144,7 @@ class EnvConfig {
     enableRequestDedup: true,
     maxRequestRetries: 2,
     retryBaseDelayMs: 300,
+    cacheMaxAgeMs: 604800000, // 7 days
   );
 
   static const EnvConfig _production = EnvConfig._(
@@ -153,6 +162,7 @@ class EnvConfig {
     enableRequestDedup: true,
     maxRequestRetries: 2,
     retryBaseDelayMs: 300,
+    cacheMaxAgeMs: 604800000, // 7 days
   );
 
   // ── Active config resolver ─────────────────────────────────────────────────

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:smart_meal_management/app/router/route_names.dart';
 import 'package:smart_meal_management/data/services/cache_warmer.dart';
+import 'package:smart_meal_management/features/admin/dashboard/providers/admin_dashboard_provider.dart';
 import 'package:smart_meal_management/features/auth/providers/auth_provider.dart';
 import 'package:smart_meal_management/shared/widgets/app_bottom_nav_bar.dart';
 
@@ -67,6 +68,11 @@ class _AdminShellState extends State<AdminShell> {
 
   int _currentIndex = 0;
 
+  /// Shell-owned dashboard provider — hoisted here (not created per-screen) so
+  /// its in-memory state survives tab switches and the Home tab never flashes
+  /// zeros on return (Issue 1). Disposed with the shell (i.e. on logout).
+  late final AdminDashboardProvider _dashboardProvider;
+
   /// Sub-routes pushed from the "More" hub all map to tab 4.
   static const _moreSubRoutes = [
     RouteNames.adminProfile,
@@ -99,6 +105,18 @@ class _AdminShellState extends State<AdminShell> {
   }
 
   @override
+  void initState() {
+    super.initState();
+    _dashboardProvider = AdminDashboardProvider();
+  }
+
+  @override
+  void dispose() {
+    _dashboardProvider.dispose();
+    super.dispose();
+  }
+
+  @override
   void didChangeDependencies() {
     super.didChangeDependencies();
     // Warm the non-landing tabs' caches once per account (self-guarded), so the
@@ -117,12 +135,15 @@ class _AdminShellState extends State<AdminShell> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      body: widget.child,
-      bottomNavigationBar: AppBottomNavBar(
-        items: _tabs,
-        currentIndex: _currentIndex,
-        onTap: (i) => _onTap(context, i),
+    return AdminDashboardScope(
+      notifier: _dashboardProvider,
+      child: Scaffold(
+        body: widget.child,
+        bottomNavigationBar: AppBottomNavBar(
+          items: _tabs,
+          currentIndex: _currentIndex,
+          onTap: (i) => _onTap(context, i),
+        ),
       ),
     );
   }

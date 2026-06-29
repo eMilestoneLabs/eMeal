@@ -121,6 +121,9 @@ class MemberBillingProvider extends ChangeNotifier {
       groups = cachedGroups;
       groupId = groups.first.id;
       loadingGroups = false;
+      // Issue 3: a group is now selected and compute() will run — show the
+      // loader, never the empty "No data for this range", until figures arrive.
+      loading = true;
       notifyListeners();
     }
 
@@ -133,6 +136,10 @@ class MemberBillingProvider extends ChangeNotifier {
       ResponseCacheService.instance
           .writeList(_orgGroupsCacheKey, value.data, (g) => g.toJson());
     }
+    // Issue 3: if a group is selected, compute() is about to run — set loading
+    // now so the frame between here and compute()'s own notify never paints the
+    // empty "No data for this range" state.
+    if (groupId != null) loading = true;
     notifyListeners();
     if (groupId != null) await compute();
   }

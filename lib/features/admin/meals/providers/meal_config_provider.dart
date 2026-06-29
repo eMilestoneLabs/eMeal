@@ -77,8 +77,22 @@ class MealConfigProvider extends ChangeNotifier {
     // Cache-first: paint last-known groups instantly, then refresh.
     final cacheKey = 'meal_config_groups:$organizationId';
     if (_groups.isEmpty) {
+      _isLoading = true; // sync: first build shows the loader, never empty state
       _groups = await ResponseCacheService.instance.readList(
           cacheKey, GroupModel.fromJson, maxAge: const Duration(hours: 12));
+      // Auto-select the first cached group + paint its cached config/meals so
+      // the body never flashes "No groups yet" while groups exist. No network
+      // awaited here; the fetch below overwrites.
+      if (_selectedGroup == null && _groups.isNotEmpty) {
+        final g = _groups.first;
+        _selectedGroup = g;
+        _mealsEnabled = g.mealConfig.mealsEnabled;
+        _preferencesEnabled = g.mealConfig.preferencesEnabled;
+        _mealPricingEnabled = g.mealConfig.mealPricingEnabled;
+        _meals = await ResponseCacheService.instance.readList(
+            _mealsCacheKey(organizationId, g.id), MealModel.fromJson,
+            maxAge: const Duration(hours: 12));
+      }
     }
     _isLoading = _groups.isEmpty;
     _error = null;
@@ -93,8 +107,17 @@ class MealConfigProvider extends ChangeNotifier {
         _groups = value.data;
         ResponseCacheService.instance
             .writeList(cacheKey, value.data, (g) => g.toJson());
-        if (_selectedGroup == null && _groups.isNotEmpty) {
-          await _loadForGroup(_groups.first, organizationId: organizationId);
+        // Show the cache-selected group if it still exists, else the first;
+        // always refresh its config + meals from the network.
+        final selId = _selectedGroup?.id;
+        final List<GroupModel> matches = (selId == null)
+            ? <GroupModel>[]
+            : value.data.where((g) => g.id == selId).toList();
+        final GroupModel? toLoad = matches.isNotEmpty
+            ? matches.first
+            : (value.data.isNotEmpty ? value.data.first : null);
+        if (toLoad != null) {
+          await _loadForGroup(toLoad, organizationId: organizationId);
         }
       case Err(:final failure):
         _error = failure.message;

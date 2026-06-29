@@ -162,11 +162,18 @@ class _MealConfigScreenState extends State<MealConfigScreen> {
                   const SizedBox(height: 24),
                 ],
 
-                if (_provider.selectedGroup == null) ...[
+                if (_provider.groups.isEmpty) ...[
                   const AppEmptyState(
                     icon: Icons.group_off_rounded,
                     title: 'No groups yet',
                     subtitle: 'Create a group first.',
+                  ),
+                ] else if (_provider.selectedGroup == null) ...[
+                  // Groups exist but none resolved yet (brief) — show a loader,
+                  // never the misleading "No groups yet" empty state.
+                  const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 48),
+                    child: Center(child: CircularProgressIndicator()),
                   ),
                 ] else ...[
                   // ── Master meal toggle ───────────────────────────────────
