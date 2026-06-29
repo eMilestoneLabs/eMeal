@@ -63,6 +63,7 @@ class AdminAttendanceProvider extends ChangeNotifier {
     final cacheKey =
         'admin_attendance:$organizationId:$groupId:${_selectedDate.year}-${_selectedDate.month}-${_selectedDate.day}';
     if (_records.isEmpty) {
+      _isLoading = true; // sync: first build shows the loader, never "No records found"
       _records = await ResponseCacheService.instance.readList(
           cacheKey, AttendanceModel.fromJson, maxAge: const Duration(hours: 12));
     }

@@ -510,8 +510,19 @@ class AuthRepository implements IAuthRepository {
         // if validation still fails the user must log in again.
         final result = await DioApiService.instance.get<Map<String, dynamic>>('/auth/me');
         switch (result) {
-          case Err():
-            return const Ok(null); // invalid/expired → force re-login
+          case Err(:final failure):
+            // Only a genuine AUTH rejection (401/403 — token revoked or expired
+            // beyond refresh) forces re-login. A transient NetworkFailure
+            // (timeout / no connection / 5xx) on a cold start must NOT log the
+            // user out — keep the stored session optimistically; the Dio
+            // interceptor's transparent 401-refresh self-corrects on the first
+            // authenticated call if the token is genuinely dead.
+            if (failure is AuthFailure) {
+              return const Ok(null);
+            }
+            _session = stored;
+            _profileCache[stored.user.id] = stored.user;
+            return Ok(stored);
           case Ok(:final value):
             final user = UserModel.fromJson(value);
             // Storage may hold rotated tokens (refreshed by the interceptor).

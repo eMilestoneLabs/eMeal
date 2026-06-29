@@ -59,7 +59,13 @@ class AuthProvider extends ChangeNotifier {
     final result = await _repo.restoreSession();
     switch (result) {
       case Ok(:final value):
-        if (value != null && value.isValid) {
+        // A restored session is usable if its access token is still valid OR it
+        // carries a refresh token — in the latter case the Dio interceptor
+        // transparently refreshes the access token on the first authenticated
+        // call. This keeps a returning user logged in across access-token expiry
+        // and flaky-network cold starts (no forced re-login); a genuinely dead
+        // refresh token self-corrects to logout on that first call.
+        if (value != null && (value.isValid || value.refreshToken.isNotEmpty)) {
           _session = value;
           _state = AuthAuthenticated(session: value);
           // B10: open realtime socket once a session is restored (no-op in mock).

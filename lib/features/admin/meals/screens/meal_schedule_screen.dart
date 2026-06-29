@@ -51,6 +51,10 @@ class _MealScheduleScreenState extends State<MealScheduleScreen>
   late final TabController _tabController;
   bool _initialized = false;
   bool _previewMode = false;
+  // True from the first frame until the initial loadGroups->loadSchedule chain
+  // completes, so the planner shows a loader (never the "No schedule yet" empty
+  // state) during the gap between those two sequential fetches.
+  bool _bootstrapping = true;
 
   /// Days shown in the planner. Weekly mode = all 7 weekdays (unchanged).
   /// Day-Wise mode = only [Today, Tomorrow] — strictly a two-day window.
@@ -81,7 +85,10 @@ class _MealScheduleScreenState extends State<MealScheduleScreen>
       _provider.addListener(_rebuild);
       final auth = AuthProviderScope.of(context);
       final user = auth.currentUser;
-      if (user == null) return;
+      if (user == null) {
+        _bootstrapping = false;
+        return;
+      }
       final orgId = user.organizationId;
       _provider.loadGroups(organizationId: orgId).then((_) async {
         // Issue 1: edit the SAME group selected in Meal Config (carried as
@@ -105,6 +112,9 @@ class _MealScheduleScreenState extends State<MealScheduleScreen>
         if (sel != null) {
           await _provider.loadSchedule(organizationId: orgId, groupId: sel.id);
         }
+      }).whenComplete(() {
+        // Initial load chain finished (or failed) — drop the bootstrap loader.
+        if (mounted) setState(() => _bootstrapping = false);
       });
     }
   }
@@ -487,7 +497,7 @@ class _MealScheduleScreenState extends State<MealScheduleScreen>
           }).toList(),
         ),
       ),
-      body: _provider.isLoading
+      body: (_provider.isLoading || _bootstrapping)
           ? const AppLoadingIndicator()
           : _provider.weekSchedule == null
               ? AppEmptyState(
