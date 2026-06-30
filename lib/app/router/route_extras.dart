@@ -13,14 +13,29 @@ class AuthRouteExtra {
   final String roleContext;
 }
 
-/// Carries context from [LoginScreen] to [OtpScreen].
+/// Carries context from [LoginScreen] / signup screens to [OtpScreen].
+///
+/// [purpose] selects the backend OTP flow:
+///   - `'login'`  → Email OTP login (code requested on screen entry)
+///   - `'signup'` → post-signup email verification (code already sent on signup)
+/// [isSignup] is true when this OTP completes account creation (AUTH-036/041).
 class OtpRouteExtra {
   const OtpRouteExtra({
     required this.identifier,
     required this.roleContext,
+    this.purpose = 'login',
+    this.isSignup = false,
+    this.autoRequest,
   });
   final String identifier;
   final String roleContext;
+  final String purpose;
+  final bool isSignup;
+
+  /// Whether the screen should request a fresh code on entry. Defaults to true
+  /// for `login` (no code pre-sent) and false for `signup` (code sent on signup).
+  /// Profile "Verify now" passes true with `signup` to trigger a fresh code.
+  final bool? autoRequest;
 }
 
 /// Carries event guest party data from [EventGuestJoinScreen] to

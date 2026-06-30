@@ -57,33 +57,47 @@ class _OtpInputRowState extends State<OtpInputRow> {
       _controllers.map((c) => c.text).join();
 
   void _onDigitEntered(int index, String value) {
-    if (value.length > 1) {
-      // Handle paste — fill all boxes from pasted value
-      final digits = value.replaceAll(RegExp(r'\D'), '');
-      for (int i = 0; i < widget.length && i < digits.length; i++) {
-        _controllers[i].text = digits[i];
+    final digits = value.replaceAll(RegExp(r'\D'), '');
+
+    // Paste / SMS-autofill / multi-key: distribute the digits across the boxes.
+    // A full-length code fills from box 0; a shorter paste fills from the box it
+    // landed in. Boxes are normalized to exactly one digit each.
+    if (digits.length > 1) {
+      final start = digits.length >= widget.length ? 0 : index;
+      for (int i = start; i < widget.length; i++) {
+        final di = i - start;
+        if (di >= digits.length) break;
+        _controllers[i].text = digits[di];
+        _controllers[i].selection = const TextSelection.collapsed(offset: 1);
       }
-      if (digits.length >= widget.length) {
-        _focusNodes[widget.length - 1].requestFocus();
-        _notifyCompleted();
+      final next = start + digits.length;
+      if (next >= widget.length) {
+        _focusNodes[widget.length - 1].unfocus();
       } else {
-        _focusNodes[digits.length].requestFocus();
+        _focusNodes[next].requestFocus();
       }
       setState(() {});
+      widget.onChanged?.call(_currentOtp);
+      _notifyCompleted();
       return;
     }
 
-    if (value.isNotEmpty) {
-      // Single digit entered — advance
+    // Single digit entered, or the box was cleared.
+    if (digits.isEmpty) {
+      _controllers[index].text = '';
+    } else {
+      // Keep exactly one digit even if focus stayed on a filled box.
+      _controllers[index].text = digits;
+      _controllers[index].selection = const TextSelection.collapsed(offset: 1);
       if (index < widget.length - 1) {
         _focusNodes[index + 1].requestFocus();
       } else {
         _focusNodes[index].unfocus();
-        _notifyCompleted();
       }
     }
     setState(() {});
     widget.onChanged?.call(_currentOtp);
+    _notifyCompleted();
   }
 
   void _onKeyEvent(int index, KeyEvent event) {
@@ -198,7 +212,8 @@ class _OtpBoxState extends State<_OtpBox> {
           enabled: widget.enabled,
           keyboardType: TextInputType.number,
           textAlign: TextAlign.center,
-          maxLength: 1,
+          // No maxLength: 1 here — it would truncate a pasted/autofilled code to
+          // a single character. The parent distributes multi-digit input instead.
           inputFormatters: [FilteringTextInputFormatter.digitsOnly],
           onChanged: widget.onChanged,
           style: AppTypography.titleLarge.copyWith(

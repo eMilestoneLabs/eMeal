@@ -187,7 +187,16 @@ GoRouter buildRouter(AuthProvider auth) {
           final extra = state.extra;
           final identifier = extra is OtpRouteExtra ? extra.identifier : '';
           final roleContext = extra is OtpRouteExtra ? extra.roleContext : 'student';
-          return OtpScreen(identifier: identifier, roleContext: roleContext);
+          final purpose = extra is OtpRouteExtra ? extra.purpose : 'login';
+          final isSignup = extra is OtpRouteExtra ? extra.isSignup : false;
+          final autoRequest = extra is OtpRouteExtra ? extra.autoRequest : null;
+          return OtpScreen(
+            identifier: identifier,
+            roleContext: roleContext,
+            purpose: purpose,
+            isSignup: isSignup,
+            autoRequest: autoRequest,
+          );
         },
       ),
 

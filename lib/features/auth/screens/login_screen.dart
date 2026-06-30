@@ -140,7 +140,7 @@ class _LoginScreenState extends State<LoginScreen> with TickerProviderStateMixin
   String get _roleLabel => switch (widget.roleContext) {
         'admin' => 'Admin / Manager',
         'event' => 'Event Admin',
-        _ => 'Student / Guest',
+        _ => 'Student / Member',
       };
 
   IconData get _roleIcon => switch (widget.roleContext) {
@@ -234,13 +234,25 @@ class _LoginScreenState extends State<LoginScreen> with TickerProviderStateMixin
     final id = _identifierCtrl.text.trim();
     if (id.isEmpty) {
       setState(() =>
-          _identifierError = 'Enter your email or mobile to receive OTP');
+          _identifierError = 'Enter your email to receive an OTP');
+      return;
+    }
+    // AUTH-015/016/SEC-008: OTP login is Email-only in this release. Mobile OTP
+    // is "Coming Soon", so a non-email identifier is gated here with a clear
+    // message instead of a backend rejection.
+    final isEmail = RegExp(r'^[^@]+@[^@]+\.[^@]+$').hasMatch(id);
+    if (!isEmail) {
+      setState(() => _identifierError =
+          'Mobile OTP is coming soon. Use email OTP or sign in with your password.');
       return;
     }
     context.push(
       RouteNames.otp,
       extra: OtpRouteExtra(
-          identifier: id, roleContext: widget.roleContext),
+        identifier: id,
+        roleContext: widget.roleContext,
+        purpose: 'login',
+      ),
     );
   }
 
@@ -262,6 +274,9 @@ class _LoginScreenState extends State<LoginScreen> with TickerProviderStateMixin
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final colorScheme = Theme.of(context).colorScheme;
     final bottomInset = MediaQuery.viewInsetsOf(context).bottom;
+    // Part 2 §4 / FV-004: Sign In stays disabled until both fields are filled.
+    final canSubmit = _identifierCtrl.text.trim().isNotEmpty &&
+        _passwordCtrl.text.isNotEmpty;
 
     return Scaffold(
       // Keep background fixed — keyboard handled via viewInsetsOf
@@ -348,6 +363,7 @@ class _LoginScreenState extends State<LoginScreen> with TickerProviderStateMixin
                                 passwordError: _passwordError,
                                 globalError: _globalError,
                                 isLoading: _isLoading,
+                                canSubmit: canSubmit,
                                 accentColor: _accentColor,
                                 gradient: _gradient,
                                 identifierKeyboardType:
@@ -668,6 +684,7 @@ class _LoginFormFields extends StatelessWidget {
     required this.passwordError,
     required this.globalError,
     required this.isLoading,
+    required this.canSubmit,
     required this.accentColor,
     required this.gradient,
     required this.identifierKeyboardType,
@@ -690,6 +707,7 @@ class _LoginFormFields extends StatelessWidget {
   final String? passwordError;
   final String? globalError;
   final bool isLoading;
+  final bool canSubmit;
   final Color accentColor;
   final List<Color> gradient;
   final TextInputType identifierKeyboardType;
@@ -804,7 +822,7 @@ class _LoginFormFields extends StatelessWidget {
           _GradientButton(
             gradient: gradient,
             label: 'Sign In',
-            onPressed: isLoading ? null : onLogin,
+            onPressed: (isLoading || !canSubmit) ? null : onLogin,
             isLoading: isLoading,
           ),
           const SizedBox(height: 12),

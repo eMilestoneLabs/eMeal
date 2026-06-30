@@ -2,12 +2,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:smart_meal_management/app/router/route_names.dart';
+import 'package:smart_meal_management/app/router/route_extras.dart';
 import 'package:smart_meal_management/core/theme/app_colors.dart';
 import 'package:smart_meal_management/core/theme/app_typography.dart';
 import 'package:smart_meal_management/features/auth/providers/auth_provider.dart';
 import 'package:smart_meal_management/features/auth/services/auth_storage_service.dart';
 import 'package:smart_meal_management/features/auth/widgets/auth_input_field.dart';
 import 'package:smart_meal_management/features/auth/widgets/password_strength_indicator.dart';
+import 'package:smart_meal_management/features/auth/utils/auth_validators.dart';
 import 'package:smart_meal_management/shared/enums/user_role.dart';
 
 // ── StudentSignupScreen ────────────────────────────────────────────────────────
@@ -66,41 +68,26 @@ class _StudentSignupScreenState extends State<StudentSignupScreen> {
     super.dispose();
   }
 
-  bool _validate() {
-    bool valid = true;
-    setState(() {
-      _nameError = _mobileError = _emailError =
-          _passwordError = _confirmError = _ageError = null;
+  // FV-004: primary action stays disabled until every mandatory field is valid.
+  bool get _isFormValid =>
+      AuthValidators.name(_nameCtrl.text) == null &&
+      AuthValidators.mobile(_mobileCtrl.text) == null &&
+      AuthValidators.email(_emailCtrl.text) == null &&
+      AuthValidators.password(_passwordCtrl.text) == null &&
+      AuthValidators.confirmPassword(_confirmCtrl.text, _passwordCtrl.text) == null &&
+      AuthValidators.age(_ageCtrl.text) == null;
 
-      if (_nameCtrl.text.trim().length < 2) {
-        _nameError = 'Enter your full name';
-        valid = false;
-      }
-      final phone = _mobileCtrl.text.trim();
-      if (phone.isEmpty || !RegExp(r'^\d{10}$').hasMatch(phone)) {
-        _mobileError = 'Enter a valid 10-digit mobile number';
-        valid = false;
-      }
-      final email = _emailCtrl.text.trim();
-      if (!RegExp(r'^[^@]+@[^@]+\.[^@]+$').hasMatch(email)) {
-        _emailError = 'Enter a valid email address';
-        valid = false;
-      }
-      if (_passwordCtrl.text.length < 6) {
-        _passwordError = 'Password must be at least 6 characters';
-        valid = false;
-      }
-      if (_confirmCtrl.text != _passwordCtrl.text) {
-        _confirmError = 'Passwords do not match';
-        valid = false;
-      }
-      final age = int.tryParse(_ageCtrl.text);
-      if (age == null || age < 5 || age > 100) {
-        _ageError = 'Enter a valid age (5–100)';
-        valid = false;
-      }
+  bool _validate() {
+    setState(() {
+      _nameError = AuthValidators.name(_nameCtrl.text);
+      _mobileError = AuthValidators.mobile(_mobileCtrl.text);
+      _emailError = AuthValidators.email(_emailCtrl.text);
+      _passwordError = AuthValidators.password(_passwordCtrl.text);
+      _confirmError =
+          AuthValidators.confirmPassword(_confirmCtrl.text, _passwordCtrl.text);
+      _ageError = AuthValidators.age(_ageCtrl.text);
     });
-    return valid;
+    return _isFormValid;
   }
 
   Future<void> _signup() async {
@@ -116,7 +103,7 @@ class _StudentSignupScreenState extends State<StudentSignupScreen> {
       name: _nameCtrl.text.trim(),
       role: _role,
       mobile: _mobileCtrl.text.trim(),
-      email: _emailCtrl.text.trim(),
+      email: _emailCtrl.text.trim().toLowerCase(),
       password: _passwordCtrl.text,
       age: int.parse(_ageCtrl.text),
       gender: _gender,
@@ -134,7 +121,23 @@ class _StudentSignupScreenState extends State<StudentSignupScreen> {
     await AuthStorageService.instance.saveLoginPreference(_loginPref);
     await AuthStorageService.instance.saveRememberedIdentifier(identifier);
     if (!mounted) return;
-    context.go(RouteNames.studentDashboard);
+
+    // AUTH-031/036/041: a verification OTP was emailed on signup. Route to the
+    // OTP screen to verify the email, then on to the dashboard / group join.
+    final email = _emailCtrl.text.trim();
+    if (email.isNotEmpty) {
+      context.push(
+        RouteNames.otp,
+        extra: OtpRouteExtra(
+          identifier: email,
+          roleContext: 'student',
+          purpose: 'signup',
+          isSignup: true,
+        ),
+      );
+    } else {
+      context.go(RouteNames.studentDashboard);
+    }
   }
 
   @override
@@ -175,7 +178,9 @@ class _StudentSignupScreenState extends State<StudentSignupScreen> {
                 textCapitalization: TextCapitalization.words,
                 textInputAction: TextInputAction.next,
                 enabled: !_isLoading,
-                onChanged: (_) => setState(() => _nameError = null),
+                maxLength: 30,
+                onChanged: (v) => setState(
+                    () => _nameError = AuthValidators.live(v, AuthValidators.name)),
                 onSubmitted: (_) => _mobileFocus.requestFocus(),
               ),
               const SizedBox(height: 14),
@@ -209,8 +214,9 @@ class _StudentSignupScreenState extends State<StudentSignupScreen> {
                       errorText: _ageError,
                       enabled: !_isLoading,
                       inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                      maxLength: 3,
-                      onChanged: (_) => setState(() => _ageError = null),
+                      maxLength: 2,
+                      onChanged: (v) => setState(() =>
+                          _ageError = AuthValidators.live(v, (x) => AuthValidators.age(x))),
                     ),
                   ),
                   const SizedBox(width: 12),
@@ -252,7 +258,8 @@ class _StudentSignupScreenState extends State<StudentSignupScreen> {
                 enabled: !_isLoading,
                 inputFormatters: [FilteringTextInputFormatter.digitsOnly],
                 maxLength: 10,
-                onChanged: (_) => setState(() => _mobileError = null),
+                onChanged: (v) => setState(
+                    () => _mobileError = AuthValidators.live(v, AuthValidators.mobile)),
                 onSubmitted: (_) => _emailFocus.requestFocus(),
               ),
               const SizedBox(height: 14),
@@ -265,7 +272,8 @@ class _StudentSignupScreenState extends State<StudentSignupScreen> {
                 textInputAction: TextInputAction.next,
                 errorText: _emailError,
                 enabled: !_isLoading,
-                onChanged: (_) => setState(() => _emailError = null),
+                onChanged: (v) => setState(
+                    () => _emailError = AuthValidators.live(v, AuthValidators.email)),
                 onSubmitted: (_) => _passwordFocus.requestFocus(),
               ),
               const SizedBox(height: 24),
@@ -280,9 +288,13 @@ class _StudentSignupScreenState extends State<StudentSignupScreen> {
                 errorText: _passwordError,
                 enabled: !_isLoading,
                 textInputAction: TextInputAction.next,
-                onChanged: (_) {
-                  setState(() => _passwordError = null);
-                },
+                onChanged: (v) => setState(() {
+                  _passwordError = AuthValidators.live(v, AuthValidators.password);
+                  // Keep confirm-match error in sync when the password changes.
+                  _confirmError = _confirmCtrl.text.isEmpty
+                      ? null
+                      : AuthValidators.confirmPassword(_confirmCtrl.text, v);
+                }),
                 onSubmitted: (_) => _confirmFocus.requestFocus(),
               ),
 
@@ -300,7 +312,8 @@ class _StudentSignupScreenState extends State<StudentSignupScreen> {
                 focusNode: _confirmFocus,
                 errorText: _confirmError,
                 enabled: !_isLoading,
-                onChanged: (_) => setState(() => _confirmError = null),
+                onChanged: (v) => setState(() => _confirmError =
+                    AuthValidators.live(v, (x) => AuthValidators.confirmPassword(x, _passwordCtrl.text))),
                 onSubmitted: (_) => _signup(),
               ),
               const SizedBox(height: 24),
@@ -338,9 +351,11 @@ class _StudentSignupScreenState extends State<StudentSignupScreen> {
               SizedBox(
                 height: 52,
                 child: FilledButton(
-                  onPressed: _isLoading ? null : _signup,
+                  onPressed: (_isLoading || !_isFormValid) ? null : _signup,
                   style: FilledButton.styleFrom(
                     backgroundColor: AppColors.primary,
+                    disabledBackgroundColor:
+                        AppColors.primary.withValues(alpha: 0.4),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(14),
                     ),

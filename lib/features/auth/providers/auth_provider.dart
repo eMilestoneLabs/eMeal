@@ -123,8 +123,11 @@ class AuthProvider extends ChangeNotifier {
   /// Request a one-time password for [identifier].
   ///
   /// Returns `null` on success, or an error message string on failure.
-  Future<String?> requestOtp({required String identifier}) async {
-    final result = await _repo.requestOtp(identifier: identifier);
+  Future<String?> requestOtp({
+    required String identifier,
+    String purpose = 'login',
+  }) async {
+    final result = await _repo.requestOtp(identifier: identifier, purpose: purpose);
     return switch (result) {
       Ok() => null,
       Err(:final failure) => failure.message,
@@ -138,6 +141,7 @@ class AuthProvider extends ChangeNotifier {
     required String identifier,
     required String otp,
     required String roleContext,
+    String purpose = 'login',
   }) async {
     _state = const AuthLoading();
     notifyListeners();
@@ -146,6 +150,7 @@ class AuthProvider extends ChangeNotifier {
       identifier: identifier,
       otp: otp,
       roleContext: roleContext,
+      purpose: purpose,
     );
 
     switch (result) {

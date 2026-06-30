@@ -11,6 +11,7 @@ import 'package:smart_meal_management/core/theme/app_colors.dart';
 import 'package:smart_meal_management/core/theme/app_typography.dart';
 import 'package:smart_meal_management/data/repositories/group_repository.dart';
 import 'package:smart_meal_management/features/auth/providers/auth_provider.dart';
+import 'package:smart_meal_management/features/auth/widgets/email_verification_badge.dart';
 import 'package:smart_meal_management/shared/models/result.dart';
 import 'package:smart_meal_management/shared/models/user_model.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -495,6 +496,14 @@ class _AvatarCard extends StatelessWidget {
             style: AppTypography.bodyMedium.copyWith(
               color: isDark ? AppColors.textSecondaryDark : AppColors.textSecondary,
             ),
+          ),
+          const SizedBox(height: AppConstants.space8),
+
+          // SRS AUTH-036/040: email verification badge.
+          EmailVerificationBadge(
+            verified: user?.emailVerified ?? false,
+            email: user?.email ?? '',
+            roleContext: 'admin',
           ),
           const SizedBox(height: AppConstants.space12),
 

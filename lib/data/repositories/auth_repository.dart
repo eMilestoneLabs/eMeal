@@ -122,14 +122,28 @@ class AuthRepository implements IAuthRepository {
   // ── OTP ────────────────────────────────────────────────────────────────────
 
   @override
-  Future<Result<Unit>> requestOtp({required String identifier}) async {
+  Future<Result<Unit>> requestOtp({
+    required String identifier,
+    String purpose = 'login',
+  }) async {
     if (!_isMock) {
-      // B10 LIVE: POST /auth/otp/request — { identifier, purpose: 'login' }
-      final result = await DioApiService.instance.post<Map<String, dynamic>>(
-        '/auth/otp/request',
-        body: {'identifier': identifier.trim(), 'purpose': 'login'},
-        requiresAuth: false,
-      );
+      // Password recovery uses the dedicated endpoint, which the backend treats
+      // as Email-OTP only (AUTH-017) and answers with a non-enumerating generic
+      // success. Login/signup OTP use the generic request endpoint with purpose.
+      final Result<Map<String, dynamic>> result;
+      if (purpose == 'reset') {
+        result = await DioApiService.instance.post<Map<String, dynamic>>(
+          '/auth/forgot-password',
+          body: {'identifier': identifier.trim()},
+          requiresAuth: false,
+        );
+      } else {
+        result = await DioApiService.instance.post<Map<String, dynamic>>(
+          '/auth/otp/request',
+          body: {'identifier': identifier.trim(), 'purpose': purpose},
+          requiresAuth: false,
+        );
+      }
       return switch (result) {
         Err(:final failure) => Err(failure),
         Ok() => const Ok(Unit.instance),
@@ -149,12 +163,14 @@ class AuthRepository implements IAuthRepository {
     required String identifier,
     required String otp,
     required String roleContext,
+    String purpose = 'login',
   }) async {
     if (!_isMock) {
       // B10 LIVE: POST /auth/otp/verify — returns a full auth session.
+      // purpose must match the request so the backend finds the OTP record.
       final result = await DioApiService.instance.post<Map<String, dynamic>>(
         '/auth/otp/verify',
-        body: {'identifier': identifier.trim(), 'otp': otp},
+        body: {'identifier': identifier.trim(), 'otp': otp, 'purpose': purpose},
         requiresAuth: false,
       );
       switch (result) {
@@ -559,6 +575,6 @@ class AuthRepository implements IAuthRepository {
   String _roleLabel(String context) => switch (context) {
         'admin' => 'Admin/Manager',
         'event' => 'Event',
-        _ => 'Student/Guest',
+        _ => 'Student/Member',
       };
 }

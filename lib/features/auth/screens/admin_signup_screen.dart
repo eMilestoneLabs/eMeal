@@ -2,12 +2,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:smart_meal_management/app/router/route_names.dart';
+import 'package:smart_meal_management/app/router/route_extras.dart';
 import 'package:smart_meal_management/core/theme/app_colors.dart';
 import 'package:smart_meal_management/core/theme/app_typography.dart';
 import 'package:smart_meal_management/features/auth/providers/auth_provider.dart';
 import 'package:smart_meal_management/features/auth/services/auth_storage_service.dart';
 import 'package:smart_meal_management/features/auth/widgets/auth_input_field.dart';
 import 'package:smart_meal_management/features/auth/widgets/password_strength_indicator.dart';
+import 'package:smart_meal_management/features/auth/utils/auth_validators.dart';
 import 'package:smart_meal_management/shared/enums/user_role.dart';
 
 // ── AdminSignupScreen ──────────────────────────────────────────────────────────
@@ -57,19 +59,29 @@ class _AdminSignupScreenState extends State<AdminSignupScreen> {
     super.dispose();
   }
 
+  // Admins must be adults (AUTH age range, admin min 18).
+  static const _ageMin = 18;
+
+  // FV-004: keep the primary action disabled until all fields are valid.
+  bool get _isFormValid =>
+      AuthValidators.name(_nameCtrl.text) == null &&
+      AuthValidators.mobile(_mobileCtrl.text) == null &&
+      AuthValidators.email(_emailCtrl.text) == null &&
+      AuthValidators.password(_passwordCtrl.text) == null &&
+      AuthValidators.confirmPassword(_confirmCtrl.text, _passwordCtrl.text) == null &&
+      AuthValidators.age(_ageCtrl.text, min: _ageMin) == null;
+
   bool _validate() {
-    bool valid = true;
     setState(() {
-      _nameError = _mobileError = _emailError = _passwordError = _confirmError = _ageError = null;
-      if (_nameCtrl.text.trim().length < 2) { _nameError = 'Enter your full name'; valid = false; }
-      if (!RegExp(r'^\d{10}$').hasMatch(_mobileCtrl.text.trim())) { _mobileError = 'Enter a valid 10-digit mobile number'; valid = false; }
-      if (!RegExp(r'^[^@]+@[^@]+\.[^@]+$').hasMatch(_emailCtrl.text.trim())) { _emailError = 'Enter a valid email address'; valid = false; }
-      if (_passwordCtrl.text.length < 6) { _passwordError = 'Password must be at least 6 characters'; valid = false; }
-      if (_confirmCtrl.text != _passwordCtrl.text) { _confirmError = 'Passwords do not match'; valid = false; }
-      final age = int.tryParse(_ageCtrl.text);
-      if (age == null || age < 18 || age > 100) { _ageError = 'Enter a valid age (18–100)'; valid = false; }
+      _nameError = AuthValidators.name(_nameCtrl.text);
+      _mobileError = AuthValidators.mobile(_mobileCtrl.text);
+      _emailError = AuthValidators.email(_emailCtrl.text);
+      _passwordError = AuthValidators.password(_passwordCtrl.text);
+      _confirmError =
+          AuthValidators.confirmPassword(_confirmCtrl.text, _passwordCtrl.text);
+      _ageError = AuthValidators.age(_ageCtrl.text, min: _ageMin);
     });
-    return valid;
+    return _isFormValid;
   }
 
   Future<void> _signup() async {
@@ -81,7 +93,7 @@ class _AdminSignupScreenState extends State<AdminSignupScreen> {
       name: _nameCtrl.text.trim(),
       role: _role,
       mobile: _mobileCtrl.text.trim(),
-      email: _emailCtrl.text.trim(),
+      email: _emailCtrl.text.trim().toLowerCase(),
       password: _passwordCtrl.text,
       age: int.parse(_ageCtrl.text),
       gender: _gender,
@@ -99,7 +111,23 @@ class _AdminSignupScreenState extends State<AdminSignupScreen> {
     await AuthStorageService.instance.saveLoginPreference(_loginPref);
     await AuthStorageService.instance.saveRememberedIdentifier(identifier);
     if (!mounted) return;
-    context.go(RouteNames.adminDashboard);
+
+    // AUTH-031/036/041: verify the emailed OTP, then continue to the dashboard
+    // / group creation.
+    final email = _emailCtrl.text.trim();
+    if (email.isNotEmpty) {
+      context.push(
+        RouteNames.otp,
+        extra: OtpRouteExtra(
+          identifier: email,
+          roleContext: 'admin',
+          purpose: 'signup',
+          isSignup: true,
+        ),
+      );
+    } else {
+      context.go(RouteNames.adminDashboard);
+    }
   }
 
   @override
@@ -127,7 +155,9 @@ class _AdminSignupScreenState extends State<AdminSignupScreen> {
                 label: 'Full Name', controller: _nameCtrl, focusNode: _nameFocus,
                 errorText: _nameError, textCapitalization: TextCapitalization.words,
                 textInputAction: TextInputAction.next, enabled: !_isLoading,
-                onChanged: (_) => setState(() => _nameError = null),
+                maxLength: 30,
+                onChanged: (v) => setState(
+                    () => _nameError = AuthValidators.live(v, AuthValidators.name)),
                 onSubmitted: (_) => _mobileFocus.requestFocus(),
               ),
               const SizedBox(height: 14),
@@ -145,8 +175,9 @@ class _AdminSignupScreenState extends State<AdminSignupScreen> {
                     label: 'Age', controller: _ageCtrl, focusNode: _ageFocus,
                     keyboardType: TextInputType.number, textInputAction: TextInputAction.next,
                     errorText: _ageError, enabled: !_isLoading,
-                    inputFormatters: [FilteringTextInputFormatter.digitsOnly], maxLength: 3,
-                    onChanged: (_) => setState(() => _ageError = null),
+                    inputFormatters: [FilteringTextInputFormatter.digitsOnly], maxLength: 2,
+                    onChanged: (v) => setState(() => _ageError =
+                        AuthValidators.live(v, (x) => AuthValidators.age(x, min: _ageMin))),
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -167,7 +198,8 @@ class _AdminSignupScreenState extends State<AdminSignupScreen> {
                 keyboardType: TextInputType.phone, textInputAction: TextInputAction.next,
                 errorText: _mobileError, enabled: !_isLoading,
                 inputFormatters: [FilteringTextInputFormatter.digitsOnly], maxLength: 10,
-                onChanged: (_) => setState(() => _mobileError = null),
+                onChanged: (v) => setState(
+                    () => _mobileError = AuthValidators.live(v, AuthValidators.mobile)),
                 onSubmitted: (_) => _emailFocus.requestFocus(),
               ),
               const SizedBox(height: 14),
@@ -176,7 +208,8 @@ class _AdminSignupScreenState extends State<AdminSignupScreen> {
                 label: 'Email Address', controller: _emailCtrl, focusNode: _emailFocus,
                 keyboardType: TextInputType.emailAddress, textInputAction: TextInputAction.next,
                 errorText: _emailError, enabled: !_isLoading,
-                onChanged: (_) => setState(() => _emailError = null),
+                onChanged: (v) => setState(
+                    () => _emailError = AuthValidators.live(v, AuthValidators.email)),
                 onSubmitted: (_) => _passwordFocus.requestFocus(),
               ),
               const SizedBox(height: 24),
@@ -188,7 +221,12 @@ class _AdminSignupScreenState extends State<AdminSignupScreen> {
                 controller: _passwordCtrl, focusNode: _passwordFocus,
                 errorText: _passwordError, enabled: !_isLoading,
                 textInputAction: TextInputAction.next,
-                onChanged: (_) => setState(() => _passwordError = null),
+                onChanged: (v) => setState(() {
+                  _passwordError = AuthValidators.live(v, AuthValidators.password);
+                  _confirmError = _confirmCtrl.text.isEmpty
+                      ? null
+                      : AuthValidators.confirmPassword(_confirmCtrl.text, v);
+                }),
                 onSubmitted: (_) => _confirmFocus.requestFocus(),
               ),
               ValueListenableBuilder<TextEditingValue>(
@@ -200,7 +238,8 @@ class _AdminSignupScreenState extends State<AdminSignupScreen> {
               PasswordField(
                 label: 'Confirm Password', controller: _confirmCtrl, focusNode: _confirmFocus,
                 errorText: _confirmError, enabled: !_isLoading,
-                onChanged: (_) => setState(() => _confirmError = null),
+                onChanged: (v) => setState(() => _confirmError =
+                    AuthValidators.live(v, (x) => AuthValidators.confirmPassword(x, _passwordCtrl.text))),
                 onSubmitted: (_) => _signup(),
               ),
               const SizedBox(height: 24),
@@ -221,9 +260,11 @@ class _AdminSignupScreenState extends State<AdminSignupScreen> {
               SizedBox(
                 height: 52,
                 child: FilledButton(
-                  onPressed: _isLoading ? null : _signup,
+                  onPressed: (_isLoading || !_isFormValid) ? null : _signup,
                   style: FilledButton.styleFrom(
                     backgroundColor: AppColors.secondary,
+                    disabledBackgroundColor:
+                        AppColors.secondary.withValues(alpha: 0.4),
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
                   ),
                   child: _isLoading

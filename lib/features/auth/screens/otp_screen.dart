@@ -27,11 +27,23 @@ class OtpScreen extends StatefulWidget {
     required this.identifier,
     required this.roleContext,
     this.isSignup = false,
+    this.purpose = 'login',
+    this.autoRequest,
   });
 
   final String identifier;
   final String roleContext;
   final bool isSignup;
+
+  /// Backend OTP flow: `'login'` (code requested on entry) or `'signup'`
+  /// (code already sent during account creation — resend uses this purpose).
+  final String purpose;
+
+  /// Whether to request a code on entry. Defaults to true for `login`
+  /// (nothing pre-sent) and false for `signup` (code sent during signup).
+  final bool? autoRequest;
+
+  bool get _shouldAutoRequest => autoRequest ?? (purpose == 'login');
 
   @override
   State<OtpScreen> createState() => _OtpScreenState();
@@ -51,7 +63,24 @@ class _OtpScreenState extends State<OtpScreen> {
   @override
   void initState() {
     super.initState();
+    // Login OTP (and profile "Verify now") request the code when the screen
+    // opens. Signup OTP was already sent during account creation, so we only
+    // start the resend timer.
+    if (widget._shouldAutoRequest) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _requestInitialOtp());
+    }
     _startCountdown();
+  }
+
+  /// Send the first OTP for the Email-OTP login flow (AUTH-015). Errors surface
+  /// inline; the resend timer still runs so the user can retry.
+  Future<void> _requestInitialOtp() async {
+    final error = await AuthProviderScope.of(context).requestOtp(
+      identifier: widget.identifier,
+      purpose: widget.purpose,
+    );
+    if (!mounted || error == null) return;
+    setState(() => _error = error);
   }
 
   void _startCountdown() {
@@ -90,6 +119,7 @@ class _OtpScreenState extends State<OtpScreen> {
       identifier: widget.identifier,
       otp: otp,
       roleContext: widget.roleContext,
+      purpose: widget.purpose,
     );
 
     if (!mounted) return;
@@ -123,7 +153,7 @@ class _OtpScreenState extends State<OtpScreen> {
 
     // Request a new OTP via the provider (mock: no-op; live: POST /v1/auth/otp/request).
     final errorMsg = await AuthProviderScope.of(context)
-        .requestOtp(identifier: widget.identifier);
+        .requestOtp(identifier: widget.identifier, purpose: widget.purpose);
 
     if (!mounted) return;
     setState(() => _isResending = false);
@@ -164,12 +194,23 @@ class _OtpScreenState extends State<OtpScreen> {
         ),
       ),
       body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 24),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              const SizedBox(height: 12),
+        // UI-007/008 + Part 4 §7: scrollable and keyboard-aware so the OTP boxes
+        // and resend action are never hidden behind the keyboard on small screens.
+        child: LayoutBuilder(
+          builder: (context, constraints) => SingleChildScrollView(
+            keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+            padding: EdgeInsets.only(
+              left: 24,
+              right: 24,
+              bottom: MediaQuery.viewInsetsOf(context).bottom + 16,
+            ),
+            child: ConstrainedBox(
+              constraints: BoxConstraints(minHeight: constraints.maxHeight),
+              child: IntrinsicHeight(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    const SizedBox(height: 12),
 
               // Icon
               Center(
@@ -302,8 +343,11 @@ class _OtpScreenState extends State<OtpScreen> {
                             ),
                           ),
               ),
-              const SizedBox(height: 32),
-            ],
+                    const SizedBox(height: 32),
+                  ],
+                ),
+              ),
+            ),
           ),
         ),
       ),

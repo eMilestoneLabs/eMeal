@@ -19,6 +19,7 @@ class UserModel extends Equatable {
     this.isVacationMode = false,
     this.isDefaultAttendance = false,
     this.remindersEnabled = true,
+    this.emailVerified = false,
     this.createdAt,
   });
 
@@ -46,6 +47,10 @@ class UserModel extends Equatable {
   ///
   /// Persisted in user model so the preference survives cold restarts.
   final bool remindersEnabled;
+
+  /// SRS AUTH-036/040 — true once the user's email has been verified via OTP.
+  /// Drives the verified/unverified badge on profile screens.
+  final bool emailVerified;
 
   final DateTime? createdAt;
 
@@ -84,6 +89,7 @@ class UserModel extends Equatable {
         isVacationMode: j['isVacationMode'] ?? false,
         isDefaultAttendance: j['isDefaultAttendance'] ?? false,
         remindersEnabled: j['remindersEnabled'] ?? true,
+        emailVerified: j['emailVerified'] ?? false,
         createdAt:
             j['createdAt'] != null ? DateTime.parse(j['createdAt']) : null,
       );
@@ -104,6 +110,7 @@ class UserModel extends Equatable {
         'isVacationMode': isVacationMode,
         'isDefaultAttendance': isDefaultAttendance,
         'remindersEnabled': remindersEnabled,
+        'emailVerified': emailVerified,
         'createdAt': createdAt?.toIso8601String(),
       };
 
@@ -147,6 +154,7 @@ class UserModel extends Equatable {
     bool? isVacationMode,
     bool? isDefaultAttendance,
     bool? remindersEnabled,
+    bool? emailVerified,
     /// Pass [UserModel.absent] to explicitly clear this field to null.
     Object? createdAt = _absent,
   }) =>
@@ -170,6 +178,7 @@ class UserModel extends Equatable {
         isVacationMode: isVacationMode ?? this.isVacationMode,
         isDefaultAttendance: isDefaultAttendance ?? this.isDefaultAttendance,
         remindersEnabled: remindersEnabled ?? this.remindersEnabled,
+        emailVerified: emailVerified ?? this.emailVerified,
         createdAt: identical(createdAt, _absent)
             ? this.createdAt
             : createdAt as DateTime?,
@@ -195,5 +204,6 @@ class UserModel extends Equatable {
         isVacationMode,
         isDefaultAttendance,
         remindersEnabled,
+        emailVerified,
       ];
 }

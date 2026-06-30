@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:smart_meal_management/core/theme/app_colors.dart';
+import 'package:smart_meal_management/features/auth/widgets/email_verification_badge.dart';
 import 'package:smart_meal_management/shared/models/user_model.dart';
 import 'package:smart_meal_management/shared/widgets/app_status_chip.dart';
 import 'package:smart_meal_management/shared/widgets/cached_photo.dart';
@@ -123,6 +124,14 @@ class GroupMemberTile extends StatelessWidget {
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                       ),
+                    ),
+                    // SRS AUTH-036/040: read-only verified/unverified indicator
+                    // next to every member's name (admin can't verify for them).
+                    const SizedBox(width: 6),
+                    EmailVerificationBadge(
+                      verified: member.emailVerified,
+                      interactive: false,
+                      iconOnly: true,
                     ),
                     if (isCurrentUser) ...[
                       const SizedBox(width: 6),

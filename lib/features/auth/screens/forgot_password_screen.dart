@@ -43,10 +43,11 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
       _error = null;
     });
 
-    // Delegate to the shared AuthProvider — consistent with every other
-    // auth-consuming screen. PHASE_B6: wired in AuthProvider.requestOtp().
+    // AUTH-017: Forgot Password is Email-OTP only. purpose:'reset' routes to
+    // the backend /auth/forgot-password endpoint (email-only, non-enumerating).
     final errorMsg = await AuthProviderScope.of(context).requestOtp(
       identifier: _identifierCtrl.text.trim(),
+      purpose: 'reset',
     );
 
     if (!mounted) return;
@@ -66,6 +67,9 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final colorScheme = Theme.of(context).colorScheme;
+    // FV-004: enable "Send Reset Code" only for a valid email (AUTH-017).
+    final canSubmit =
+        RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$').hasMatch(_identifierCtrl.text.trim());
 
     return Scaffold(
       backgroundColor: isDark ? AppColors.backgroundDark : AppColors.background,
@@ -116,8 +120,9 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                 ),
                 const SizedBox(height: AppConstants.space8),
                 Text(
-                  'Enter your registered email or mobile number. '
-                  'We\'ll send you a one-time code to reset your password.',
+                  'Enter your registered email address. '
+                  'We\'ll send you a one-time code to reset your password. '
+                  '(Mobile OTP recovery is coming soon.)',
                   style: AppTypography.bodyMedium.copyWith(
                     color: isDark
                         ? AppColors.textSecondaryDark
@@ -130,7 +135,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
 
                 // ── Input ─────────────────────────────────────────────────
                 Text(
-                  'Email or Mobile',
+                  'Email',
                   style: AppTypography.labelMedium.copyWith(
                     color: isDark
                         ? AppColors.textPrimaryDark
@@ -144,7 +149,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                   keyboardType: TextInputType.emailAddress,
                   autofocus: true,
                   decoration: InputDecoration(
-                    hintText: 'you@example.com or 98XXXXXXXX',
+                    hintText: 'you@example.com',
                     prefixIcon: const Icon(
                       Icons.alternate_email_rounded,
                       size: 18,
@@ -172,9 +177,15 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                       ),
                     ),
                   ),
+                  onChanged: (_) => setState(() => _error = null),
                   validator: (v) {
-                    if (v == null || v.trim().isEmpty) {
-                      return 'Please enter your email or mobile number';
+                    final value = v?.trim() ?? '';
+                    if (value.isEmpty) {
+                      return 'Please enter your email address';
+                    }
+                    // AUTH-017: recovery is Email-OTP only in this release.
+                    if (!RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$').hasMatch(value)) {
+                      return 'Enter a valid email address';
                     }
                     return null;
                   },
@@ -218,9 +229,11 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                   width: double.infinity,
                   height: AppConstants.buttonHeight,
                   child: FilledButton(
-                    onPressed: _isLoading ? null : _submit,
+                    onPressed: (_isLoading || !canSubmit) ? null : _submit,
                     style: FilledButton.styleFrom(
                       backgroundColor: AppColors.primary,
+                      disabledBackgroundColor:
+                          AppColors.primary.withValues(alpha: 0.4),
                       foregroundColor: Colors.white,
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(

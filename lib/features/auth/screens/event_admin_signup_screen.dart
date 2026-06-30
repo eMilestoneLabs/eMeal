@@ -2,12 +2,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:smart_meal_management/app/router/route_names.dart';
+import 'package:smart_meal_management/app/router/route_extras.dart';
 import 'package:smart_meal_management/core/theme/app_colors.dart';
 import 'package:smart_meal_management/core/theme/app_typography.dart';
 import 'package:smart_meal_management/features/auth/providers/auth_provider.dart';
 import 'package:smart_meal_management/features/auth/services/auth_storage_service.dart';
 import 'package:smart_meal_management/features/auth/widgets/auth_input_field.dart';
 import 'package:smart_meal_management/features/auth/widgets/password_strength_indicator.dart';
+import 'package:smart_meal_management/features/auth/utils/auth_validators.dart';
 import 'package:smart_meal_management/features/events/models/event_model.dart';
 import 'package:smart_meal_management/shared/enums/user_role.dart';
 
@@ -64,22 +66,33 @@ class _EventAdminSignupScreenState extends State<EventAdminSignupScreen> {
     super.dispose();
   }
 
-  bool _validate() {
-    bool valid = true;
-    setState(() {
-      _nameError = _mobileError = _emailError = _passwordError =
-          _eventNameError = _guestCountError = _eventDateError = null;
+  bool get _guestCountValid {
+    final n = int.tryParse(_guestCountCtrl.text);
+    return n != null && n >= 1;
+  }
 
-      if (_nameCtrl.text.trim().length < 2) { _nameError = 'Enter your full name'; valid = false; }
-      if (!RegExp(r'^\d{10}$').hasMatch(_mobileCtrl.text.trim())) { _mobileError = 'Enter a valid 10-digit mobile number'; valid = false; }
-      if (!RegExp(r'^[^@]+@[^@]+\.[^@]+$').hasMatch(_emailCtrl.text.trim())) { _emailError = 'Enter a valid email address'; valid = false; }
-      if (_passwordCtrl.text.length < 6) { _passwordError = 'Password must be at least 6 characters'; valid = false; }
-      if (_eventNameCtrl.text.trim().length < 2) { _eventNameError = 'Enter a valid event name'; valid = false; }
-      final count = int.tryParse(_guestCountCtrl.text);
-      if (count == null || count < 1) { _guestCountError = 'Enter expected guest count'; valid = false; }
-      if (_eventDate == null) { _eventDateError = 'Select the event date'; valid = false; }
+  // FV-004: keep "Create" disabled until all mandatory fields are valid.
+  bool get _isFormValid =>
+      AuthValidators.name(_nameCtrl.text) == null &&
+      AuthValidators.mobile(_mobileCtrl.text) == null &&
+      AuthValidators.email(_emailCtrl.text) == null &&
+      AuthValidators.password(_passwordCtrl.text) == null &&
+      _eventNameCtrl.text.trim().length >= 2 &&
+      _guestCountValid &&
+      _eventDate != null;
+
+  bool _validate() {
+    setState(() {
+      _nameError = AuthValidators.name(_nameCtrl.text);
+      _mobileError = AuthValidators.mobile(_mobileCtrl.text);
+      _emailError = AuthValidators.email(_emailCtrl.text);
+      _passwordError = AuthValidators.password(_passwordCtrl.text);
+      _eventNameError =
+          _eventNameCtrl.text.trim().length >= 2 ? null : 'Enter a valid event name';
+      _guestCountError = _guestCountValid ? null : 'Enter expected guest count';
+      _eventDateError = _eventDate == null ? 'Select the event date' : null;
     });
-    return valid;
+    return _isFormValid;
   }
 
   Future<void> _pickDate() async {
@@ -116,7 +129,7 @@ class _EventAdminSignupScreenState extends State<EventAdminSignupScreen> {
       name: _nameCtrl.text.trim(),
       role: UserRole.eventAdmin,
       mobile: _mobileCtrl.text.trim(),
-      email: _emailCtrl.text.trim(),
+      email: _emailCtrl.text.trim().toLowerCase(),
       password: _passwordCtrl.text,
       loginPreference: LoginPreference.email,
       eventName: _eventNameCtrl.text.trim(),
@@ -134,7 +147,22 @@ class _EventAdminSignupScreenState extends State<EventAdminSignupScreen> {
     await AuthStorageService.instance.saveLoginPreference(LoginPreference.email);
     await AuthStorageService.instance.saveRememberedIdentifier(_emailCtrl.text.trim());
     if (!mounted) return;
-    context.go(RouteNames.eventAdminDashboard);
+
+    // AUTH-031/036/041: verify the emailed OTP, then continue to the event dashboard.
+    final email = _emailCtrl.text.trim();
+    if (email.isNotEmpty) {
+      context.push(
+        RouteNames.otp,
+        extra: OtpRouteExtra(
+          identifier: email,
+          roleContext: 'event',
+          purpose: 'signup',
+          isSignup: true,
+        ),
+      );
+    } else {
+      context.go(RouteNames.eventAdminDashboard);
+    }
   }
 
   @override
@@ -164,7 +192,9 @@ class _EventAdminSignupScreenState extends State<EventAdminSignupScreen> {
                 label: 'Full Name', controller: _nameCtrl, focusNode: _nameFocus,
                 errorText: _nameError, textCapitalization: TextCapitalization.words,
                 textInputAction: TextInputAction.next, enabled: !_isLoading,
-                onChanged: (_) => setState(() => _nameError = null),
+                maxLength: 30,
+                onChanged: (v) => setState(
+                    () => _nameError = AuthValidators.live(v, AuthValidators.name)),
                 onSubmitted: (_) => _mobileFocus.requestFocus(),
               ),
               const SizedBox(height: 14),
@@ -173,7 +203,8 @@ class _EventAdminSignupScreenState extends State<EventAdminSignupScreen> {
                 keyboardType: TextInputType.phone, textInputAction: TextInputAction.next,
                 errorText: _mobileError, enabled: !_isLoading,
                 inputFormatters: [FilteringTextInputFormatter.digitsOnly], maxLength: 10,
-                onChanged: (_) => setState(() => _mobileError = null),
+                onChanged: (v) => setState(
+                    () => _mobileError = AuthValidators.live(v, AuthValidators.mobile)),
                 onSubmitted: (_) => _emailFocus.requestFocus(),
               ),
               const SizedBox(height: 14),
@@ -181,14 +212,16 @@ class _EventAdminSignupScreenState extends State<EventAdminSignupScreen> {
                 label: 'Email Address', controller: _emailCtrl, focusNode: _emailFocus,
                 keyboardType: TextInputType.emailAddress, textInputAction: TextInputAction.next,
                 errorText: _emailError, enabled: !_isLoading,
-                onChanged: (_) => setState(() => _emailError = null),
+                onChanged: (v) => setState(
+                    () => _emailError = AuthValidators.live(v, AuthValidators.email)),
                 onSubmitted: (_) => _passwordFocus.requestFocus(),
               ),
               const SizedBox(height: 14),
               PasswordField(
                 controller: _passwordCtrl, focusNode: _passwordFocus,
                 errorText: _passwordError, enabled: !_isLoading,
-                onChanged: (_) => setState(() => _passwordError = null),
+                onChanged: (v) => setState(
+                    () => _passwordError = AuthValidators.live(v, AuthValidators.password)),
                 onSubmitted: (_) => _eventNameFocus.requestFocus(),
               ),
               ValueListenableBuilder<TextEditingValue>(
@@ -205,7 +238,9 @@ class _EventAdminSignupScreenState extends State<EventAdminSignupScreen> {
                 label: 'Event Name', controller: _eventNameCtrl, focusNode: _eventNameFocus,
                 textCapitalization: TextCapitalization.words, textInputAction: TextInputAction.next,
                 errorText: _eventNameError, enabled: !_isLoading,
-                onChanged: (_) => setState(() => _eventNameError = null),
+                maxLength: 60,
+                onChanged: (v) => setState(() => _eventNameError =
+                    v.trim().isEmpty || v.trim().length >= 2 ? null : 'Enter a valid event name'),
                 onSubmitted: (_) => _guestCountFocus.requestFocus(),
               ),
               const SizedBox(height: 14),
@@ -265,7 +300,10 @@ class _EventAdminSignupScreenState extends State<EventAdminSignupScreen> {
                 keyboardType: TextInputType.number, textInputAction: TextInputAction.done,
                 errorText: _guestCountError, enabled: !_isLoading,
                 inputFormatters: [FilteringTextInputFormatter.digitsOnly], maxLength: 6,
-                onChanged: (_) => setState(() => _guestCountError = null),
+                onChanged: (_) => setState(() =>
+                    _guestCountError = _guestCountCtrl.text.isEmpty || _guestCountValid
+                        ? null
+                        : 'Enter expected guest count'),
                 onSubmitted: (_) => _signup(),
               ),
               const SizedBox(height: 16),
@@ -331,9 +369,10 @@ class _EventAdminSignupScreenState extends State<EventAdminSignupScreen> {
               SizedBox(
                 height: 52,
                 child: FilledButton(
-                  onPressed: _isLoading ? null : _signup,
+                  onPressed: (_isLoading || !_isFormValid) ? null : _signup,
                   style: FilledButton.styleFrom(
                     backgroundColor: accentColor,
+                    disabledBackgroundColor: accentColor.withValues(alpha: 0.4),
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
                   ),
                   child: _isLoading

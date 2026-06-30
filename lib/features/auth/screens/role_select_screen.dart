@@ -6,6 +6,7 @@ import 'package:smart_meal_management/app/router/route_extras.dart';
 import 'package:smart_meal_management/core/theme/app_colors.dart';
 import 'package:smart_meal_management/core/theme/app_typography.dart';
 import 'package:smart_meal_management/features/auth/widgets/role_entry_card.dart';
+import 'package:smart_meal_management/features/auth/widgets/powered_by_emilestone.dart';
 
 // ── RoleSelectScreen ───────────────────────────────────────────────────────────
 
@@ -143,7 +144,7 @@ class _RoleSelectScreenState extends State<RoleSelectScreen>
                                 Color(0xFF4F46E5), // deep indigo
                                 Color(0xFF06B6D4), // cyan
                               ],
-                              title: 'Student / Guest',
+                              title: 'Student / Member',
                               subtitle:
                                   'Join your group, track meals & attendance',
                               accentColor: const Color(0xFF4F46E5),
@@ -192,19 +193,38 @@ class _RoleSelectScreenState extends State<RoleSelectScreen>
                   ),
 
                   // ── Footer ────────────────────────────────────────────
+                  // AUTH-010 / UI-015: application name + "Powered by eMilestone".
                   Padding(
                     padding: const EdgeInsets.only(bottom: 24),
                     child: FadeTransition(
                       opacity: _headerFade,
-                      child: Text(
-                        'Smart Meal & Attendance Management',
-                        style: AppTypography.labelSmall.copyWith(
-                          color: (isDark
-                                  ? AppColors.textTertiaryDark
-                                  : AppColors.textTertiary)
-                              .withValues(alpha: 0.50),
-                          letterSpacing: 0.2,
-                        ),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            'Smart Meal & Attendance Management',
+                            style: AppTypography.labelSmall.copyWith(
+                              color: (isDark
+                                      ? AppColors.textTertiaryDark
+                                      : AppColors.textTertiary)
+                                  .withValues(alpha: 0.50),
+                              letterSpacing: 0.2,
+                            ),
+                          ),
+                          const SizedBox(height: 6),
+                          PoweredByEmilestone(
+                            baseColor: (isDark
+                                    ? AppColors.textTertiaryDark
+                                    : AppColors.textTertiary)
+                                .withValues(alpha: 0.55),
+                            highlightColor:
+                                isDark ? Colors.white : AppColors.primary,
+                            prefixColor: (isDark
+                                    ? AppColors.textTertiaryDark
+                                    : AppColors.textTertiary)
+                                .withValues(alpha: 0.45),
+                          ),
+                        ],
                       ),
                     ),
                   ),

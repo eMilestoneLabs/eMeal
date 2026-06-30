@@ -25,15 +25,24 @@ abstract interface class IAuthRepository {
   // ── OTP ────────────────────────────────────────────────────────────────────
 
   /// Request a one-time password to be sent to [identifier].
-  Future<Result<Unit>> requestOtp({required String identifier});
+  ///
+  /// [purpose] selects the backend flow: `'login'` (Email OTP login),
+  /// `'signup'` (email verification) or `'reset'` (password recovery →
+  /// routed to `/auth/forgot-password`, email-only per AUTH-017).
+  Future<Result<Unit>> requestOtp({
+    required String identifier,
+    String purpose = 'login',
+  });
 
   /// Verify [otp] sent to [identifier].
   ///
-  /// Returns an [AuthSession] on success.
+  /// [purpose] must match the request (`'login'` | `'signup'`) so the backend
+  /// finds the correct OTP record. Returns an [AuthSession] on success.
   Future<Result<AuthSession>> verifyOtp({
     required String identifier,
     required String otp,
     required String roleContext,
+    String purpose = 'login',
   });
 
   // ── Signup ─────────────────────────────────────────────────────────────────

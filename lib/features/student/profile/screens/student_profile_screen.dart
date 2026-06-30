@@ -11,6 +11,7 @@ import 'package:smart_meal_management/core/constants/app_constants.dart';
 import 'package:smart_meal_management/core/theme/app_colors.dart';
 import 'package:smart_meal_management/core/theme/app_typography.dart';
 import 'package:smart_meal_management/features/auth/providers/auth_provider.dart';
+import 'package:smart_meal_management/features/auth/widgets/email_verification_badge.dart';
 import 'package:smart_meal_management/features/student/profile/providers/student_profile_provider.dart';
 import 'package:smart_meal_management/shared/widgets/cached_photo.dart';
 
@@ -410,6 +411,13 @@ class _HeaderBackground extends StatelessWidget {
                               ),
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
+                            ),
+                            const SizedBox(height: 8),
+                            // SRS AUTH-036/040: email verification badge.
+                            EmailVerificationBadge(
+                              verified: provider.user?.emailVerified ?? false,
+                              email: provider.email,
+                              roleContext: 'student',
                             ),
                           ],
                         ),

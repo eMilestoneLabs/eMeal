@@ -1,4 +1,6 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:smart_meal_management/app/router/route_names.dart';
 import 'package:smart_meal_management/core/constants/app_constants.dart';
@@ -39,8 +41,74 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
   bool _success = false;
   String? _error;
 
+  // Resend cooldown (AUTH-039) — the code was just sent by ForgotPasswordScreen,
+  // so resend is gated behind a short countdown to prevent abuse.
+  static const _resendCooldown = 30;
+  int _resendLeft = _resendCooldown;
+  bool _isResending = false;
+  Timer? _timer;
+  bool get _canResend => _resendLeft == 0 && !_isResending;
+
+  // FV-004: enable "Reset Password" only when the 6-digit code + a valid,
+  // matching new password are present.
+  bool get _canSubmit =>
+      _otpCtrl.text.trim().length >= 6 &&
+      _passwordCtrl.text.length >= 8 &&
+      _confirmCtrl.text == _passwordCtrl.text;
+
+  @override
+  void initState() {
+    super.initState();
+    _startCountdown();
+  }
+
+  void _startCountdown() {
+    _resendLeft = _resendCooldown;
+    _timer?.cancel();
+    _timer = Timer.periodic(const Duration(seconds: 1), (t) {
+      if (!mounted) {
+        t.cancel();
+        return;
+      }
+      setState(() {
+        if (_resendLeft > 0) {
+          _resendLeft--;
+        } else {
+          t.cancel();
+        }
+      });
+    });
+  }
+
+  Future<void> _resend() async {
+    if (!_canResend) return;
+    setState(() {
+      _isResending = true;
+      _error = null;
+    });
+    final errorMsg = await AuthProviderScope.of(context).requestOtp(
+      identifier: widget.identifier,
+      purpose: 'reset',
+    );
+    if (!mounted) return;
+    setState(() => _isResending = false);
+    if (errorMsg != null) {
+      setState(() => _error = errorMsg);
+      return;
+    }
+    _startCountdown();
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('Reset code resent to ${widget.identifier}'),
+        behavior: SnackBarBehavior.floating,
+        duration: const Duration(seconds: 2),
+      ),
+    );
+  }
+
   @override
   void dispose() {
+    _timer?.cancel();
     _otpCtrl.dispose();
     _passwordCtrl.dispose();
     _confirmCtrl.dispose();
@@ -167,20 +235,58 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
                   controller: _otpCtrl,
                   keyboardType: TextInputType.number,
                   maxLength: 6,
+                  inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                  onChanged: (_) => setState(() => _error = null),
                   decoration: _inputDecoration(
                     isDark: isDark,
                     hint: '6-digit code',
                     icon: Icons.pin_rounded,
                   ),
                   validator: (v) {
-                    if (v == null || v.trim().length < 4) {
-                      return 'Enter the code sent to your email/mobile';
+                    if (v == null || v.trim().length < 6) {
+                      return 'Enter the 6-digit code sent to your email';
                     }
                     return null;
                   },
                 ),
 
-                const SizedBox(height: AppConstants.space20),
+                // ── Resend code ───────────────────────────────────────────
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: _isResending
+                      ? const Padding(
+                          padding: EdgeInsets.symmetric(vertical: 8, horizontal: 4),
+                          child: SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          ),
+                        )
+                      : TextButton(
+                          onPressed: _canResend ? _resend : null,
+                          style: TextButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 4, vertical: 6),
+                            minimumSize: Size.zero,
+                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                          ),
+                          child: Text(
+                            _resendLeft > 0
+                                ? 'Resend code in ${_resendLeft}s'
+                                : 'Resend code',
+                            style: AppTypography.labelSmall.copyWith(
+                              color: _canResend
+                                  ? AppColors.primary
+                                  : (isDark
+                                      ? AppColors.textSecondaryDark
+                                      : AppColors.textSecondary),
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                ),
+
+                const SizedBox(height: AppConstants.space12),
 
                 // ── New password ──────────────────────────────────────────
                 _FieldLabel(label: 'New Password', isDark: isDark),
@@ -188,6 +294,7 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
                 TextFormField(
                   controller: _passwordCtrl,
                   obscureText: _obscurePassword,
+                  onChanged: (_) => setState(() => _error = null),
                   decoration: _inputDecoration(
                     isDark: isDark,
                     hint: 'Min. 8 characters',
@@ -221,6 +328,7 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
                 TextFormField(
                   controller: _confirmCtrl,
                   obscureText: _obscureConfirm,
+                  onChanged: (_) => setState(() => _error = null),
                   decoration: _inputDecoration(
                     isDark: isDark,
                     hint: 'Re-enter new password',
@@ -284,9 +392,11 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
                   width: double.infinity,
                   height: AppConstants.buttonHeight,
                   child: FilledButton(
-                    onPressed: _isLoading ? null : _submit,
+                    onPressed: (_isLoading || !_canSubmit) ? null : _submit,
                     style: FilledButton.styleFrom(
                       backgroundColor: AppColors.primary,
+                      disabledBackgroundColor:
+                          AppColors.primary.withValues(alpha: 0.4),
                       foregroundColor: Colors.white,
                       shape: RoundedRectangleBorder(
                         borderRadius:
