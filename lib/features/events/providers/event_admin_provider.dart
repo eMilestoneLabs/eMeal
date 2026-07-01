@@ -1,5 +1,4 @@
 import 'package:flutter/foundation.dart';
-import 'package:smart_meal_management/core/config/env_config.dart';
 import 'package:smart_meal_management/data/contracts/i_event_repository.dart';
 import 'package:smart_meal_management/data/repositories/event_repository.dart';
 import 'package:smart_meal_management/features/events/models/event_guest_party.dart';
@@ -20,8 +19,7 @@ import 'package:smart_meal_management/shared/models/result.dart';
 /// Accepts [IEventRepository] so the real [ApiEventRepository] can be
 /// injected for staging/production without changing provider logic.
 class EventAdminProvider extends ChangeNotifier {
-  /// Defaults to [EventRepository] which internally dispatches to mock or live
-  /// based on [EnvConfig.current.mockAuthEnabled].
+  /// Defaults to the live [EventRepository] (NestJS backend).
   EventAdminProvider({IEventRepository? repo})
       : _repo = repo ?? EventRepository();
 
@@ -150,12 +148,7 @@ class EventAdminProvider extends ChangeNotifier {
     required String adminName,
     required bool autoDeleteAfter7Days,
   }) async {
-    // In mock/dev mode, generate a client-side join code so the event is
-    // immediately usable without a backend. In live mode, pass null — the
-    // server assigns the join code and returns it in the response.
-    final clientJoinCode =
-        EnvConfig.current.mockAuthEnabled ? _generateJoinCode() : null;
-
+    // The server assigns the join code and returns it in the create response.
     final newEvent = EventModel(
       id: 'evt_${DateTime.now().millisecondsSinceEpoch}',
       name: name,
@@ -168,7 +161,7 @@ class EventAdminProvider extends ChangeNotifier {
       autoDeleteAfter7Days: autoDeleteAfter7Days,
       isActive: true,
       createdAt: DateTime.now(),
-      joinCode: clientJoinCode,
+      joinCode: null,
     );
 
     final result = await _repo.createEvent(newEvent);
@@ -333,18 +326,5 @@ class EventAdminProvider extends ChangeNotifier {
   void clearError() {
     _error = null;
     notifyListeners();
-  }
-
-  String _generateJoinCode() {
-    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-    final rng = DateTime.now().millisecondsSinceEpoch;
-    final code = StringBuffer();
-    var seed = rng;
-    for (var i = 0; i < 6; i++) {
-      code.write(chars[seed % chars.length]);
-      seed ~/= chars.length;
-      if (seed == 0) seed = rng + i + 1;
-    }
-    return code.toString();
   }
 }

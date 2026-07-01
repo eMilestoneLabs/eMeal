@@ -3,7 +3,6 @@ import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:smart_meal_management/core/config/env_config.dart';
 import 'package:smart_meal_management/data/contracts/i_event_repository.dart';
 import 'package:smart_meal_management/data/repositories/event_repository.dart';
 import 'package:smart_meal_management/features/events/models/event_guest_party.dart';
@@ -26,8 +25,7 @@ import 'package:smart_meal_management/shared/models/result.dart';
 /// after backgrounding the app or a cold restart before clearing it.
 /// Call [restoreSession] on startup, then [clearSession] on exit.
 class EventGuestProvider extends ChangeNotifier {
-  /// Defaults to [EventRepository] which internally dispatches to mock or live
-  /// based on [EnvConfig.current.mockAuthEnabled].
+  /// Defaults to the live [EventRepository] (NestJS backend).
   EventGuestProvider({IEventRepository? repo})
       : _repo = repo ?? EventRepository();
 
@@ -79,35 +77,18 @@ class EventGuestProvider extends ChangeNotifier {
       return false;
     }
 
-    // Look up from shared mock repository (same data as admin side)
+    // Resolve the event via the public QR endpoint; the backend is the authority.
     final result = await _repo.getEventByJoinCode(joinCode.trim());
     switch (result) {
       case Ok(:final value):
         _event = value;
       case Err(:final failure):
-        // In live mode the backend is the authority — reject invalid codes.
-        if (!EnvConfig.current.mockAuthEnabled) {
-          _error = failure.message.isNotEmpty
-              ? failure.message
-              : 'Invalid or expired event code. Please scan a valid QR.';
-          _isLoading = false;
-          notifyListeners();
-          return false;
-        }
-        // Mock/dev fallback: create a minimal placeholder event so guests can
-        // still join during local development even when the code is not yet
-        // registered in the mock store.
-        final code = joinCode.trim().toLowerCase();
-        _event = EventModel(
-          id: 'evt_$code',
-          name: 'Event',
-          type: EventType.corporate,
-          date: DateTime.now(),
-          expectedGuestCount: 50,
-          adminId: 'admin_001',
-          adminName: 'Event Admin',
-          joinCode: joinCode.trim(),
-        );
+        _error = failure.message.isNotEmpty
+            ? failure.message
+            : 'Invalid or expired event code. Please scan a valid QR.';
+        _isLoading = false;
+        notifyListeners();
+        return false;
     }
 
     _isLoading = false;

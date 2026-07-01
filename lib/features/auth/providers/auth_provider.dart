@@ -107,7 +107,7 @@ class AuthProvider extends ChangeNotifier {
       case Ok(:final value):
         _session = value;
         _state = AuthAuthenticated(session: value);
-        RealtimeService.instance.connect(); // B10: live realtime (no-op in mock)
+        RealtimeService.instance.connect(); // open the live realtime socket
         notifyListeners();
         return null; // success
 
@@ -126,8 +126,13 @@ class AuthProvider extends ChangeNotifier {
   Future<String?> requestOtp({
     required String identifier,
     String purpose = 'login',
+    String? roleContext,
   }) async {
-    final result = await _repo.requestOtp(identifier: identifier, purpose: purpose);
+    final result = await _repo.requestOtp(
+      identifier: identifier,
+      purpose: purpose,
+      roleContext: roleContext,
+    );
     return switch (result) {
       Ok() => null,
       Err(:final failure) => failure.message,
@@ -157,7 +162,7 @@ class AuthProvider extends ChangeNotifier {
       case Ok(:final value):
         _session = value;
         _state = AuthAuthenticated(session: value);
-        RealtimeService.instance.connect(); // B10: live realtime (no-op in mock)
+        RealtimeService.instance.connect(); // open the live realtime socket
         notifyListeners();
         return null;
 
@@ -207,6 +212,7 @@ class AuthProvider extends ChangeNotifier {
     required LoginPreference loginPreference,
     int? age,
     String? gender,
+    String? organizationName,
     // Event admin extras
     String? eventName,
     EventType? eventType,
@@ -226,6 +232,7 @@ class AuthProvider extends ChangeNotifier {
       loginPreference: loginPreference,
       age: age,
       gender: gender,
+      organizationName: organizationName,
       eventName: eventName,
       eventType: eventType,
       eventDate: eventDate,
@@ -237,7 +244,7 @@ class AuthProvider extends ChangeNotifier {
       case Ok(:final value):
         _session = value;
         _state = AuthAuthenticated(session: value);
-        RealtimeService.instance.connect(); // B10: live realtime (no-op in mock)
+        RealtimeService.instance.connect(); // open the live realtime socket
         notifyListeners();
         return null;
 

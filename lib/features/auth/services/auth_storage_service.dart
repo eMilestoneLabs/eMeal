@@ -20,8 +20,7 @@ import 'package:smart_meal_management/shared/models/user_model.dart';
 /// | Login preference            | SharedPreferences       | Non-sensitive UX setting        |
 /// | Remembered identifier       | SharedPreferences       | Non-sensitive convenience data  |
 ///
-/// In production the secure storage keys hold real JWT tokens signed by
-/// the NestJS auth service.  The mock phase stores placeholder strings.
+/// The secure storage keys hold real JWT tokens signed by the NestJS auth service.
 class AuthStorageService {
   AuthStorageService._();
   static final AuthStorageService instance = AuthStorageService._();

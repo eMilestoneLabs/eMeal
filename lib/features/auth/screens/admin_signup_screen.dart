@@ -26,6 +26,7 @@ class AdminSignupScreen extends StatefulWidget {
 
 class _AdminSignupScreenState extends State<AdminSignupScreen> {
   final _nameCtrl = TextEditingController();
+  final _orgNameCtrl = TextEditingController();
   final _mobileCtrl = TextEditingController();
   final _emailCtrl = TextEditingController();
   final _passwordCtrl = TextEditingController();
@@ -33,17 +34,21 @@ class _AdminSignupScreenState extends State<AdminSignupScreen> {
   final _ageCtrl = TextEditingController();
 
   final _nameFocus = FocusNode();
+  final _orgNameFocus = FocusNode();
   final _mobileFocus = FocusNode();
   final _emailFocus = FocusNode();
   final _passwordFocus = FocusNode();
   final _confirmFocus = FocusNode();
   final _ageFocus = FocusNode();
 
-  UserRole _role = UserRole.hostelAdmin;
+  // Global role defaults to hostelAdmin (base admin). The functional title is
+  // assigned per-group when the admin creates a group (AUTH-033).
+  final UserRole _role = UserRole.hostelAdmin;
   String _gender = 'Prefer not to say';
   LoginPreference _loginPref = LoginPreference.email;
 
   String? _nameError;
+  String? _orgNameError;
   String? _mobileError;
   String? _emailError;
   String? _passwordError;
@@ -54,17 +59,29 @@ class _AdminSignupScreenState extends State<AdminSignupScreen> {
 
   @override
   void dispose() {
-    for (final c in [_nameCtrl, _mobileCtrl, _emailCtrl, _passwordCtrl, _confirmCtrl, _ageCtrl]) { c.dispose(); }
-    for (final f in [_nameFocus, _mobileFocus, _emailFocus, _passwordFocus, _confirmFocus, _ageFocus]) { f.dispose(); }
+    for (final c in [_nameCtrl, _orgNameCtrl, _mobileCtrl, _emailCtrl, _passwordCtrl, _confirmCtrl, _ageCtrl]) { c.dispose(); }
+    for (final f in [_nameFocus, _orgNameFocus, _mobileFocus, _emailFocus, _passwordFocus, _confirmFocus, _ageFocus]) { f.dispose(); }
     super.dispose();
   }
 
   // Admins must be adults (AUTH age range, admin min 18).
   static const _ageMin = 18;
 
+  // Organization name: required, 2–30 chars (Issue 7).
+  String? _orgNameLive(String value) =>
+      value.trim().isEmpty ? null : _orgNameError2(value);
+  String? _orgNameError2(String value) {
+    final v = value.trim();
+    if (v.isEmpty) return 'Enter your organization name';
+    if (v.length < 2) return 'Organization name must be at least 2 characters';
+    if (v.length > 30) return 'Organization name must be 30 characters or fewer';
+    return null;
+  }
+
   // FV-004: keep the primary action disabled until all fields are valid.
   bool get _isFormValid =>
       AuthValidators.name(_nameCtrl.text) == null &&
+      _orgNameError2(_orgNameCtrl.text) == null &&
       AuthValidators.mobile(_mobileCtrl.text) == null &&
       AuthValidators.email(_emailCtrl.text) == null &&
       AuthValidators.password(_passwordCtrl.text) == null &&
@@ -74,6 +91,7 @@ class _AdminSignupScreenState extends State<AdminSignupScreen> {
   bool _validate() {
     setState(() {
       _nameError = AuthValidators.name(_nameCtrl.text);
+      _orgNameError = _orgNameError2(_orgNameCtrl.text);
       _mobileError = AuthValidators.mobile(_mobileCtrl.text);
       _emailError = AuthValidators.email(_emailCtrl.text);
       _passwordError = AuthValidators.password(_passwordCtrl.text);
@@ -98,6 +116,7 @@ class _AdminSignupScreenState extends State<AdminSignupScreen> {
       age: int.parse(_ageCtrl.text),
       gender: _gender,
       loginPreference: _loginPref,
+      organizationName: _orgNameCtrl.text.trim(),
     );
 
     if (!mounted) return;
@@ -162,10 +181,17 @@ class _AdminSignupScreenState extends State<AdminSignupScreen> {
               ),
               const SizedBox(height: 14),
 
-              _AdminRoleDropdown(
-                value: _role,
-                enabled: !_isLoading,
-                onChanged: (v) => setState(() => _role = v ?? UserRole.hostelAdmin),
+              // AUTH-032/033: no admin-role selection at signup — the functional
+              // title is assigned when the admin creates a group. Instead we
+              // collect the Organization name (Issue 7) used to create the org.
+              AuthInputField(
+                label: 'Organization Name', controller: _orgNameCtrl, focusNode: _orgNameFocus,
+                textCapitalization: TextCapitalization.words,
+                textInputAction: TextInputAction.next,
+                errorText: _orgNameError, enabled: !_isLoading,
+                maxLength: 30,
+                onChanged: (v) => setState(() => _orgNameError = _orgNameLive(v)),
+                onSubmitted: (_) => _emailFocus.requestFocus(),
               ),
               const SizedBox(height: 14),
 
@@ -321,39 +347,6 @@ class _SectionLabel extends StatelessWidget {
       Expanded(child: Container(height: 1,
           color: Theme.of(context).colorScheme.outlineVariant.withValues(alpha: 0.4))),
     ]);
-  }
-}
-
-class _AdminRoleDropdown extends StatelessWidget {
-  const _AdminRoleDropdown({required this.value, required this.onChanged, this.enabled = true});
-  final UserRole value;
-  final ValueChanged<UserRole?> onChanged;
-  final bool enabled;
-
-  @override
-  Widget build(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-      decoration: BoxDecoration(
-        color: colorScheme.surface, borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: colorScheme.outlineVariant),
-      ),
-      child: DropdownButtonHideUnderline(
-        child: DropdownButton<UserRole>(
-          value: value, isExpanded: true,
-          onChanged: enabled ? onChanged : null,
-          style: AppTypography.bodyLarge.copyWith(color: colorScheme.onSurface),
-          dropdownColor: colorScheme.surface,
-          items: const [
-            DropdownMenuItem(value: UserRole.hostelAdmin, child: Text('Hostel Admin')),
-            DropdownMenuItem(value: UserRole.hostelManager, child: Text('Hostel Manager')),
-            DropdownMenuItem(value: UserRole.messManager, child: Text('Mess Manager')),
-            DropdownMenuItem(value: UserRole.organizationManager, child: Text('Organization Manager')),
-          ],
-        ),
-      ),
-    );
   }
 }
 

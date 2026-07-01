@@ -19,6 +19,10 @@ class PasswordStrengthIndicator extends StatelessWidget {
 
   PasswordStrength get _strength => _evaluate(password);
 
+  /// Public strength evaluator so form validators can gate on strength
+  /// (single source of truth — no duplicated scoring logic).
+  static PasswordStrength strengthOf(String password) => _evaluate(password);
+
   static PasswordStrength _evaluate(String password) {
     if (password.isEmpty) return PasswordStrength.empty;
     if (password.length < 6) return PasswordStrength.weak;

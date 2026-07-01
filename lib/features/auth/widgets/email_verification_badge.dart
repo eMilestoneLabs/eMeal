@@ -56,6 +56,7 @@ class EmailVerificationBadge extends StatelessWidget {
         purpose: 'signup',
         isSignup: true,
         autoRequest: true, // request a fresh verification code on entry
+        popOnSuccess: true, // return to profile + refresh the badge (Issue 6)
       ),
     );
   }

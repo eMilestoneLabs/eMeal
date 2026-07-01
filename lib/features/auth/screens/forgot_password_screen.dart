@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:smart_meal_management/app/router/route_names.dart';
+import 'package:smart_meal_management/app/router/route_extras.dart';
 import 'package:smart_meal_management/core/constants/app_constants.dart';
 import 'package:smart_meal_management/core/theme/app_colors.dart';
 import 'package:smart_meal_management/core/theme/app_typography.dart';
@@ -17,7 +18,11 @@ import 'package:smart_meal_management/features/auth/providers/auth_provider.dart
 ///   POST /v1/auth/forgot-password  { identifier }
 ///   → returns 200 with message confirming OTP sent
 class ForgotPasswordScreen extends StatefulWidget {
-  const ForgotPasswordScreen({super.key});
+  const ForgotPasswordScreen({super.key, this.roleContext = 'student'});
+
+  /// Workspace the recovery was initiated from: 'student' | 'admin' | 'event'.
+  /// Carried to reset + used for role-scoped account validation (Issue 5).
+  final String roleContext;
 
   @override
   State<ForgotPasswordScreen> createState() => _ForgotPasswordScreenState();
@@ -44,10 +49,12 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
     });
 
     // AUTH-017: Forgot Password is Email-OTP only. purpose:'reset' routes to
-    // the backend /auth/forgot-password endpoint (email-only, non-enumerating).
+    // the backend /auth/forgot-password endpoint. roleContext scopes the lookup
+    // so a wrong-workspace / non-existent account is reported (Issue 5).
     final errorMsg = await AuthProviderScope.of(context).requestOtp(
       identifier: _identifierCtrl.text.trim(),
       purpose: 'reset',
+      roleContext: widget.roleContext,
     );
 
     if (!mounted) return;
@@ -58,7 +65,10 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
     } else {
       context.push(
         RouteNames.resetPassword,
-        extra: _identifierCtrl.text.trim(),
+        extra: ResetRouteExtra(
+          identifier: _identifierCtrl.text.trim(),
+          roleContext: widget.roleContext,
+        ),
       );
     }
   }

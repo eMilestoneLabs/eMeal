@@ -1,66 +1,33 @@
-import 'package:smart_meal_management/core/config/env_config.dart';
-import 'package:smart_meal_management/core/errors/failure.dart';
 import 'package:smart_meal_management/data/contracts/i_group_repository.dart';
 import 'package:smart_meal_management/data/services/dio_api_service.dart';
-import 'package:smart_meal_management/data/mock/mock_groups_data.dart';
 import 'package:smart_meal_management/shared/models/group_model.dart';
 import 'package:smart_meal_management/shared/models/paginated_response.dart';
 import 'package:smart_meal_management/shared/models/result.dart';
 import 'package:smart_meal_management/shared/models/user_model.dart';
 import 'package:smart_meal_management/shared/enums/user_role.dart';
 
-/// In-memory mock implementation of [IGroupRepository].
+/// Group repository — calls the live NestJS backend through [DioApiService].
 ///
-/// Pre-populated with [MockGroupsData]. Simulates 300 ms latency.
-///
-/// [_store] is static so that all repository instances (admin and student)
-/// share the same in-memory data during an app session. This allows admin
-/// block/unblock actions to be visible to the student join flow immediately.
+/// Organisation scope is derived server-side from the JWT (never sent by the
+/// client). Member records carry a nested `user` profile (additive contract),
+/// mapped to [UserModel] by [_memberToUser].
 class GroupRepository implements IGroupRepository {
-  GroupRepository() {
-    if (_isMock && !_initialized) {
-      _store.addAll(MockGroupsData.groups());
-      _initialized = true;
-    }
-  }
-
-  /// B10: live/mock dispatch — same single switch as AuthRepository.
-  static bool get _isMock => EnvConfig.current.mockAuthEnabled;
-
-  // Shared in-memory store — survives across repository instances.
-  static final List<GroupModel> _store = [];
-  static bool _initialized = false;
-  static int _idCounter = 100;
-
-  static Future<void> _delay() =>
-      Future.delayed(const Duration(milliseconds: 300));
+  GroupRepository();
 
   @override
   Future<Result<PaginatedResponse<GroupModel>>> getOrganisationGroups({
     required String organizationId,
   }) async {
-    if (!_isMock) {
-      // B10 LIVE: GET /groups — org scope comes from the JWT, never the client.
-      final result = await DioApiService.instance.get<Map<String, dynamic>>(
-        '/groups',
-        queryParameters: {'page': '1', 'limit': '100'},
-      );
-      return switch (result) {
-        Err(:final failure) => Err(failure),
-        Ok(:final value) =>
-          Ok(PaginatedResponse.fromJson(value, GroupModel.fromJson)),
-      };
-    }
-    await _delay();
-    final groups = _store
-        .where((g) => g.organizationId == organizationId && g.isActive)
-        .toList();
-    return Ok(PaginatedResponse(
-      data: groups,
-      total: groups.length,
-      page: 1,
-      limit: groups.length + 1,
-    ));
+    // GET /groups — org scope comes from the JWT, never the client.
+    final result = await DioApiService.instance.get<Map<String, dynamic>>(
+      '/groups',
+      queryParameters: {'page': '1', 'limit': '100'},
+    );
+    return switch (result) {
+      Err(:final failure) => Err(failure),
+      Ok(:final value) =>
+        Ok(PaginatedResponse.fromJson(value, GroupModel.fromJson)),
+    };
   }
 
   @override
@@ -68,33 +35,23 @@ class GroupRepository implements IGroupRepository {
     required String userId,
     required String organizationId,
   }) async {
-    if (!_isMock) {
-      // B10 LIVE: GET /groups then filter to the user's memberships using the
-      // serializer-provided memberIds[] (group serializer contract).
-      final result = await DioApiService.instance.get<Map<String, dynamic>>(
-        '/groups',
-        queryParameters: {'page': '1', 'limit': '100'},
-      );
-      return switch (result) {
-        Err(:final failure) => Err(failure),
-        Ok(:final value) => Ok(
-            PaginatedResponse.fromJson(value, GroupModel.fromJson)
-                .data
-                .where((g) =>
-                    g.isActive &&
-                    (g.memberIds.contains(userId) || g.adminId == userId))
-                .toList(),
-          ),
-      };
-    }
-    await _delay();
-    final groups = _store
-        .where((g) =>
-            g.organizationId == organizationId &&
-            (g.memberIds.contains(userId) || g.adminId == userId) &&
-            g.isActive)
-        .toList();
-    return Ok(groups);
+    // GET /groups then filter to the user's memberships using the
+    // serializer-provided memberIds[] (group serializer contract).
+    final result = await DioApiService.instance.get<Map<String, dynamic>>(
+      '/groups',
+      queryParameters: {'page': '1', 'limit': '100'},
+    );
+    return switch (result) {
+      Err(:final failure) => Err(failure),
+      Ok(:final value) => Ok(
+          PaginatedResponse.fromJson(value, GroupModel.fromJson)
+              .data
+              .where((g) =>
+                  g.isActive &&
+                  (g.memberIds.contains(userId) || g.adminId == userId))
+              .toList(),
+        ),
+    };
   }
 
   @override
@@ -102,23 +59,12 @@ class GroupRepository implements IGroupRepository {
     required String organizationId,
     required String groupId,
   }) async {
-    if (!_isMock) {
-      final result = await DioApiService.instance
-          .get<Map<String, dynamic>>('/groups/$groupId');
-      return switch (result) {
-        Err(:final failure) => Err(failure),
-        Ok(:final value) => Ok(GroupModel.fromJson(value)),
-      };
-    }
-    await _delay();
-    try {
-      final group = _store.firstWhere(
-        (g) => g.id == groupId && g.organizationId == organizationId,
-      );
-      return Ok(group);
-    } catch (_) {
-      return const Err(NetworkFailure(message: 'Group not found.', statusCode: 404));
-    }
+    final result = await DioApiService.instance
+        .get<Map<String, dynamic>>('/groups/$groupId');
+    return switch (result) {
+      Err(:final failure) => Err(failure),
+      Ok(:final value) => Ok(GroupModel.fromJson(value)),
+    };
   }
 
   @override
@@ -131,42 +77,23 @@ class GroupRepository implements IGroupRepository {
     GroupMealConfig? mealConfig,
     UserRole? functionalRole,
   }) async {
-    if (!_isMock) {
-      // B10 LIVE: POST /groups — CreateGroupDto whitelist only.
-      // type.name serializes factory_ as "factory_" (locked API contract).
-      final result = await DioApiService.instance.post<Map<String, dynamic>>(
-        '/groups',
-        body: {
-          'name': name,
-          'type': type.name,
-          if (description != null) 'description': description,
-          if (maxMembers != null) 'maxMembers': maxMembers,
-          if (mealConfig != null) 'mealConfig': mealConfig.toJson(),
-          if (functionalRole != null) 'functionalRole': functionalRole.name,
-        },
-      );
-      return switch (result) {
-        Err(:final failure) => Err(failure),
-        Ok(:final value) => Ok(GroupModel.fromJson(value)),
-      };
-    }
-    await _delay();
-    final group = GroupModel(
-      id: 'grp_${++_idCounter}',
-      organizationId: organizationId,
-      name: name,
-      type: type,
-      mealConfig: mealConfig ?? const GroupMealConfig(),
-      memberIds: const [],
-      description: description,
-      maxMembers: maxMembers,
-      isActive: true,
-      joinCode: 'JOIN-$_idCounter',
-      createdAt: DateTime.now(),
-      functionalRole: functionalRole,
+    // POST /groups — CreateGroupDto whitelist only.
+    // type.name serializes factory_ as "factory_" (locked API contract).
+    final result = await DioApiService.instance.post<Map<String, dynamic>>(
+      '/groups',
+      body: {
+        'name': name,
+        'type': type.name,
+        if (description != null) 'description': description,
+        if (maxMembers != null) 'maxMembers': maxMembers,
+        if (mealConfig != null) 'mealConfig': mealConfig.toJson(),
+        if (functionalRole != null) 'functionalRole': functionalRole.name,
+      },
     );
-    _store.add(group);
-    return Ok(group);
+    return switch (result) {
+      Err(:final failure) => Err(failure),
+      Ok(:final value) => Ok(GroupModel.fromJson(value)),
+    };
   }
 
   @override
@@ -180,37 +107,21 @@ class GroupRepository implements IGroupRepository {
     int? maxMembers,
     UserRole? functionalRole,
   }) async {
-    if (!_isMock) {
-      final result = await DioApiService.instance.patch<Map<String, dynamic>>(
-        '/groups/$groupId',
-        body: {
-          if (name != null) 'name': name,
-          if (type != null) 'type': type.name,
-          if (description != null) 'description': description,
-          if (maxMembers != null) 'maxMembers': maxMembers,
-          if (mealConfig != null) 'mealConfig': mealConfig.toJson(),
-          if (functionalRole != null) 'functionalRole': functionalRole.name,
-        },
-      );
-      return switch (result) {
-        Err(:final failure) => Err(failure),
-        Ok(:final value) => Ok(GroupModel.fromJson(value)),
-      };
-    }
-    await _delay();
-    final idx = _store.indexWhere((g) => g.id == groupId);
-    if (idx == -1) {
-      return const Err(NetworkFailure(message: 'Group not found.', statusCode: 404));
-    }
-    final updated = _store[idx].copyWith(
-      name: name,
-      type: type,
-      description: description,
-      mealConfig: mealConfig,
-      maxMembers: maxMembers,
+    final result = await DioApiService.instance.patch<Map<String, dynamic>>(
+      '/groups/$groupId',
+      body: {
+        if (name != null) 'name': name,
+        if (type != null) 'type': type.name,
+        if (description != null) 'description': description,
+        if (maxMembers != null) 'maxMembers': maxMembers,
+        if (mealConfig != null) 'mealConfig': mealConfig.toJson(),
+        if (functionalRole != null) 'functionalRole': functionalRole.name,
+      },
     );
-    _store[idx] = updated;
-    return Ok(updated);
+    return switch (result) {
+      Err(:final failure) => Err(failure),
+      Ok(:final value) => Ok(GroupModel.fromJson(value)),
+    };
   }
 
   @override
@@ -218,22 +129,13 @@ class GroupRepository implements IGroupRepository {
     required String organizationId,
     required String groupId,
   }) async {
-    if (!_isMock) {
-      // B10 LIVE: DELETE /groups/:id — soft-delete (archive) server-side.
-      final result =
-          await DioApiService.instance.delete<dynamic>('/groups/$groupId');
-      return switch (result) {
-        Err(:final failure) => Err(failure),
-        Ok() => const Ok(Unit.instance),
-      };
-    }
-    await _delay();
-    final idx = _store.indexWhere((g) => g.id == groupId);
-    if (idx == -1) {
-      return const Err(NetworkFailure(message: 'Group not found.', statusCode: 404));
-    }
-    _store[idx] = _store[idx].copyWith(isActive: false);
-    return const Ok(Unit.instance);
+    // DELETE /groups/:id — soft-delete (archive) server-side.
+    final result =
+        await DioApiService.instance.delete<dynamic>('/groups/$groupId');
+    return switch (result) {
+      Err(:final failure) => Err(failure),
+      Ok() => const Ok(Unit.instance),
+    };
   }
 
   @override
@@ -241,27 +143,17 @@ class GroupRepository implements IGroupRepository {
     required String organizationId,
     required String groupId,
   }) async {
-    if (!_isMock) {
-      // B10 LIVE: GET /groups/:id/members — paginated member records.
-      // Each record carries a nested `user` profile (additive contract).
-      final result = await DioApiService.instance.get<Map<String, dynamic>>(
-        '/groups/$groupId/members',
-        queryParameters: {'page': '1', 'limit': '100'},
-      );
-      return switch (result) {
-        Err(:final failure) => Err(failure),
-        Ok(:final value) =>
-          Ok(PaginatedResponse.fromJson(value, _memberToUser)),
-      };
-    }
-    await _delay();
-    final members = MockGroupsData.membersForGroup(groupId);
-    return Ok(PaginatedResponse(
-      data: members,
-      total: members.length,
-      page: 1,
-      limit: members.length + 1,
-    ));
+    // GET /groups/:id/members — paginated member records.
+    // Each record carries a nested `user` profile (additive contract).
+    final result = await DioApiService.instance.get<Map<String, dynamic>>(
+      '/groups/$groupId/members',
+      queryParameters: {'page': '1', 'limit': '100'},
+    );
+    return switch (result) {
+      Err(:final failure) => Err(failure),
+      Ok(:final value) =>
+        Ok(PaginatedResponse.fromJson(value, _memberToUser)),
+    };
   }
 
   @override
@@ -270,25 +162,13 @@ class GroupRepository implements IGroupRepository {
     required String groupId,
     required String userId,
   }) async {
-    if (!_isMock) {
-      // B10 LIVE: DELETE /groups/:id/members/:userId — :memberId == userId.
-      final result = await DioApiService.instance
-          .delete<dynamic>('/groups/$groupId/members/$userId');
-      return switch (result) {
-        Err(:final failure) => Err(failure),
-        Ok() => const Ok(Unit.instance),
-      };
-    }
-    await _delay();
-    final idx = _store.indexWhere((g) => g.id == groupId);
-    if (idx == -1) {
-      return const Err(NetworkFailure(message: 'Group not found.', statusCode: 404));
-    }
-    final group = _store[idx];
-    _store[idx] = group.copyWith(
-      memberIds: group.memberIds.where((id) => id != userId).toList(),
-    );
-    return const Ok(Unit.instance);
+    // DELETE /groups/:id/members/:userId — :memberId == userId.
+    final result = await DioApiService.instance
+        .delete<dynamic>('/groups/$groupId/members/$userId');
+    return switch (result) {
+      Err(:final failure) => Err(failure),
+      Ok() => const Ok(Unit.instance),
+    };
   }
 
   @override
@@ -297,51 +177,16 @@ class GroupRepository implements IGroupRepository {
     required String joinCode,
     required String userId,
   }) async {
-    if (!_isMock) {
-      // B10 LIVE: POST /groups/join — org scope derives from the JWT.
-      // Blocked / already-member rules enforced server-side.
-      final result = await DioApiService.instance.post<Map<String, dynamic>>(
-        '/groups/join',
-        body: {'joinCode': joinCode},
-      );
-      return switch (result) {
-        Err(:final failure) => Err(failure),
-        Ok(:final value) => Ok(GroupModel.fromJson(value)),
-      };
-    }
-    await _delay();
-    try {
-      final idx = _store.indexWhere(
-        (g) => g.joinCode == joinCode && g.organizationId == organizationId,
-      );
-      if (idx == -1) {
-        return const Err(ValidationFailure(message: 'Invalid join code. Please check with your admin.'));
-      }
-      final group = _store[idx];
-
-      // Blocked user check — must come before already-member check
-      if (group.blockedMemberIds.contains(userId)) {
-        return const Err(ValidationFailure(
-          message: 'You have been blocked from joining this group. '
-              'Please contact your admin for help.',
-        ));
-      }
-
-      // Idempotent: already a member
-      if (group.memberIds.contains(userId)) {
-        return const Err(ValidationFailure(
-          message: 'You are already a member of this group.',
-        ));
-      }
-
-      final updated = group.copyWith(
-        memberIds: [...group.memberIds, userId],
-      );
-      _store[idx] = updated;
-      return Ok(updated);
-    } catch (e) {
-      return Err(UnexpectedFailure(message: 'Failed to join group: $e'));
-    }
+    // POST /groups/join — org scope derives from the JWT.
+    // Blocked / already-member rules enforced server-side.
+    final result = await DioApiService.instance.post<Map<String, dynamic>>(
+      '/groups/join',
+      body: {'joinCode': joinCode},
+    );
+    return switch (result) {
+      Err(:final failure) => Err(failure),
+      Ok(:final value) => Ok(GroupModel.fromJson(value)),
+    };
   }
 
   @override
@@ -350,31 +195,15 @@ class GroupRepository implements IGroupRepository {
     required String groupId,
     required String userId,
   }) async {
-    if (!_isMock) {
-      // B10 LIVE: PATCH /groups/:id/members/:userId { status: 'blocked' }.
-      final result = await DioApiService.instance.patch<dynamic>(
-        '/groups/$groupId/members/$userId',
-        body: {'status': 'blocked'},
-      );
-      return switch (result) {
-        Err(:final failure) => Err(failure),
-        Ok() => const Ok(Unit.instance),
-      };
-    }
-    await _delay();
-    final idx = _store.indexWhere((g) => g.id == groupId);
-    if (idx == -1) {
-      return const Err(NetworkFailure(message: 'Group not found.', statusCode: 404));
-    }
-    final group = _store[idx];
-    if (!group.blockedMemberIds.contains(userId)) {
-      _store[idx] = group.copyWith(
-        blockedMemberIds: [...group.blockedMemberIds, userId],
-        // Also remove from active members when blocked
-        memberIds: group.memberIds.where((id) => id != userId).toList(),
-      );
-    }
-    return const Ok(Unit.instance);
+    // PATCH /groups/:id/members/:userId { status: 'blocked' }.
+    final result = await DioApiService.instance.patch<dynamic>(
+      '/groups/$groupId/members/$userId',
+      body: {'status': 'blocked'},
+    );
+    return switch (result) {
+      Err(:final failure) => Err(failure),
+      Ok() => const Ok(Unit.instance),
+    };
   }
 
   @override
@@ -383,25 +212,13 @@ class GroupRepository implements IGroupRepository {
     required String groupId,
     required String userId,
   }) async {
-    if (!_isMock) {
-      // B10 LIVE: PATCH /groups/:id/members/:userId/unblock — restores active.
-      final result = await DioApiService.instance
-          .patch<dynamic>('/groups/$groupId/members/$userId/unblock');
-      return switch (result) {
-        Err(:final failure) => Err(failure),
-        Ok() => const Ok(Unit.instance),
-      };
-    }
-    await _delay();
-    final idx = _store.indexWhere((g) => g.id == groupId);
-    if (idx == -1) {
-      return const Err(NetworkFailure(message: 'Group not found.', statusCode: 404));
-    }
-    final group = _store[idx];
-    _store[idx] = group.copyWith(
-      blockedMemberIds: group.blockedMemberIds.where((id) => id != userId).toList(),
-    );
-    return const Ok(Unit.instance);
+    // PATCH /groups/:id/members/:userId/unblock — restores active.
+    final result = await DioApiService.instance
+        .patch<dynamic>('/groups/$groupId/members/$userId/unblock');
+    return switch (result) {
+      Err(:final failure) => Err(failure),
+      Ok() => const Ok(Unit.instance),
+    };
   }
 
   // ── Live member mapping ────────────────────────────────────────────────────
@@ -452,5 +269,4 @@ class GroupRepository implements IGroupRepository {
         joinCode: joinCode,
         userId: userId,
       );
-
 }

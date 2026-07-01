@@ -54,12 +54,6 @@ class RealtimeMessage {
 /// rt.leaveGroup(groupId);
 /// await rt.disconnect();                     // on logout
 /// ```
-///
-/// ## Mock mode
-///
-/// When [EnvConfig.mockAuthEnabled] is true (instant-rollback flag), every
-/// method is a safe no-op — the app runs fully offline against mock data with
-/// no socket ever opened.
 class RealtimeService {
   RealtimeService._();
 
@@ -82,8 +76,6 @@ class RealtimeService {
 
   Timer? _heartbeat;
 
-  static bool get _isMock => EnvConfig.current.mockAuthEnabled;
-
   /// True once the underlying socket reports a live connection.
   bool get isConnected =>
       connectionState.value == RealtimeConnectionState.connected;
@@ -98,9 +90,8 @@ class RealtimeService {
   // ── Lifecycle ──────────────────────────────────────────────────────────────
 
   /// Opens the socket using the stored JWT. Safe to call repeatedly — a live
-  /// socket is reused. No-op in mock mode or when no valid session exists.
+  /// socket is reused. No-op when no valid session exists.
   Future<void> connect() async {
-    if (_isMock) return;
     if (_socket != null && _socket!.connected) return;
 
     final session = await AuthStorageService.instance.loadSession();
@@ -151,7 +142,7 @@ class RealtimeService {
   /// Joins the `group:{groupId}` room (server validates org + membership).
   /// Remembered so it is re-joined automatically after any reconnect.
   void joinGroup(String groupId) {
-    if (_isMock || groupId.isEmpty) return;
+    if (groupId.isEmpty) return;
     _joinedGroups.add(groupId);
     _socket?.emit(RealtimeEvents.joinGroup, <String, dynamic>{
       'groupId': groupId,
@@ -160,7 +151,7 @@ class RealtimeService {
 
   /// Leaves a previously joined `group:{groupId}` room.
   void leaveGroup(String groupId) {
-    if (_isMock || groupId.isEmpty) return;
+    if (groupId.isEmpty) return;
     _joinedGroups.remove(groupId);
     _socket?.emit(RealtimeEvents.leaveGroup, <String, dynamic>{
       'groupId': groupId,

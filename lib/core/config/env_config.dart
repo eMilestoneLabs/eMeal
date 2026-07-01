@@ -20,7 +20,6 @@ class EnvConfig {
     required this.enableVerboseLogging,
     required this.enableAnalytics,
     required this.enableCrashReporting,
-    required this.mockAuthEnabled,
     required this.enableHttp2,
     required this.http2IdleTimeoutMs,
     required this.enableRequestDedup,
@@ -54,10 +53,6 @@ class EnvConfig {
 
   /// Forward uncaught errors to crash reporter (future Sentry integration).
   final bool enableCrashReporting;
-
-  /// When true, [AuthProvider] skips secure storage and loads a mock session.
-  /// Automatically true in development; always false in production.
-  final bool mockAuthEnabled;
 
   /// Use the HTTP/2 transport for REST calls (multiplexes parallel requests
   /// over one TLS connection — big win on high-RTT links). Only effective over
@@ -106,11 +101,9 @@ class EnvConfig {
 
   // ── Environments ───────────────────────────────────────────────────────────
 
-  // B10 LIVE MODE (2026-06-12):
+  // LIVE MODE:
   //   - apiBaseUrl 10.0.2.2 = host machine as seen from the Android emulator.
   //     Physical device: replace with your LAN IP (e.g. http://192.168.1.x:3000/api).
-  //   - INSTANT ROLLBACK: set mockAuthEnabled back to true + hot restart
-  //     → the entire app returns to in-memory mock mode (no other change needed).
   static const EnvConfig _development = EnvConfig._(
     apiBaseUrl: 'http://10.0.2.2:3000/api',
     wsBaseUrl: 'ws://10.0.2.2:3000',
@@ -120,7 +113,6 @@ class EnvConfig {
     enableVerboseLogging: true,
     enableAnalytics: false,
     enableCrashReporting: false,
-    mockAuthEnabled: false, // B10: live backend (was true — flip back to roll back)
     enableHttp2: false, // dev is plain http:// — h2 (TLS/ALPN) not applicable
     http2IdleTimeoutMs: 60000,
     enableRequestDedup: true,
@@ -138,7 +130,6 @@ class EnvConfig {
     enableVerboseLogging: true,
     enableAnalytics: false,
     enableCrashReporting: true,
-    mockAuthEnabled: false,
     enableHttp2: true, // https — multiplex parallel calls over one connection
     http2IdleTimeoutMs: 60000,
     enableRequestDedup: true,
@@ -156,7 +147,6 @@ class EnvConfig {
     enableVerboseLogging: false,
     enableAnalytics: true,
     enableCrashReporting: true,
-    mockAuthEnabled: false,
     enableHttp2: true, // https — multiplex parallel calls over one connection
     http2IdleTimeoutMs: 60000,
     enableRequestDedup: true,

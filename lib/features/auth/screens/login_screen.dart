@@ -381,6 +381,7 @@ class _LoginScreenState extends State<LoginScreen> with TickerProviderStateMixin
                                 onOtp: _goOtp,
                                 onForgotPassword: () => context.push(
                                   RouteNames.forgotPassword,
+                                  extra: widget.roleContext,
                                 ),
                               ),
                             ),
@@ -869,15 +870,26 @@ class _GradientButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final enabled = onPressed != null;
+    // Premium disabled state (Issue 3): a frosted pill with a visible border and
+    // a dimmed label — clearly a button, clearly inactive, in both themes.
     return DecoratedBox(
       decoration: BoxDecoration(
-        gradient: onPressed != null
-            ? LinearGradient(colors: gradient)
-            : null,
-        color: onPressed == null
-            ? Colors.white.withValues(alpha: 0.20)
-            : null,
+        gradient: enabled ? LinearGradient(colors: gradient) : null,
+        color: enabled ? null : Colors.white.withValues(alpha: 0.14),
         borderRadius: BorderRadius.circular(14),
+        border: enabled
+            ? null
+            : Border.all(color: Colors.white.withValues(alpha: 0.35), width: 1),
+        boxShadow: enabled
+            ? [
+                BoxShadow(
+                  color: gradient.last.withValues(alpha: 0.35),
+                  blurRadius: 16,
+                  offset: const Offset(0, 6),
+                ),
+              ]
+            : null,
       ),
       child: Material(
         color: Colors.transparent,
@@ -899,7 +911,8 @@ class _GradientButton extends StatelessWidget {
                   : Text(
                       label,
                       style: AppTypography.bodyMedium.copyWith(
-                        color: Colors.white,
+                        color: Colors.white
+                            .withValues(alpha: enabled ? 1.0 : 0.6),
                         fontWeight: FontWeight.w700,
                         letterSpacing: 0.3,
                       ),

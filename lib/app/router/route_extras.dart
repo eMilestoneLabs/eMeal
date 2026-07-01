@@ -26,16 +26,34 @@ class OtpRouteExtra {
     this.purpose = 'login',
     this.isSignup = false,
     this.autoRequest,
+    this.popOnSuccess = false,
   });
   final String identifier;
   final String roleContext;
   final String purpose;
   final bool isSignup;
 
+  /// When true, a successful verification pops back to the caller (e.g. Profile
+  /// "Verify now") instead of routing to a dashboard — so the user sees the
+  /// verified badge update in place.
+  final bool popOnSuccess;
+
   /// Whether the screen should request a fresh code on entry. Defaults to true
   /// for `login` (no code pre-sent) and false for `signup` (code sent on signup).
   /// Profile "Verify now" passes true with `signup` to trigger a fresh code.
   final bool? autoRequest;
+}
+
+/// Carries the identifier + role context from [ForgotPasswordScreen] to
+/// [ResetPasswordScreen] so, after a successful reset, the user is returned to
+/// the SAME workspace login (Student vs Admin), never defaulted to Student.
+class ResetRouteExtra {
+  const ResetRouteExtra({
+    required this.identifier,
+    required this.roleContext,
+  });
+  final String identifier;
+  final String roleContext;
 }
 
 /// Carries event guest party data from [EventGuestJoinScreen] to

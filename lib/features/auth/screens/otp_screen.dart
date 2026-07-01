@@ -29,11 +29,16 @@ class OtpScreen extends StatefulWidget {
     this.isSignup = false,
     this.purpose = 'login',
     this.autoRequest,
+    this.popOnSuccess = false,
   });
 
   final String identifier;
   final String roleContext;
   final bool isSignup;
+
+  /// When true, a successful verification pops back to the caller (Profile
+  /// "Verify now") instead of routing to a dashboard.
+  final bool popOnSuccess;
 
   /// Backend OTP flow: `'login'` (code requested on entry) or `'signup'`
   /// (code already sent during account creation — resend uses this purpose).
@@ -127,6 +132,23 @@ class _OtpScreenState extends State<OtpScreen> {
 
     if (error != null) {
       setState(() => _error = error);
+      return;
+    }
+
+    // Profile "Verify now": stay in place — pop back so the verified badge
+    // updates on the profile the user came from (Issue 6).
+    if (widget.popOnSuccess) {
+      // Ensure the live session reflects the freshly-verified state.
+      await auth.refreshCurrentUser();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Email verified ✓'),
+          behavior: SnackBarBehavior.floating,
+          duration: Duration(seconds: 2),
+        ),
+      );
+      context.pop();
       return;
     }
     _routeAfterAuth(auth);

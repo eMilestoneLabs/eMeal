@@ -7,23 +7,27 @@ import 'package:smart_meal_management/core/constants/app_constants.dart';
 import 'package:smart_meal_management/core/theme/app_colors.dart';
 import 'package:smart_meal_management/core/theme/app_typography.dart';
 import 'package:smart_meal_management/features/auth/providers/auth_provider.dart';
+import 'package:smart_meal_management/features/auth/utils/auth_validators.dart';
+import 'package:smart_meal_management/features/auth/widgets/password_strength_indicator.dart';
+import 'package:smart_meal_management/app/router/route_extras.dart';
 
 /// Reset password — step 2.
 ///
-/// User enters the OTP received via email/SMS and their new password.
-///
-/// Mock behaviour:
-///   - OTP '123456' is always accepted (matches MockAuthService OTP logic).
-///   - Password is updated in-memory only (no backend yet).
-///
-/// Backend wiring point:
-///   POST /v1/auth/reset-password  { identifier, otp, newPassword }
+/// User enters the Email OTP they received and their new password, then:
+///   POST /auth/reset-password  { identifier, otp, newPassword }
 ///   → returns 200 with new JWT session on success
 class ResetPasswordScreen extends StatefulWidget {
-  const ResetPasswordScreen({super.key, required this.identifier});
+  const ResetPasswordScreen({
+    super.key,
+    required this.identifier,
+    this.roleContext = 'student',
+  });
 
-  /// The email or mobile number passed from [ForgotPasswordScreen].
+  /// The email passed from [ForgotPasswordScreen].
   final String identifier;
+
+  /// Workspace to return to after a successful reset ('student' | 'admin' | 'event').
+  final String roleContext;
 
   @override
   State<ResetPasswordScreen> createState() => _ResetPasswordScreenState();
@@ -49,11 +53,12 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
   Timer? _timer;
   bool get _canResend => _resendLeft == 0 && !_isResending;
 
-  // FV-004: enable "Reset Password" only when the 6-digit code + a valid,
-  // matching new password are present.
+  // FV-004 + Issue 4: enable "Reset Password" only when the 6-digit code is
+  // present AND the new password passes the strong-password policy (not weak)
+  // AND confirm matches. Weak passwords are rejected.
   bool get _canSubmit =>
       _otpCtrl.text.trim().length >= 6 &&
-      _passwordCtrl.text.length >= 8 &&
+      AuthValidators.password(_passwordCtrl.text) == null &&
       _confirmCtrl.text == _passwordCtrl.text;
 
   @override
@@ -122,8 +127,7 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
       _error = null;
     });
 
-    // Routes through AuthRepository (mock or live based on EnvConfig).
-    // PHASE_B6: POST /v1/auth/reset-password wired in AuthRepository.resetPassword().
+    // AuthRepository.resetPassword → POST /auth/reset-password.
     final auth = AuthProviderScope.of(context);
     final errorMsg = await auth.resetPassword(
       identifier: widget.identifier,
@@ -152,7 +156,9 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final colorScheme = Theme.of(context).colorScheme;
 
-    if (_success) return _SuccessView(isDark: isDark);
+    if (_success) {
+      return _SuccessView(isDark: isDark, roleContext: widget.roleContext);
+    }
 
     return Scaffold(
       backgroundColor: isDark ? AppColors.backgroundDark : AppColors.background,
@@ -250,6 +256,21 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
                   },
                 ),
 
+                const SizedBox(height: AppConstants.space8),
+                // Guided UX (Option B): the request is anti-enumerating, so if the
+                // email has no account no code arrives — tell the user how to recover
+                // without revealing whether the account exists.
+                Text(
+                  "Didn't get a code? Make sure you entered the email you "
+                  'registered with, then resend.',
+                  style: AppTypography.labelSmall.copyWith(
+                    color: isDark
+                        ? AppColors.textSecondaryDark
+                        : AppColors.textSecondary,
+                    height: 1.4,
+                  ),
+                ),
+
                 // ── Resend code ───────────────────────────────────────────
                 Align(
                   alignment: Alignment.centerRight,
@@ -312,12 +333,14 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
                           setState(() => _obscurePassword = !_obscurePassword),
                     ),
                   ),
-                  validator: (v) {
-                    if (v == null || v.length < 8) {
-                      return 'Password must be at least 8 characters';
-                    }
-                    return null;
-                  },
+                  validator: (v) => AuthValidators.password(v ?? ''),
+                ),
+
+                // Issue 4: live strength meter on the new password.
+                ValueListenableBuilder<TextEditingValue>(
+                  valueListenable: _passwordCtrl,
+                  builder: (_, value, _) =>
+                      PasswordStrengthIndicator(password: value.text),
                 ),
 
                 const SizedBox(height: AppConstants.space20),
@@ -486,8 +509,9 @@ class _FieldLabel extends StatelessWidget {
 // ── Success view ───────────────────────────────────────────────────────────────
 
 class _SuccessView extends StatelessWidget {
-  const _SuccessView({required this.isDark});
+  const _SuccessView({required this.isDark, required this.roleContext});
   final bool isDark;
+  final String roleContext;
 
   @override
   Widget build(BuildContext context) {
@@ -540,7 +564,11 @@ class _SuccessView extends StatelessWidget {
                 width: double.infinity,
                 height: AppConstants.buttonHeight,
                 child: FilledButton(
-                  onPressed: () => context.go(RouteNames.login),
+                  // Issue 1: return to the SAME workspace login (admin vs student).
+                  onPressed: () => context.go(
+                    RouteNames.login,
+                    extra: AuthRouteExtra(roleContext: roleContext),
+                  ),
                   style: FilledButton.styleFrom(
                     backgroundColor: AppColors.primary,
                     foregroundColor: Colors.white,

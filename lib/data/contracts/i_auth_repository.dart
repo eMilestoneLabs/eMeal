@@ -32,6 +32,7 @@ abstract interface class IAuthRepository {
   Future<Result<Unit>> requestOtp({
     required String identifier,
     String purpose = 'login',
+    String? roleContext,
   });
 
   /// Verify [otp] sent to [identifier].
@@ -61,6 +62,8 @@ abstract interface class IAuthRepository {
     required LoginPreference loginPreference,
     int? age,
     String? gender,
+    // Admin: organization name (creates the org on signup).
+    String? organizationName,
     // Event admin extras
     String? eventName,
     EventType? eventType,

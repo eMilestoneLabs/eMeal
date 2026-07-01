@@ -42,8 +42,8 @@ class _StudentSignupScreenState extends State<StudentSignupScreen> {
   final _confirmFocus = FocusNode();
   final _ageFocus = FocusNode();
 
-  // Dropdown state
-  UserRole _role = UserRole.student;
+  // Account is created as a base "student"; role refines on group join (AUTH-033).
+  final UserRole _role = UserRole.student;
   String _gender = 'Prefer not to say';
   LoginPreference _loginPref = LoginPreference.email;
 
@@ -185,22 +185,9 @@ class _StudentSignupScreenState extends State<StudentSignupScreen> {
               ),
               const SizedBox(height: 14),
 
-              // Role dropdown
-              _DropdownField<UserRole>(
-                label: 'Role',
-                value: _role,
-                enabled: !_isLoading,
-                items: const [
-                  DropdownMenuItem(
-                      value: UserRole.student, child: Text('Student')),
-                  DropdownMenuItem(
-                      value: UserRole.member, child: Text('Member')),
-                  DropdownMenuItem(
-                      value: UserRole.guest, child: Text('Guest')),
-                ],
-                onChanged: (v) => setState(() => _role = v ?? UserRole.student),
-              ),
-              const SizedBox(height: 14),
+              // AUTH-032/033: no role selection at signup — the member's role is
+              // determined later when they join a group. Account is created as a
+              // base "student"; group membership refines it.
 
               Row(
                 children: [

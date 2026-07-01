@@ -11,9 +11,7 @@ import 'package:smart_meal_management/shared/models/result.dart';
 /// contract in the project. Implementations must never throw; they wrap errors
 /// in [Err] with an appropriate [Failure] subtype.
 ///
-/// Implementations:
-///   - [MockEventRepository] — local in-memory store (Phase 1–2)
-///   - [ApiEventRepository]  — NestJS REST backend  (Phase 8+)
+/// Implemented by [EventRepository] against the live NestJS REST backend.
 abstract interface class IEventRepository {
   // ── Event CRUD ────────────────────────────────────────────────────────────
 

@@ -10,6 +10,10 @@
 ///   - Age       : 13–99, under-13 blocked (AUTH-018); admin min 18
 ///
 /// Each method returns `null` when valid, or a user-facing message when not.
+library;
+
+import 'package:smart_meal_management/features/auth/widgets/password_strength_indicator.dart';
+
 abstract final class AuthValidators {
   static final _emailRe = RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$');
   static final _nameRe = RegExp(r"^[A-Za-z][A-Za-z .'-]*$");
@@ -40,11 +44,16 @@ abstract final class AuthValidators {
     return null;
   }
 
-  /// Matches the backend strong-password gate (min 8). The strength meter
-  /// nudges the user toward stronger combinations beyond this minimum.
+  /// Strong-password policy (AUTH / Issue 4): min 8 chars AND not "weak" — i.e.
+  /// at least two character classes (letters + a number/uppercase/symbol). Weak
+  /// passwords are rejected for both account creation and password reset.
   static String? password(String value) {
     if (value.isEmpty) return 'Enter a password';
     if (value.length < 8) return 'Password must be at least 8 characters';
+    final strength = PasswordStrengthIndicator.strengthOf(value);
+    if (strength.index <= PasswordStrength.weak.index) {
+      return 'Too weak — add a number or a capital letter';
+    }
     return null;
   }
 

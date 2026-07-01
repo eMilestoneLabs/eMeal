@@ -23,12 +23,11 @@ final class Unit {
 ///
 /// ```dart
 /// Future<Result<UserModel>> getProfile() async {
-///   try {
-///     await _delay();
-///     return Ok(MockAuthService.currentUser);
-///   } catch (e) {
-///     return Err(UnknownFailure(message: e.toString()));
-///   }
+///   final result = await DioApiService.instance.get<Map<String, dynamic>>('/auth/me');
+///   return switch (result) {
+///     Ok(:final value) => Ok(UserModel.fromJson(value)),
+///     Err(:final failure) => Err(failure),
+///   };
 /// }
 /// ```
 ///

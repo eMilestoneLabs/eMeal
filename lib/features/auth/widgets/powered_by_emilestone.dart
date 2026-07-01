@@ -4,13 +4,14 @@ import 'package:smart_meal_management/core/theme/app_typography.dart';
 
 /// Animated "Powered by eMilestone" brand mark (SRS AUTH-010 / UI-015).
 ///
-/// A premium, lightweight loop tuned for a calm, classy cadence:
-///  - a one-time entrance (fade + gentle rise),
-///  - a single left→right shimmer that sweeps the wordmark then rests,
-///  - a sparkle that softly pulses in scale + opacity and drifts in rotation.
+/// Premium + robust:
+///  - the wordmark is ALWAYS rendered in a readable [baseColor] (it never
+///    depends on an entrance/animation state to be visible — fixes Issue 8),
+///  - a bright highlight sweeps left→right across it (ShaderMask) then rests,
+///  - a sparkle softly pulses in scale + opacity.
 ///
-/// One AnimationController drives the loop; the entrance uses a fire-once
-/// TweenAnimationBuilder. Set [animate] to false for reduced-motion / low-power.
+/// One AnimationController; set [animate] false for reduced-motion (renders the
+/// static, fully-visible mark).
 class PoweredByEmilestone extends StatefulWidget {
   const PoweredByEmilestone({
     super.key,
@@ -20,16 +21,9 @@ class PoweredByEmilestone extends StatefulWidget {
     this.animate = true,
   });
 
-  /// Resting color of the "eMilestone" wordmark.
   final Color? baseColor;
-
-  /// Color of the shimmer that sweeps across the wordmark.
   final Color? highlightColor;
-
-  /// Color of the muted "Powered by" prefix + sparkle.
   final Color? prefixColor;
-
-  /// When false, renders the static brand mark (accessibility / low-power).
   final bool animate;
 
   @override
@@ -39,9 +33,7 @@ class PoweredByEmilestone extends StatefulWidget {
 class _PoweredByEmilestoneState extends State<PoweredByEmilestone>
     with SingleTickerProviderStateMixin {
   late final AnimationController _ctrl;
-
-  // Fraction of each cycle spent sweeping; the remainder is a calm pause.
-  static const double _sweepFraction = 0.5;
+  static const double _sweepFraction = 0.5; // sweep half the cycle, then rest
 
   @override
   void initState() {
@@ -72,35 +64,33 @@ class _PoweredByEmilestoneState extends State<PoweredByEmilestone>
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
-    final base = widget.baseColor ?? colorScheme.onSurface.withValues(alpha: 0.55);
+    // Readable defaults — always visible even at rest, in light AND dark.
+    final base = widget.baseColor ?? colorScheme.onSurface.withValues(alpha: 0.75);
     final highlight = widget.highlightColor ?? colorScheme.primary;
     final prefix =
-        widget.prefixColor ?? colorScheme.onSurfaceVariant.withValues(alpha: 0.45);
+        widget.prefixColor ?? colorScheme.onSurfaceVariant.withValues(alpha: 0.70);
 
     final wordStyle = AppTypography.labelMedium.copyWith(
       fontWeight: FontWeight.w800,
-      letterSpacing: 0.4,
+      letterSpacing: 0.5,
     );
     final prefixStyle = AppTypography.labelSmall.copyWith(
       color: prefix,
-      letterSpacing: 0.4,
-      fontWeight: FontWeight.w500,
+      letterSpacing: 0.5,
+      fontWeight: FontWeight.w600,
     );
 
-    final loop = AnimatedBuilder(
+    return AnimatedBuilder(
       animation: _ctrl,
       builder: (context, _) {
         final v = _ctrl.value;
-        // One-directional sweep during the first [_sweepFraction] of the cycle,
-        // eased, then held off-screen for a restful pause.
         final swept = (v / _sweepFraction).clamp(0.0, 1.0);
         final p = Curves.easeInOut.transform(swept);
-        final pos = -1.0 + 2.0 * p; // travels left → right
+        final pos = -1.0 + 2.0 * p; // travels left → right, then holds
 
-        // Sparkle breathes over the whole cycle (independent of the sweep).
         final breathe = (math.sin(v * 2 * math.pi) + 1) / 2; // 0..1
-        final sparkleScale = 0.88 + 0.24 * breathe;
-        final sparkleOpacity = 0.55 + 0.45 * breathe;
+        final sparkleScale = 0.9 + 0.2 * breathe;
+        final sparkleOpacity = 0.7 + 0.3 * breathe;
 
         return Row(
           mainAxisSize: MainAxisSize.min,
@@ -111,8 +101,7 @@ class _PoweredByEmilestoneState extends State<PoweredByEmilestone>
                 angle: breathe * 0.5,
                 child: Transform.scale(
                   scale: sparkleScale,
-                  child: Icon(Icons.auto_awesome_rounded,
-                      size: 13, color: highlight),
+                  child: Icon(Icons.auto_awesome_rounded, size: 13, color: highlight),
                 ),
               ),
             ),
@@ -120,12 +109,19 @@ class _PoweredByEmilestoneState extends State<PoweredByEmilestone>
             Text('Powered by ', style: prefixStyle),
             ShaderMask(
               blendMode: BlendMode.srcIn,
-              shaderCallback: (bounds) => LinearGradient(
-                begin: Alignment(pos - 0.5, 0),
-                end: Alignment(pos + 0.5, 0),
-                colors: [base, highlight, base],
-                stops: const [0.30, 0.5, 0.70],
-              ).createShader(bounds),
+              shaderCallback: (bounds) {
+                // Base fills the whole word (always visible); a bright band
+                // sweeps across for the premium shimmer.
+                if (!widget.animate) {
+                  return LinearGradient(colors: [base, base]).createShader(bounds);
+                }
+                return LinearGradient(
+                  begin: Alignment(pos - 0.5, 0),
+                  end: Alignment(pos + 0.5, 0),
+                  colors: [base, highlight, base],
+                  stops: const [0.30, 0.5, 0.70],
+                ).createShader(bounds);
+              },
               child: Text(
                 'eMilestone',
                 style: wordStyle.copyWith(color: Colors.white),
@@ -134,18 +130,6 @@ class _PoweredByEmilestoneState extends State<PoweredByEmilestone>
           ],
         );
       },
-    );
-
-    // Fire-once entrance: fade in + gentle rise.
-    return TweenAnimationBuilder<double>(
-      tween: Tween(begin: 0.0, end: 1.0),
-      duration: const Duration(milliseconds: 650),
-      curve: Curves.easeOutCubic,
-      builder: (context, t, child) => Opacity(
-        opacity: t,
-        child: Transform.translate(offset: Offset(0, 8 * (1 - t)), child: child),
-      ),
-      child: loop,
     );
   }
 }

@@ -36,13 +36,6 @@ import 'package:smart_meal_management/shared/models/result.dart';
 /// }
 /// ```
 ///
-/// ## Integration checklist (Phase B6)
-///
-/// 1. Remove `MockAuthService` calls from [AuthRepository] when
-///    `EnvConfig.current.mockAuthEnabled == false`.
-/// 2. Replace mock repo implementations with real API calls using this service.
-/// 3. Update `_refreshEndpoint` to match the NestJS `/v1/auth/refresh` route.
-///
 /// ## Thread safety
 ///
 /// [_isRefreshing] prevents concurrent token-refresh storms. If a second

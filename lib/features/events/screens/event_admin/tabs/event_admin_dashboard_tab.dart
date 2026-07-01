@@ -1311,7 +1311,7 @@ class _ExportSheetState extends State<_ExportSheet> {
   bool _exportingPdf = false;
   bool _exportingExcel = false;
 
-  Future<void> _mockExport({required bool isPdf}) async {
+  Future<void> _export({required bool isPdf}) async {
     setState(() {
       if (isPdf) {
         _exportingPdf = true;
@@ -1640,7 +1640,7 @@ class _ExportSheetState extends State<_ExportSheet> {
               color: AppColors.error,
               isDark: isDark,
               isLoading: _exportingPdf,
-              onTap: () => _mockExport(isPdf: true),
+              onTap: () => _export(isPdf: true),
             ),
             const SizedBox(height: 10),
             _ExportActionButton(
@@ -1650,7 +1650,7 @@ class _ExportSheetState extends State<_ExportSheet> {
               color: const Color(0xFF16A34A),
               isDark: isDark,
               isLoading: _exportingExcel,
-              onTap: () => _mockExport(isPdf: false),
+              onTap: () => _export(isPdf: false),
             ),
             const SizedBox(height: 8),
           ],

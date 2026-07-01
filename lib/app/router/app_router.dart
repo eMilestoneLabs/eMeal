@@ -163,20 +163,23 @@ GoRouter buildRouter(AuthProvider auth) {
         },
       ),
 
-      // Auth: Forgot password
+      // Auth: Forgot password (carries the workspace roleContext as a String extra)
       GoRoute(
         path: RouteNames.forgotPassword,
-        builder: (context, state) => const ForgotPasswordScreen(),
+        builder: (context, state) {
+          final roleContext = state.extra is String ? state.extra as String : 'student';
+          return ForgotPasswordScreen(roleContext: roleContext);
+        },
       ),
 
-      // Auth: Reset password (step 2 — carries identifier as extra)
+      // Auth: Reset password (step 2 — carries identifier + roleContext)
       GoRoute(
         path: RouteNames.resetPassword,
         builder: (context, state) {
-          final identifier = state.extra is String
-              ? state.extra as String
-              : '';
-          return ResetPasswordScreen(identifier: identifier);
+          final extra = state.extra;
+          final identifier = extra is ResetRouteExtra ? extra.identifier : '';
+          final roleContext = extra is ResetRouteExtra ? extra.roleContext : 'student';
+          return ResetPasswordScreen(identifier: identifier, roleContext: roleContext);
         },
       ),
 
@@ -190,12 +193,14 @@ GoRouter buildRouter(AuthProvider auth) {
           final purpose = extra is OtpRouteExtra ? extra.purpose : 'login';
           final isSignup = extra is OtpRouteExtra ? extra.isSignup : false;
           final autoRequest = extra is OtpRouteExtra ? extra.autoRequest : null;
+          final popOnSuccess = extra is OtpRouteExtra ? extra.popOnSuccess : false;
           return OtpScreen(
             identifier: identifier,
             roleContext: roleContext,
             purpose: purpose,
             isSignup: isSignup,
             autoRequest: autoRequest,
+            popOnSuccess: popOnSuccess,
           );
         },
       ),

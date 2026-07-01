@@ -214,15 +214,15 @@ class _RoleSelectScreenState extends State<RoleSelectScreen>
                           const SizedBox(height: 6),
                           PoweredByEmilestone(
                             baseColor: (isDark
-                                    ? AppColors.textTertiaryDark
-                                    : AppColors.textTertiary)
-                                .withValues(alpha: 0.55),
+                                    ? AppColors.textSecondaryDark
+                                    : AppColors.textSecondary)
+                                .withValues(alpha: 0.85),
                             highlightColor:
                                 isDark ? Colors.white : AppColors.primary,
                             prefixColor: (isDark
-                                    ? AppColors.textTertiaryDark
-                                    : AppColors.textTertiary)
-                                .withValues(alpha: 0.45),
+                                    ? AppColors.textSecondaryDark
+                                    : AppColors.textSecondary)
+                                .withValues(alpha: 0.70),
                           ),
                         ],
                       ),
