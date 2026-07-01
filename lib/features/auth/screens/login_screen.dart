@@ -315,8 +315,14 @@ class _LoginScreenState extends State<LoginScreen> with TickerProviderStateMixin
                   bottom: bottomInset > 0 ? bottomInset + 16 : 20,
                 ),
                 child: ConstrainedBox(
+                  // Keyboard-aware (enterprise standard): when the keyboard is
+                  // open, shrink the min height by its inset so the whole card —
+                  // including the Sign In button — lifts above the keyboard (the
+                  // Spacer collapses). Background stays fixed (Positioned.fill).
                   constraints: BoxConstraints(
-                      minHeight: constraints.maxHeight),
+                    minHeight: (constraints.maxHeight - bottomInset)
+                        .clamp(0.0, constraints.maxHeight),
+                  ),
                   child: IntrinsicHeight(
                     child: Column(
                       crossAxisAlignment:
@@ -757,6 +763,7 @@ class _LoginFormFields extends StatelessWidget {
             keyboardType: identifierKeyboardType,
             textInputAction: TextInputAction.next,
             errorText: identifierError,
+            autofocus: true, // Issue 1: focus the first field on entry
             onChanged: onIdentifierChanged,
             onSubmitted: onIdentifierSubmitted,
           ),
@@ -871,16 +878,19 @@ class _GradientButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final enabled = onPressed != null;
-    // Premium disabled state (Issue 3): a frosted pill with a visible border and
-    // a dimmed label — clearly a button, clearly inactive, in both themes.
+    // Premium disabled state: keep the ROLE gradient but dimmed, with a solid
+    // white overlay + border + strong-enough label — so the button stays clearly
+    // visible (not a faint ghost) yet obviously inactive, in light AND dark.
+    final disabledGradient = LinearGradient(
+      colors: gradient.map((c) => c.withValues(alpha: 0.55)).toList(),
+    );
     return DecoratedBox(
       decoration: BoxDecoration(
-        gradient: enabled ? LinearGradient(colors: gradient) : null,
-        color: enabled ? null : Colors.white.withValues(alpha: 0.14),
+        gradient: enabled ? LinearGradient(colors: gradient) : disabledGradient,
         borderRadius: BorderRadius.circular(14),
         border: enabled
             ? null
-            : Border.all(color: Colors.white.withValues(alpha: 0.35), width: 1),
+            : Border.all(color: Colors.white.withValues(alpha: 0.55), width: 1.2),
         boxShadow: enabled
             ? [
                 BoxShadow(
@@ -912,7 +922,7 @@ class _GradientButton extends StatelessWidget {
                       label,
                       style: AppTypography.bodyMedium.copyWith(
                         color: Colors.white
-                            .withValues(alpha: enabled ? 1.0 : 0.6),
+                            .withValues(alpha: enabled ? 1.0 : 0.85),
                         fontWeight: FontWeight.w700,
                         letterSpacing: 0.3,
                       ),

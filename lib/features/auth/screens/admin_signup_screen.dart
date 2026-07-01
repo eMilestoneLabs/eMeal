@@ -174,6 +174,7 @@ class _AdminSignupScreenState extends State<AdminSignupScreen> {
                 label: 'Full Name', controller: _nameCtrl, focusNode: _nameFocus,
                 errorText: _nameError, textCapitalization: TextCapitalization.words,
                 textInputAction: TextInputAction.next, enabled: !_isLoading,
+                autofocus: true, // Issue 1
                 maxLength: 30,
                 onChanged: (v) => setState(
                     () => _nameError = AuthValidators.live(v, AuthValidators.name)),

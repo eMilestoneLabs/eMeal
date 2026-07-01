@@ -178,6 +178,7 @@ class _StudentSignupScreenState extends State<StudentSignupScreen> {
                 textCapitalization: TextCapitalization.words,
                 textInputAction: TextInputAction.next,
                 enabled: !_isLoading,
+                autofocus: true, // Issue 1
                 maxLength: 30,
                 onChanged: (v) => setState(
                     () => _nameError = AuthValidators.live(v, AuthValidators.name)),
