@@ -10,6 +10,7 @@ import 'package:smart_meal_management/shared/models/group_model.dart';
 import 'package:smart_meal_management/shared/models/meal_model.dart';
 import 'package:smart_meal_management/shared/models/meal_schedule_model.dart';
 import 'package:smart_meal_management/shared/models/result.dart';
+import 'package:smart_meal_management/data/services/image_cache_seeder.dart';
 import 'package:smart_meal_management/data/services/response_cache_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -383,6 +384,11 @@ class MealConfigProvider extends ChangeNotifier {
         _meals = [..._meals, value]
           ..sort((a, b) => a.order.compareTo(b.order));
         _cacheMeals(organizationId, groupId);
+        // Seed the image cache with the bytes we just uploaded so the new meal
+        // photo renders instantly under its new URL (no CDN re-download).
+        if (safeImages.isNotEmpty) {
+          ImageCacheSeeder.seed(value.imageUrl, safeImages.first);
+        }
         _isSaving = false;
         notifyListeners();
         return value;
@@ -443,6 +449,12 @@ class MealConfigProvider extends ChangeNotifier {
           _meals = List.of(_meals)..[idx] = value;
         }
         _cacheMeals(organizationId, groupId);
+        // Seed the image cache with the bytes we just uploaded so the replaced
+        // meal photo renders instantly under its new URL (no CDN re-download).
+        final seedBytes = safeImages ?? imageBytes;
+        if (seedBytes != null && seedBytes.isNotEmpty) {
+          ImageCacheSeeder.seed(value.imageUrl, seedBytes.first);
+        }
         _isSaving = false;
         notifyListeners();
         return true;

@@ -10,6 +10,7 @@ import 'package:smart_meal_management/core/constants/app_constants.dart';
 import 'package:smart_meal_management/core/theme/app_colors.dart';
 import 'package:smart_meal_management/core/theme/app_typography.dart';
 import 'package:smart_meal_management/data/repositories/group_repository.dart';
+import 'package:smart_meal_management/data/services/image_cache_seeder.dart';
 import 'package:smart_meal_management/features/auth/providers/auth_provider.dart';
 import 'package:smart_meal_management/features/auth/widgets/email_verification_badge.dart';
 import 'package:smart_meal_management/shared/models/result.dart';
@@ -97,6 +98,10 @@ class _AdminProfileScreenState extends State<AdminProfileScreen> {
     if (user != null) {
       final dataUri = 'data:image/jpeg;base64,${base64Encode(bytes)}';
       await auth.updateProfile(user.copyWith(avatarUrl: dataUri));
+      // Seed the image cache with the bytes we just uploaded, keyed by the
+      // stored URL the backend returned, so the new avatar renders instantly
+      // on every screen (member lists, attendance) — no CDN re-download.
+      ImageCacheSeeder.seed(auth.currentUser?.avatarUrl, bytes);
     }
     if (mounted) setState(() => _uploadingAvatar = false);
   }

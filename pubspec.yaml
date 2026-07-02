@@ -21,6 +21,10 @@ dependencies:
   # Network image caching — load meal photos/avatars once, then serve from the
   # on-disk cache (replaces Image.network in production for fast dashboards).
   cached_network_image: ^3.4.1
+  # Direct dep (was transitive via cached_network_image): used to SEED the
+  # image cache with just-uploaded bytes so new meal photos/avatars render
+  # instantly instead of re-downloading from the CDN under their new URL.
+  flutter_cache_manager: ^3.4.1
   # Charts — Member Billing V2 analytics (revenue / consumption trends)
   fl_chart: ^0.69.0
 

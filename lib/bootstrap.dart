@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:smart_meal_management/app/app.dart';
 import 'package:smart_meal_management/app/router/app_router.dart';
 import 'package:smart_meal_management/core/config/env_config.dart';
+import 'package:smart_meal_management/data/services/dio_api_service.dart';
 import 'package:smart_meal_management/data/services/notification_service.dart';
 import 'package:smart_meal_management/data/services/push_notification_service.dart';
 import 'package:smart_meal_management/data/services/response_cache_service.dart';
@@ -59,8 +60,19 @@ Future<void> bootstrap() async {
     ),
   );
 
+  // ── Connection pre-warm (fire-and-forget) ──────────────────────────────────
+  // Open the DNS + TCP + TLS + ALPN(h2) connection to the API while the splash
+  // intro plays, so the FIRST real request (dashboard load) reuses a warm
+  // connection instead of paying the full cold handshake — the single biggest
+  // fixed cost on a high-RTT link. GET /health is @Public (no auth, no side
+  // effects) and the Result API never throws; a failure changes nothing.
+  unawaited(
+    DioApiService.instance.get<dynamic>('/health', requiresAuth: false),
+  );
+
   // ── Post-frame: resolve the session so the router can redirect a restored ──
-  // user to their dashboard. Bounded by Dio's own timeouts; never throws.
+  // user to their dashboard. Now a PURE LOCAL READ (instant boot) — the server
+  // session check runs in the background inside AuthProvider. Never throws.
   await authProvider.initialize();
 
   // Best-effort background services (notifications, FCM token, cache prune).

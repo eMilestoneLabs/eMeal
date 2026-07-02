@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart' show BuildContext, InheritedNotifier;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:smart_meal_management/data/repositories/attendance_repository.dart';
+import 'package:smart_meal_management/data/repositories/dashboard_repository.dart';
 import 'package:smart_meal_management/data/repositories/group_repository.dart';
 import 'package:smart_meal_management/data/repositories/meal_repository.dart';
 import 'package:smart_meal_management/shared/models/group_model.dart';
@@ -27,13 +28,16 @@ class AdminDashboardProvider extends ChangeNotifier {
     GroupRepository? groupRepository,
     AttendanceRepository? attendanceRepository,
     MealRepository? mealRepository,
+    DashboardRepository? dashboardRepository,
   })  : _groupRepo = groupRepository ?? GroupRepository(),
         _attendanceRepo = attendanceRepository ?? AttendanceRepository(),
-        _mealRepo = mealRepository ?? MealRepository();
+        _mealRepo = mealRepository ?? MealRepository(),
+        _dashboardRepo = dashboardRepository ?? DashboardRepository();
 
   final GroupRepository _groupRepo;
   final AttendanceRepository _attendanceRepo;
   final MealRepository _mealRepo;
+  final DashboardRepository _dashboardRepo;
 
   // ── State ──────────────────────────────────────────────────────────────────
 
@@ -238,6 +242,27 @@ class AdminDashboardProvider extends ChangeNotifier {
     _isLoading = _groups.isEmpty;
     notifyListeners();
 
+    // GOLDEN PATH — single round-trip: GET /dashboard/admin/overview returns
+    // groups + today's meals + per-meal summaries + recent activity in ONE
+    // response (the backend composes the exact same per-endpoint payloads), so
+    // a cold dashboard costs 1 network round-trip instead of 3 sequential
+    // waves (1 + 2N + M requests). On ANY failure — older backend without the
+    // endpoint, network error, unexpected shape — we fall through to the
+    // legacy wave-by-wave path below, unchanged. Deploy-order safe.
+    if (await _tryLoadFromOverview(organizationName)) {
+      if (_groups.isNotEmpty) {
+        await _restoreDefaultGroupSelection();
+      }
+      _bindRealtime();
+      if (_groups.isNotEmpty) {
+        _writeDashCache(dashKey);
+      }
+      _isLoading = false;
+      _isFetching = false;
+      notifyListeners();
+      return;
+    }
+
     // 1. Fetch groups for this organisation
     final groupsResult = await _groupRepo.getOrganisationGroups(
       organizationId: organizationId,
@@ -329,39 +354,11 @@ class AdminDashboardProvider extends ChangeNotifier {
       }
 
       // Derive per-group present/absent/total by summing meal-wise counts.
-      int present = 0;
-      int absent = 0;
-      int total = 0;
-      _presentByGroup.clear();
-      _absentByGroup.clear();
-      _totalByGroup.clear();
-      for (final m in _todayMeals) {
-        final s = _mealSummaries[m.id];
-        if (s == null) continue;
-        final gTotal = s.presentCount + s.absentCount + s.skippedCount;
-        _presentByGroup[m.groupId] =
-            (_presentByGroup[m.groupId] ?? 0) + s.presentCount;
-        _absentByGroup[m.groupId] =
-            (_absentByGroup[m.groupId] ?? 0) + s.absentCount;
-        _totalByGroup[m.groupId] =
-            (_totalByGroup[m.groupId] ?? 0) + gTotal;
-        present += s.presentCount;
-        absent += s.absentCount;
-        total += gTotal;
-      }
-      _presentToday = present;
-      _absentToday = absent;
-      _todayTotal = total;
+      _deriveCountsFromSummaries();
 
       // Issue #8: restore the saved default group, or default to the first one
       // so the dashboard opens on a concrete group rather than a vague total.
-      if (_selectedGroupId == null ||
-          !_groups.any((g) => g.id == _selectedGroupId)) {
-        final saved = await _loadDefaultGroup();
-        _selectedGroupId = (saved != null && _groups.any((g) => g.id == saved))
-            ? saved
-            : _groups.first.id;
-      }
+      await _restoreDefaultGroupSelection();
 
       // 3b. Recent activity feed — await the history fetch started above (it ran
       // concurrently with steps 2 + 3a), then merge, sort, cap at 5.
@@ -387,23 +384,131 @@ class AdminDashboardProvider extends ChangeNotifier {
 
     // Persist the dashboard KPI core for instant cache-first paint next time.
     if (_groups.isNotEmpty) {
-      ResponseCacheService.instance.write(dashKey, {
-        'groups': _groups.map((g) => g.toJson()).toList(),
-        'meals': _todayMeals.map((m) => m.toJson()).toList(),
-        'activity': _recentActivity.map((a) => a.toJson()).toList(),
-        'present': _presentToday,
-        'absent': _absentToday,
-        'total': _todayTotal,
-        'presentByGroup': _presentByGroup,
-        'absentByGroup': _absentByGroup,
-        'totalByGroup': _totalByGroup,
-        'selectedGroupId': _selectedGroupId,
-      });
+      _writeDashCache(dashKey);
     }
 
     _isLoading = false;
     _isFetching = false;
     notifyListeners();
+  }
+
+  // ── Overview golden path (single round-trip) ────────────────────────────────
+
+  /// Loads the whole dashboard from GET /dashboard/admin/overview (one call).
+  ///
+  /// Parses every section into locals FIRST and only then commits to provider
+  /// state, so a malformed response can never leave partial state. Returns
+  /// false on any failure so [load] falls back to the legacy wave path.
+  Future<bool> _tryLoadFromOverview(String organizationName) async {
+    final result = await _dashboardRepo.getAdminOverview(date: _today());
+    switch (result) {
+      case Err():
+        return false;
+      case Ok(:final value):
+        try {
+          final groupsJson = value['groups'];
+          if (groupsJson is! Map) return false;
+          final groups = PaginatedResponse.fromJson(
+            groupsJson.cast<String, dynamic>(),
+            GroupModel.fromJson,
+          ).data;
+          final meals = ((value['todayMeals'] as List?) ?? const [])
+              .whereType<Map<String, dynamic>>()
+              .map(MealModel.fromJson)
+              .toList();
+          final summaries = <String, MealAttendanceSummary>{};
+          for (final s in ((value['mealSummaries'] as List?) ?? const [])
+              .whereType<Map<String, dynamic>>()) {
+            final parsed = MealAttendanceSummary.fromJson(s);
+            summaries[parsed.mealId] = parsed;
+          }
+          // Same post-processing the legacy path applies to raw history rows:
+          // drop pending, sort by markedAt (fallback date) desc, take 5.
+          final activity = ((value['recentActivity'] as List?) ?? const [])
+              .whereType<Map<String, dynamic>>()
+              .map(AttendanceModel.fromJson)
+              .where((r) => r.status != AttendanceStatus.pending)
+              .toList()
+            ..sort((a, b) =>
+                (b.markedAt ?? b.date).compareTo(a.markedAt ?? a.date));
+
+          // All parses succeeded — commit atomically (mirrors legacy guards:
+          // meals/summaries/activity only apply when groups exist).
+          _groups = groups;
+          if (organizationName == 'Your Organisation' && _groups.isNotEmpty) {
+            _orgName = _groups.length == 1
+                ? _groups.first.name
+                : '${_groups.length} Groups';
+          }
+          if (_groups.isEmpty) return true;
+          _todayMeals = meals;
+          _mealSummaries
+            ..clear()
+            ..addAll(summaries);
+          _deriveCountsFromSummaries();
+          _recentActivity = activity.take(5).toList();
+          return true;
+        } catch (_) {
+          return false; // unexpected shape → legacy path takes over
+        }
+    }
+  }
+
+  /// Derives org-wide + per-group present/absent/total from [_mealSummaries]
+  /// (single source of truth shared by the overview and legacy load paths).
+  void _deriveCountsFromSummaries() {
+    int present = 0;
+    int absent = 0;
+    int total = 0;
+    _presentByGroup.clear();
+    _absentByGroup.clear();
+    _totalByGroup.clear();
+    for (final m in _todayMeals) {
+      final s = _mealSummaries[m.id];
+      if (s == null) continue;
+      final gTotal = s.presentCount + s.absentCount + s.skippedCount;
+      _presentByGroup[m.groupId] =
+          (_presentByGroup[m.groupId] ?? 0) + s.presentCount;
+      _absentByGroup[m.groupId] =
+          (_absentByGroup[m.groupId] ?? 0) + s.absentCount;
+      _totalByGroup[m.groupId] =
+          (_totalByGroup[m.groupId] ?? 0) + gTotal;
+      present += s.presentCount;
+      absent += s.absentCount;
+      total += gTotal;
+    }
+    _presentToday = present;
+    _absentToday = absent;
+    _todayTotal = total;
+  }
+
+  /// Issue #8: restore the saved default group, or default to the first one
+  /// so the dashboard opens on a concrete group rather than a vague total.
+  /// Call only when [_groups] is non-empty.
+  Future<void> _restoreDefaultGroupSelection() async {
+    if (_selectedGroupId == null ||
+        !_groups.any((g) => g.id == _selectedGroupId)) {
+      final saved = await _loadDefaultGroup();
+      _selectedGroupId = (saved != null && _groups.any((g) => g.id == saved))
+          ? saved
+          : _groups.first.id;
+    }
+  }
+
+  /// Persists the dashboard KPI core for instant cache-first paint next time.
+  void _writeDashCache(String dashKey) {
+    ResponseCacheService.instance.write(dashKey, {
+      'groups': _groups.map((g) => g.toJson()).toList(),
+      'meals': _todayMeals.map((m) => m.toJson()).toList(),
+      'activity': _recentActivity.map((a) => a.toJson()).toList(),
+      'present': _presentToday,
+      'absent': _absentToday,
+      'total': _todayTotal,
+      'presentByGroup': _presentByGroup,
+      'absentByGroup': _absentByGroup,
+      'totalByGroup': _totalByGroup,
+      'selectedGroupId': _selectedGroupId,
+    });
   }
 
   Future<void> refresh({

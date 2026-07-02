@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:flutter/widgets.dart';
@@ -72,6 +73,11 @@ class AuthProvider extends ChangeNotifier {
           RealtimeService.instance.connect();
           // Restore persisted avatar bytes (fire-and-forget assignment; null is fine).
           _avatarBytes = await AuthStorageService.instance.loadAvatarBytes();
+          // INSTANT BOOT: restoreSession is now a pure local read, so the server
+          // check (GET /auth/me — profile refresh + rotated-token persist) runs
+          // in the BACKGROUND. A genuine auth rejection self-corrects to logout
+          // within seconds; the user never waits on the network at boot.
+          unawaited(_validateRestoredSession(value));
         } else {
           _state = const AuthUnauthenticated();
         }
@@ -79,6 +85,38 @@ class AuthProvider extends ChangeNotifier {
         _state = const AuthUnauthenticated();
     }
     notifyListeners();
+  }
+
+  /// Background half of the instant boot: runs the server-side session check
+  /// that [initialize] no longer waits for. Same rules as the old blocking
+  /// restore — a confirmed session silently refreshes the profile/tokens; a
+  /// genuine AUTH rejection (revoked / dead refresh token) logs the user out;
+  /// a transient network failure changes nothing. Never throws.
+  Future<void> _validateRestoredSession(AuthSession stored) async {
+    try {
+      final result = await _repo.validateRestoredSession(stored);
+      switch (result) {
+        case Ok(:final value):
+          if (value == null) {
+            // Server rejected the session — self-correct to login. Guard: only
+            // if the session we validated is still the active one, so a user
+            // who logged out (or switched accounts) mid-validation is never
+            // logged out of their NEW session by this stale result.
+            if (_state is AuthAuthenticated &&
+                _session?.user.id == stored.user.id) {
+              await logout();
+            }
+          } else if (_state is AuthAuthenticated &&
+              _session?.user.id == value.user.id) {
+            // Confirmed: apply the refreshed profile / rotated tokens silently.
+            _session = value;
+            _state = AuthAuthenticated(session: value);
+            notifyListeners();
+          }
+        case Err():
+          break; // network trouble never logs the user out
+      }
+    } catch (_) {/* background validation must never disturb the app */}
   }
 
   // ── Login ──────────────────────────────────────────────────────────────────

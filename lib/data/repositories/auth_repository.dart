@@ -338,14 +338,44 @@ class AuthRepository implements IAuthRepository {
   Future<Result<AuthSession?>> restoreSession() async {
     try {
       // allowExpired: a cold start after the 15-min access token lapsed must NOT
-      // force re-login while the refresh token is still valid — GET /auth/me
-      // below triggers the interceptor's transparent refresh.
+      // force re-login while the refresh token is still valid — the Dio
+      // interceptor transparently refreshes on the first authenticated call.
       final stored = await _storage.loadSession(allowExpired: true);
       if (stored == null) return const Ok(null);
+      // INSTANT BOOT: return the stored session immediately — a pure local
+      // read, ZERO network on the cold-start critical path. The old behavior
+      // awaited GET /auth/me here, which held a returning user on the splash
+      // screen for a full cold round-trip (and up to connectTimeout when the
+      // first connection stalled). Server-side validation still happens:
+      // [validateRestoredSession] runs the exact same /auth/me check in the
+      // background (AuthProvider fires it unawaited), and every subsequent API
+      // call is server-validated anyway — a revoked session dies on its first
+      // real request. Security posture unchanged; only the waiting is gone.
+      _session = stored;
+      _profileCache[stored.user.id] = stored.user;
+      return Ok(stored);
+    } catch (_) {
+      // If storage is unavailable or data is corrupted, treat as no session.
+      return const Ok(null);
+    }
+  }
+
+  /// Background validation of a restored session — the network half of the
+  /// old [restoreSession], with byte-identical rules:
+  ///   • `Ok(session)` — server confirmed (profile refreshed + rotated tokens
+  ///     persisted), or a transient network error (keep stored optimistically).
+  ///   • `Ok(null)`    — genuine AUTH rejection (401/403 after the transparent
+  ///     refresh attempt): the session is dead; the caller must log out.
+  /// Never throws.
+  Future<Result<AuthSession?>> validateRestoredSession(
+    AuthSession stored,
+  ) async {
+    try {
       // Validate the stored token against GET /auth/me. DioApiService
       // transparently refreshes on 401 (rotating family); if validation still
       // fails the user must log in again.
-      final result = await DioApiService.instance.get<Map<String, dynamic>>('/auth/me');
+      final result =
+          await DioApiService.instance.get<Map<String, dynamic>>('/auth/me');
       switch (result) {
         case Err(:final failure):
           // Only a genuine AUTH rejection (401/403 — token revoked or expired
@@ -371,8 +401,8 @@ class AuthRepository implements IAuthRepository {
           return Ok(refreshed);
       }
     } catch (_) {
-      // If storage is unavailable or data is corrupted, treat as no session.
-      return const Ok(null);
+      // Unexpected local failure — keep the stored session; never log out here.
+      return Ok(stored);
     }
   }
 
