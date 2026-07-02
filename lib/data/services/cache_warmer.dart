@@ -1,6 +1,9 @@
 import 'dart:async';
 
+import 'package:flutter_cache_manager/flutter_cache_manager.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:smart_meal_management/features/admin/attendance/providers/admin_attendance_provider.dart';
+import 'package:smart_meal_management/features/admin/dashboard/providers/admin_dashboard_provider.dart';
 import 'package:smart_meal_management/features/admin/groups/providers/admin_group_provider.dart';
 import 'package:smart_meal_management/features/admin/meals/providers/meal_config_provider.dart';
 import 'package:smart_meal_management/features/auth/providers/auth_provider.dart';
@@ -33,6 +36,10 @@ class CacheWarmer {
   CacheWarmer._();
 
   static final CacheWarmer instance = CacheWarmer._();
+
+  /// Upper bound on avatars prefetched per warm — keeps the background data
+  /// cost small on very large groups (the rest load on demand, as before).
+  static const int _maxAvatarPrefetch = 30;
 
   /// Id of the user we have already warmed for. `didChangeDependencies` (the
   /// shell hook) can fire many times, so warming must run **once per account**:
@@ -99,16 +106,44 @@ class CacheWarmer {
       final p = AdminGroupProvider();
       try {
         await p.loadGroups(organizationId: orgId);
-        // Chain: warm today's attendance for the first group — the default the
-        // Attendance tab opens on — so it too is an instant cache hit.
-        final first = p.groups.isNotEmpty ? p.groups.first : null;
-        if (first != null) {
-          final a = AdminAttendanceProvider();
-          try {
-            await a.load(groupId: first.id, organizationId: orgId);
-          } finally {
-            a.dispose();
-          }
+        if (p.groups.isEmpty) return;
+        // Chain: warm today's attendance + the member directory for the
+        // admin's DEFAULT group — the one the Attendance tab and group detail
+        // actually open on (saved via the dashboard's group selector; falls
+        // back to the first group) — so both are instant cache hits.
+        final prefs = await SharedPreferences.getInstance();
+        final savedId =
+            prefs.getString(AdminDashboardProvider.kDefaultGroupKey);
+        final target = p.groups.firstWhere(
+          (g) => g.id == savedId,
+          orElse: () => p.groups.first,
+        );
+        final a = AdminAttendanceProvider();
+        try {
+          await a.load(groupId: target.id, organizationId: orgId);
+        } finally {
+          a.dispose();
+        }
+        // Member directory (write-through cache inside the provider).
+        await p.loadGroupMembers(
+          groupId: target.id,
+          organizationId: orgId,
+        );
+        // Prefetch the members' avatars into the image disk cache (the one
+        // CachedNetworkImage reads) so the directory's photos render instantly
+        // on first open — not just the names. Bounded + best-effort: each
+        // download is independent and a failure only means the avatar loads
+        // on demand, exactly as before.
+        final avatarUrls = p.selectedGroupMembers
+            .map((m) => m.avatarUrl)
+            .whereType<String>()
+            .where((u) => u.startsWith('https://') || u.startsWith('http://'))
+            .take(_maxAvatarPrefetch)
+            .toList();
+        for (final url in avatarUrls) {
+          _run(() async {
+            await DefaultCacheManager().downloadFile(url);
+          });
         }
       } finally {
         p.dispose();

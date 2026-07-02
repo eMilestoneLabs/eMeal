@@ -131,7 +131,7 @@ class EnvConfig {
     enableAnalytics: false,
     enableCrashReporting: true,
     enableHttp2: true, // https — multiplex parallel calls over one connection
-    http2IdleTimeoutMs: 60000,
+    http2IdleTimeoutMs: 600000, // 10 min — see production note below
     enableRequestDedup: true,
     maxRequestRetries: 2,
     retryBaseDelayMs: 300,
@@ -148,7 +148,11 @@ class EnvConfig {
     enableAnalytics: true,
     enableCrashReporting: true,
     enableHttp2: true, // https — multiplex parallel calls over one connection
-    http2IdleTimeoutMs: 60000,
+    // 10 min (matched by nginx keepalive_timeout 650s): keeps the TLS/h2
+    // connection warm across natural gaps between taps, so a tab opened a few
+    // minutes after the last one does NOT pay a fresh ~2s handshake on a
+    // high-RTT link. The old 60s idle expired between most screen visits.
+    http2IdleTimeoutMs: 600000,
     enableRequestDedup: true,
     maxRequestRetries: 2,
     retryBaseDelayMs: 300,

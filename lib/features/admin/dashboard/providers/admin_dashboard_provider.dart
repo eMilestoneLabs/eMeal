@@ -165,20 +165,22 @@ class AdminDashboardProvider extends ChangeNotifier {
   }
 
   // ── Default group persistence (Issue #8, client-side MVP) ───────────────────
-  static const String _kDefaultGroupKey = 'admin_default_group_id';
+  /// Public so [CacheWarmer] can warm the attendance/members of the group the
+  /// admin actually opens on (single source of truth for the prefs key).
+  static const String kDefaultGroupKey = 'admin_default_group_id';
 
   Future<void> _persistDefaultGroup(String? groupId) async {
     final prefs = await SharedPreferences.getInstance();
     if (groupId == null) {
-      await prefs.remove(_kDefaultGroupKey);
+      await prefs.remove(kDefaultGroupKey);
     } else {
-      await prefs.setString(_kDefaultGroupKey, groupId);
+      await prefs.setString(kDefaultGroupKey, groupId);
     }
   }
 
   Future<String?> _loadDefaultGroup() async {
     final prefs = await SharedPreferences.getInstance();
-    return prefs.getString(_kDefaultGroupKey);
+    return prefs.getString(kDefaultGroupKey);
   }
 
   // ── Load ───────────────────────────────────────────────────────────────────
