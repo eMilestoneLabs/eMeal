@@ -206,8 +206,15 @@ class StudentDashboardProvider extends ChangeNotifier {
   bool _isFetching = false;
   bool _menuPrefetched = false; // one-shot weekly-menu cache-warm per session
 
-  Future<void> load({required UserModel user}) async {
-    if (_isFetching) return;
+  Future<void> load({
+    required UserModel user,
+    // SRS FR-MEMX-009 (Pass 10): when the active group turns out to be
+    // archived/revoked, [load] retries itself once per remaining membership
+    // instead of leaving a broken screen. Internal — call sites never set it.
+    String? overrideGroupId,
+    Set<String>? triedGroupIds,
+  }) async {
+    if (_isFetching && overrideGroupId == null) return;
     _isFetching = true;
     _isLoading = true;
     _error = null;
@@ -221,8 +228,9 @@ class StudentDashboardProvider extends ChangeNotifier {
     final orgId = user.organizationId;
     // Resolve the user's primary group. If neither groupId nor groupIds is
     // set the student has not joined a group yet — bail early and show empty.
-    final groupId =
-        user.groupId ?? (user.groupIds.isNotEmpty ? user.groupIds.first : null);
+    final groupId = overrideGroupId ??
+        user.groupId ??
+        (user.groupIds.isNotEmpty ? user.groupIds.first : null);
     if (groupId == null) {
       _isLoading = false;
       _isFetching = false;
@@ -337,15 +345,43 @@ class StudentDashboardProvider extends ChangeNotifier {
     }
 
     // Group config + name
+    var groupUnavailable = false;
     if (results[3] case Ok(:final value)) {
       final group = value as GroupModel;
-      _groupConfig = group.mealConfig;
-      _groupName = group.name;
-      // Push config to shell so nav tabs update immediately.
-      _groupConfigProvider?.update(
-        config: _groupConfig,
-        groupName: _groupName,
-      );
+      // SRS FR-MEMX-009: an archived active group must never render as a
+      // working dashboard — treat it like a failed group fetch below.
+      if (group.isActive == false) {
+        groupUnavailable = true;
+      } else {
+        _groupConfig = group.mealConfig;
+        _groupName = group.name;
+        // Push config to shell so nav tabs update immediately.
+        _groupConfigProvider?.update(
+          config: _groupConfig,
+          groupName: _groupName,
+        );
+      }
+    } else if (results[3] case Err()) {
+      // 403 GROUP_ARCHIVED / revoked access / 404 all land here.
+      groupUnavailable = true;
+    }
+
+    // SRS FR-MEMX-009 (Pass 10): safe fallback — pick the next membership
+    // the user still holds and reload once for it; with no alternative left,
+    // fall through and let the existing empty/error states render (never a
+    // half-broken screen with stale group data).
+    if (groupUnavailable) {
+      final tried = {...(triedGroupIds ?? const <String>{}), groupId};
+      final alternatives =
+          user.groupIds.where((g) => !tried.contains(g)).toList();
+      if (alternatives.isNotEmpty) {
+        _isFetching = false;
+        return load(
+          user: user,
+          overrideGroupId: alternatives.first,
+          triedGroupIds: tried,
+        );
+      }
     }
 
     // 7-day history for streak
