@@ -5,7 +5,9 @@ import 'package:smart_meal_management/core/theme/app_typography.dart';
 import 'package:smart_meal_management/data/repositories/attendance_repository.dart';
 import 'package:smart_meal_management/data/repositories/group_repository.dart';
 import 'package:smart_meal_management/data/repositories/meal_repository.dart';
+import 'package:smart_meal_management/data/services/billing_service.dart';
 import 'package:smart_meal_management/features/admin/exports/providers/export_provider.dart';
+import 'package:smart_meal_management/features/admin/exports/screens/export_preview_screen.dart';
 import 'package:smart_meal_management/shared/models/attendance_model.dart';
 import 'package:smart_meal_management/shared/models/group_model.dart';
 import 'package:smart_meal_management/shared/models/meal_model.dart';
@@ -29,8 +31,9 @@ class _ExportScreenState extends State<ExportScreen> {
   // not a rolling 30-day window. Admin can still pick any custom range.
   DateTime _startDate = DateTime(DateTime.now().year, DateTime.now().month, 1);
   DateTime _endDate = DateTime.now();
-  List<AttendanceModel> _records = [];
-  List<MealModel> _meals = [];
+
+  /// Drives the preview screen's export buttons (FR-EXP-040).
+  final ValueNotifier<bool> _exporting = ValueNotifier<bool>(false);
   bool _loadingRecords = false;
   List<GroupModel> _groups = [];
   String? _selectedGroupId;
@@ -59,6 +62,7 @@ class _ExportScreenState extends State<ExportScreen> {
   void dispose() {
     _provider.removeListener(_rebuild);
     _provider.dispose();
+    _exporting.dispose();
     super.dispose();
   }
 
@@ -112,7 +116,9 @@ class _ExportScreenState extends State<ExportScreen> {
     }
   }
 
-  Future<void> _loadAndExport() async {
+  /// FR-EXP-040 (ISSUE-14): loads the report data and opens the VIEW-ONLY
+  /// preview (summary first). Download/share happens only from the preview.
+  Future<void> _previewReport() async {
     final auth = AuthProviderScope.of(context);
     final user = auth.currentUser;
     if (user == null) return;
@@ -147,25 +153,80 @@ class _ExportScreenState extends State<ExportScreen> {
           .map((u) => u.id)
           .toSet();
     }
-    setState(() {
-      _records = records;
-      _meals = meals;
-      _loadingRecords = false;
-    });
-    await _provider.export(
-      records: _records,
-      meals: _meals,
-      groupName: _selectedGroupName,
-      pricingEnabled: _pricingEnabled,
+    if (!mounted) return;
+    setState(() => _loadingRecords = false);
+
+    // Compute the EXACT rows/summaries the export files will contain, so the
+    // preview and the downloaded report can never disagree.
+    final rows = BillingService.buildRows(
+      records: records,
+      meals: meals,
       from: _startDate,
       to: _endDate,
-      dateRangeLabel: '${_fmt(_startDate)} – ${_fmt(_endDate)}',
       vacationUserIds: vacationUserIds,
     );
-    if (_provider.exportSuccess && mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Export ready — share sheet opened.')));
+    final summaries = BillingService.summarize(rows);
+    final rangeLabel = '${_fmt(_startDate)} – ${_fmt(_endDate)}';
+    final groupName = _selectedGroupName;
+    final pricingEnabled = _pricingEnabled;
+
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => ExportPreviewScreen(
+          rows: rows,
+          summaries: summaries,
+          groupName: groupName,
+          pricingEnabled: pricingEnabled,
+          dateRangeLabel: rangeLabel,
+          isExporting: _exporting,
+          onExport: (format) => _export(
+            format: format,
+            records: records,
+            meals: meals,
+            groupName: groupName,
+            pricingEnabled: pricingEnabled,
+            rangeLabel: rangeLabel,
+            vacationUserIds: vacationUserIds,
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// Shares the report in [format] from the preview (FR-EXP-040 step 2).
+  Future<void> _export({
+    required String format,
+    required List<AttendanceModel> records,
+    required List<MealModel> meals,
+    required String groupName,
+    required bool pricingEnabled,
+    required String rangeLabel,
+    required Set<String> vacationUserIds,
+  }) async {
+    _provider.setFormat(format);
+    _exporting.value = true;
+    try {
+      await _provider.export(
+        records: records,
+        meals: meals,
+        groupName: groupName,
+        pricingEnabled: pricingEnabled,
+        from: _startDate,
+        to: _endDate,
+        dateRangeLabel: rangeLabel,
+        vacationUserIds: vacationUserIds,
+      );
+    } finally {
+      _exporting.value = false;
     }
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(_provider.exportSuccess
+            ? 'Export ready — share sheet opened.'
+            : (_provider.error ?? 'Export failed')),
+      ),
+    );
   }
 
   String _fmt(DateTime d) =>
@@ -228,13 +289,15 @@ class _ExportScreenState extends State<ExportScreen> {
                     style: AppTypography.bodySmall.copyWith(color: AppColors.absent),
                     textAlign: TextAlign.center),
               ),
+            // FR-EXP-040 (ISSUE-14): a view-only preview always comes before
+            // download/share; the summary is presented first on the preview.
             AppPrimaryButton(
-              label: _provider.isExporting || _loadingRecords
-                  ? 'Exporting…'
-                  : 'Export ${_provider.exportFormat.toUpperCase()}',
-              icon: _provider.isPdf ? Icons.picture_as_pdf_rounded : Icons.table_chart_rounded,
+              label: _loadingRecords ? 'Preparing preview…' : 'Preview Report',
+              icon: Icons.visibility_rounded,
               isLoading: _provider.isExporting || _loadingRecords,
-              onPressed: _provider.isExporting || _loadingRecords ? null : _loadAndExport,
+              onPressed: _provider.isExporting || _loadingRecords
+                  ? null
+                  : _previewReport,
             ),
             const SizedBox(height: AppConstants.space24),
           ],

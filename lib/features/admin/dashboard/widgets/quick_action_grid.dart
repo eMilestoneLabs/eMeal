@@ -3,46 +3,72 @@ import 'package:go_router/go_router.dart';
 import 'package:smart_meal_management/app/router/route_names.dart';
 import 'package:smart_meal_management/core/theme/app_colors.dart';
 
-/// A 2×2 grid of quick-action tiles for the admin dashboard.
+/// A two-column grid of quick-action tiles for the admin dashboard.
 ///
 /// Each tile is a tappable card that navigates to a key admin feature:
-/// Groups, Configure Meals, Export Reports, and Attendance.
+/// Groups, Configure Meals, Export Reports, Attendance, and Billing.
+/// FR-ADM-050: optional callback tiles add "Publish Notice" and
+/// "Corrections" when the host screen provides handlers.
 class QuickActionGrid extends StatelessWidget {
-  const QuickActionGrid({super.key});
+  const QuickActionGrid({
+    super.key,
+    this.onPublishNotice,
+    this.onReviewCorrections,
+  });
+
+  /// FR-ADM-050 (ISSUE-15): opens the notice composer when provided.
+  final VoidCallback? onPublishNotice;
+
+  /// Module 33: opens the correction-requests review queue when provided.
+  final VoidCallback? onReviewCorrections;
 
   @override
   Widget build(BuildContext context) {
-    const actions = [
-      _ActionItem(
+    final actions = [
+      const _ActionItem(
         icon: Icons.group_add_rounded,
         label: 'Manage Groups',
         color: AppColors.primary,
         route: RouteNames.adminGroups,
       ),
-      _ActionItem(
+      const _ActionItem(
         icon: Icons.restaurant_menu_rounded,
         label: 'Configure Meals',
         color: AppColors.warning,
         route: RouteNames.adminMealConfig,
       ),
-      _ActionItem(
+      const _ActionItem(
         icon: Icons.download_rounded,
         label: 'Export Reports',
         color: AppColors.secondary,
         route: RouteNames.adminExports,
       ),
-      _ActionItem(
+      const _ActionItem(
         icon: Icons.fact_check_rounded,
         label: 'Attendance',
         color: AppColors.present,
         route: RouteNames.adminAttendance,
       ),
-      _ActionItem(
+      const _ActionItem(
         icon: Icons.receipt_long_rounded,
         label: 'Member Billing',
         color: AppColors.info,
         route: RouteNames.adminBilling,
       ),
+      if (onPublishNotice != null)
+        _ActionItem(
+          icon: Icons.campaign_rounded,
+          label: 'Publish Notice',
+          color: AppColors.error,
+          onTap: onPublishNotice,
+        ),
+      if (onReviewCorrections != null)
+        _ActionItem(
+          icon: Icons.rule_rounded,
+          label: 'Corrections',
+          color: AppColors.secondary,
+          onTap: onReviewCorrections,
+        ),
     ];
 
     return GridView.count(
@@ -53,7 +79,8 @@ class QuickActionGrid extends StatelessWidget {
       crossAxisSpacing: 10,
       childAspectRatio: 2.4,
       children: actions
-          .map((a) => _QuickActionTile(item: a, onTap: () => context.push(a.route)))
+          .map((a) => _QuickActionTile(
+              item: a, onTap: a.onTap ?? () => context.push(a.route!)))
           .toList(),
     );
   }
@@ -66,12 +93,14 @@ class _ActionItem {
     required this.icon,
     required this.label,
     required this.color,
-    required this.route,
-  });
+    this.route,
+    this.onTap,
+  }) : assert(route != null || onTap != null, 'Provide a route or onTap');
   final IconData icon;
   final String label;
   final Color color;
-  final String route;
+  final String? route;
+  final VoidCallback? onTap;
 }
 
 // ── Tile widget ────────────────────────────────────────────────────────────────

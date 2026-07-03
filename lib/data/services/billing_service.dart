@@ -1,3 +1,4 @@
+import 'package:smart_meal_management/core/utils/name_display.dart';
 import 'package:smart_meal_management/shared/models/attendance_model.dart';
 import 'package:smart_meal_management/shared/models/meal_model.dart';
 
@@ -35,6 +36,25 @@ class BillingRow {
   final bool autoSkipped;
 
   bool get isPresent => status == AttendanceStatus.present;
+
+  /// Module 36 (FR-PG-052): structured selection display for exports —
+  /// "Staple: Ruti · Non-Veg: Mutton ×2". Falls back to the legacy flat
+  /// preference when the record predates preference groups.
+  static String? selectionDisplay(AttendanceModel r) {
+    final snap = r.preferences;
+    if (snap == null || snap.isEmpty) return r.preference;
+    final parts = <String>[];
+    for (final e in snap) {
+      if (e is! Map) continue;
+      final group = e['groupLabel']?.toString() ?? '';
+      final option = e['optionLabel']?.toString() ?? '';
+      final qty = (e['quantity'] as num?)?.toInt() ?? 1;
+      if (option.isEmpty) continue;
+      parts.add(
+          '${group.isNotEmpty ? '$group: ' : ''}$option${qty > 1 ? ' ×$qty' : ''}');
+    }
+    return parts.isEmpty ? r.preference : parts.join(' · ');
+  }
 }
 
 /// Per-member billing + attendance totals for the export summary + billing screen.
@@ -101,11 +121,11 @@ class BillingService {
       return records
           .map((r) => BillingRow(
                 userId: r.userId,
-                userName: r.userName ?? r.userId,
+                userName: displayMemberName(r.userName),
                 mealId: r.mealId,
                 mealName: r.mealName ?? '—',
                 status: r.status,
-                preference: r.preference,
+                preference: BillingRow.selectionDisplay(r),
                 price: null,
                 date: DateTime(r.date.year, r.date.month, r.date.day),
                 markedAt: r.markedAt,
@@ -117,7 +137,7 @@ class BillingService {
     // Distinct members from the records (those who marked at least once).
     final memberNames = <String, String>{};
     for (final r in records) {
-      memberNames[r.userId] = r.userName ?? r.userId;
+      memberNames[r.userId] = displayMemberName(r.userName);
     }
 
     // (userId|mealId|yyyy-mm-dd) -> record
@@ -163,7 +183,7 @@ class BillingService {
               mealId: meal.id,
               mealName: meal.name,
               status: rec.status,
-              preference: rec.preference,
+              preference: BillingRow.selectionDisplay(rec),
               // Per-day price snapshot overrides master; fall back to the
               // day-effective price for legacy records marked before pricing.
               price: rec.price ?? effectiveMeal.price,

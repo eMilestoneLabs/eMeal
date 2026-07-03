@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
+import 'package:smart_meal_management/shared/models/preference_group_model.dart';
 import 'package:smart_meal_management/shared/models/attendance_model.dart';
 
 /// Dynamic meal model — no hardcoded MealType enum.
@@ -26,6 +27,7 @@ class MealModel {
     this.imageBytes = const [],
     this.preferencesEnabled = false,
     this.enabledPreferences = const [],
+    this.preferenceGroups = const [],
     this.price,
     this.createdAt,
     this.isGeneralAttendance = false,
@@ -48,6 +50,10 @@ class MealModel {
   final List<Uint8List> imageBytes;
   final bool preferencesEnabled;
   final List<String> enabledPreferences;
+
+  /// Module 36 (FR-PG-090): explicit multi-dimensional preference groups.
+  /// Empty = legacy flat [enabledPreferences] UX (FR-PG-021).
+  final List<PreferenceGroupModel> preferenceGroups;
 
   /// Additive: master ₹ meal price (integer). Null when pricing disabled/unset.
   final int? price;
@@ -102,6 +108,46 @@ class MealModel {
       imageBytes.fold(0, (sum, b) => sum + b.length);
 
   // ── Static helpers ──────────────────────────────────────────────────────────
+
+  /// FR-MEAL-007 (ISSUE-18): "HH:mm" open time → minutes since midnight.
+  /// Null/empty/unparsable values sort last (24 h), mirroring the backend's
+  /// nulls-last chronological ordering.
+  static int chronoMinutes(String? openTime) {
+    if (openTime == null || openTime.isEmpty) return 24 * 60;
+    final parts = openTime.split(':');
+    if (parts.length >= 2) {
+      final h = int.tryParse(parts[0]);
+      final m = int.tryParse(parts[1]);
+      if (h != null && m != null && h >= 0 && h < 24 && m >= 0 && m < 60) {
+        return h * 60 + m;
+      }
+    }
+    return 24 * 60;
+  }
+
+  /// Chronological sort key for this meal. The all-day default window
+  /// (00:00–23:59 — what a windowless backend meal deserializes to) sorts
+  /// last, matching the backend's nulls-last rule; real windows sort by
+  /// their open time.
+  int get chronoKey {
+    if (attendanceWindow.openTime == '00:00' &&
+        attendanceWindow.closeTime == '23:59') {
+      return 24 * 60;
+    }
+    return chronoMinutes(attendanceWindow.openTime);
+  }
+
+  /// FR-MEAL-007 (ISSUE-18): chronological comparator for every meal list
+  /// (Today's Meals, dashboards, attendance, configured meals) — window open
+  /// time first, admin [order] as tie-breaker, id as stable final key.
+  static int compareChronological(MealModel a, MealModel b) {
+    final ak = a.chronoKey;
+    final bk = b.chronoKey;
+    if (ak != bk) return ak.compareTo(bk);
+    final byOrder = a.order.compareTo(b.order);
+    if (byOrder != 0) return byOrder;
+    return a.id.compareTo(b.id);
+  }
 
   static IconData slotIcon(String slotKey) {
     final k = slotKey.toLowerCase();
@@ -178,6 +224,10 @@ class MealModel {
         preferencesEnabled: j['preferencesEnabled'] ?? false,
         enabledPreferences:
             List<String>.from(j['enabledPreferences'] ?? []),
+        preferenceGroups: (j['preferenceGroups'] as List<dynamic>? ?? [])
+            .whereType<Map<String, dynamic>>()
+            .map(PreferenceGroupModel.fromJson)
+            .toList(),
         price: j['price'] is int
             ? j['price'] as int
             : (j['price'] != null
@@ -202,6 +252,8 @@ class MealModel {
         'imageUrl': imageUrl,
         'preferencesEnabled': preferencesEnabled,
         'enabledPreferences': enabledPreferences,
+        'preferenceGroups':
+            preferenceGroups.map((g) => g.toJson()).toList(),
         'price': price,
         'isGeneralAttendance': isGeneralAttendance,
       };
@@ -218,6 +270,7 @@ class MealModel {
     List<Uint8List>? imageBytes,
     bool? preferencesEnabled,
     List<String>? enabledPreferences,
+    List<PreferenceGroupModel>? preferenceGroups,
     int? price,
     bool? isGeneralAttendance,
   }) =>
@@ -236,6 +289,7 @@ class MealModel {
         imageBytes: imageBytes ?? this.imageBytes,
         preferencesEnabled: preferencesEnabled ?? this.preferencesEnabled,
         enabledPreferences: enabledPreferences ?? this.enabledPreferences,
+        preferenceGroups: preferenceGroups ?? this.preferenceGroups,
         price: price ?? this.price,
         createdAt: createdAt,
         isGeneralAttendance: isGeneralAttendance ?? this.isGeneralAttendance,

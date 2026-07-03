@@ -6,6 +6,8 @@ import 'package:smart_meal_management/core/utils/time_format.dart';
 import 'package:smart_meal_management/shared/models/attendance_model.dart';
 import 'package:smart_meal_management/shared/models/group_model.dart';
 import 'package:smart_meal_management/shared/models/meal_model.dart';
+import 'package:smart_meal_management/shared/models/preference_group_model.dart';
+import 'package:smart_meal_management/shared/widgets/preference_group_selector.dart';
 
 /// Card for a single meal's attendance action (Attendance tab).
 ///
@@ -33,7 +35,23 @@ class AttendanceActionCard extends StatefulWidget {
     this.enabledPreferences = const [],
     this.markedPreference,
     this.markedAt,
+    this.onRequestCorrection,
+    this.onMarkWithSelections,
   });
+
+  /// Module 36 (FR-PG-030/032): used INSTEAD of [onMark] for Present when the
+  /// meal carries explicit preference groups — sends the full selection set.
+  /// Null or empty groups = legacy flat [onMark] path (FR-PG-021).
+  final void Function(
+    AttendanceStatus status,
+    List<PreferenceSelection> selections,
+  )? onMarkWithSelections;
+
+  /// Module 33 (ISSUE-17): opens the correction-request sheet for this meal.
+  /// Shown once the window has closed — "I ate, please mark me Present" (or
+  /// correcting a wrong record) routes through admin approval, never a silent
+  /// edit. Null hides the affordance.
+  final VoidCallback? onRequestCorrection;
 
   final MealModel meal;
   final AttendanceStatus? status;
@@ -71,6 +89,14 @@ class AttendanceActionCard extends StatefulWidget {
 class _AttendanceActionCardState extends State<AttendanceActionCard> {
   String? _selectedPreference;
 
+  // Module 36: grouped-selection state (explicit preference groups).
+  List<PreferenceSelection> _groupSelections = const [];
+  bool _groupSelectionComplete = false;
+
+  bool get _hasPreferenceGroups =>
+      widget.meal.preferenceGroups.isNotEmpty &&
+      widget.onMarkWithSelections != null;
+
   bool get _isPending =>
       widget.status == null || widget.status == AttendanceStatus.pending;
 
@@ -86,11 +112,24 @@ class _AttendanceActionCardState extends State<AttendanceActionCard> {
   /// the meal). When preferences are off, Present behaves like _canMark.
   bool get _canMarkPresent =>
       _canMark &&
-      (!widget.preferencesEnabled ||
-          widget.enabledPreferences.isEmpty ||
-          _selectedPreference != null);
+      (_hasPreferenceGroups
+          // FR-PG-032: Present unlocks once all required groups are satisfied.
+          ? _groupSelectionComplete
+          : (!widget.preferencesEnabled ||
+              widget.enabledPreferences.isEmpty ||
+              _selectedPreference != null));
 
   void _markWithPreference(AttendanceStatus status) {
+    if (_hasPreferenceGroups) {
+      // FR-PG-031: Absent/Skip need no selections; Present sends the set.
+      widget.onMarkWithSelections!(
+        status,
+        status == AttendanceStatus.present
+            ? _groupSelections
+            : const <PreferenceSelection>[],
+      );
+      return;
+    }
     widget.onMark(
       status,
       preference: widget.preferencesEnabled ? _selectedPreference : null,
@@ -186,8 +225,27 @@ class _AttendanceActionCardState extends State<AttendanceActionCard> {
             ),
           ),
 
+          // Module 36 (FR-PG-030): grouped selection sections with live price.
+          if (_hasPreferenceGroups &&
+              _isPending &&
+              !widget.isVacationMode &&
+              widget.isWindowOpen)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(
+                AppConstants.space16, 0, AppConstants.space16, 4),
+              child: PreferenceGroupSelector(
+                groups: widget.meal.preferenceGroups,
+                enabled: !widget.isLoading,
+                onChanged: (selections, delta, complete) => setState(() {
+                  _groupSelections = selections;
+                  _groupSelectionComplete = complete;
+                }),
+              ),
+            ),
+
           // Preference chip row (shown when enabled + window open + unmarked)
-          if (widget.preferencesEnabled &&
+          if (!_hasPreferenceGroups &&
+              widget.preferencesEnabled &&
               widget.enabledPreferences.isNotEmpty &&
               _isPending &&
               !widget.isVacationMode &&
@@ -265,6 +323,22 @@ class _AttendanceActionCardState extends State<AttendanceActionCard> {
                         ),
                       ],
                     ),
+                    // Module 33 (ISSUE-17): the sanctioned post-close path —
+                    // a correction request the admin reviews.
+                    if (widget.onRequestCorrection != null)
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: TextButton.icon(
+                          onPressed: widget.onRequestCorrection,
+                          icon: const Icon(Icons.rule_rounded, size: 15),
+                          label: const Text('Request correction'),
+                          style: TextButton.styleFrom(
+                            foregroundColor: AppColors.primary,
+                            padding: const EdgeInsets.symmetric(horizontal: 4),
+                            visualDensity: VisualDensity.compact,
+                          ),
+                        ),
+                      ),
                   ],
                 ],
               ),
@@ -300,24 +374,47 @@ class _AttendanceActionCardState extends State<AttendanceActionCard> {
                 AppConstants.space16,
                 AppConstants.space12,
               ),
-              child: Row(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Icon(
-                    Icons.lock_clock_rounded,
-                    size: 14,
-                    color: isDark
-                        ? AppColors.textSecondaryDark
-                        : AppColors.textTertiary,
+                  Row(
+                    children: [
+                      Icon(
+                        Icons.lock_clock_rounded,
+                        size: 14,
+                        color: isDark
+                            ? AppColors.textSecondaryDark
+                            : AppColors.textTertiary,
+                      ),
+                      const SizedBox(width: AppConstants.space8),
+                      Text(
+                        'Attendance window is closed',
+                        style: AppTypography.bodySmall.copyWith(
+                          color: isDark
+                              ? AppColors.textSecondaryDark
+                              : AppColors.textTertiary,
+                        ),
+                      ),
+                    ],
                   ),
-                  const SizedBox(width: AppConstants.space8),
-                  Text(
-                    'Attendance window is closed',
-                    style: AppTypography.bodySmall.copyWith(
-                      color: isDark
-                          ? AppColors.textSecondaryDark
-                          : AppColors.textTertiary,
+                  // Module 33 (ISSUE-17): "I ate but the window closed" — the
+                  // student raises a claim the admin approves; only then is
+                  // Present recorded and billed.
+                  if (widget.isWindowClosed &&
+                      widget.onRequestCorrection != null)
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: TextButton.icon(
+                        onPressed: widget.onRequestCorrection,
+                        icon: const Icon(Icons.rule_rounded, size: 15),
+                        label: const Text('Request correction'),
+                        style: TextButton.styleFrom(
+                          foregroundColor: AppColors.primary,
+                          padding: const EdgeInsets.symmetric(horizontal: 4),
+                          visualDensity: VisualDensity.compact,
+                        ),
+                      ),
                     ),
-                  ),
                 ],
               ),
             )

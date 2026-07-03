@@ -143,7 +143,7 @@ class AdminDashboardProvider extends ChangeNotifier {
     final list = _todayMeals
         .where((m) => gid == null || m.groupId == gid)
         .toList()
-      ..sort((a, b) => a.order.compareTo(b.order));
+      ..sort(MealModel.compareChronological);
     return list;
   }
 
@@ -226,10 +226,25 @@ class AdminDashboardProvider extends ChangeNotifier {
               .whereType<Map<String, dynamic>>()
               .map(AttendanceModel.fromJson)
               .toList();
+          // Cold-start zeros fix: parse cached per-meal summaries so the
+          // meal-wise attendance + preference cards paint last-known values
+          // instead of flashing empty until the network responds. Optional
+          // key — absent in older caches, in which case nothing changes.
+          final summaries = <String, MealAttendanceSummary>{};
+          for (final s
+              in ((cached['mealSummaries'] as List?) ?? const <dynamic>[])
+                  .whereType<Map>()) {
+            final parsed =
+                MealAttendanceSummary.fromJson(s.cast<String, dynamic>());
+            if (parsed.mealId.isNotEmpty) summaries[parsed.mealId] = parsed;
+          }
           // All list parses succeeded — assign atomically (no partial state).
           _groups = groups;
           _todayMeals = meals;
           _recentActivity = activity;
+          _mealSummaries
+            ..clear()
+            ..addAll(summaries);
           _presentToday = (cached['present'] as num?)?.toInt() ?? 0;
           _absentToday = (cached['absent'] as num?)?.toInt() ?? 0;
           _todayTotal = (cached['total'] as num?)?.toInt() ?? 0;
@@ -510,6 +525,10 @@ class AdminDashboardProvider extends ChangeNotifier {
       'absentByGroup': _absentByGroup,
       'totalByGroup': _totalByGroup,
       'selectedGroupId': _selectedGroupId,
+      // Cold-start zeros fix: persist per-meal summaries so the meal-wise
+      // cards paint last-known values on the next cache-first paint.
+      'mealSummaries':
+          _mealSummaries.values.map((s) => s.toJson()).toList(),
     });
   }
 

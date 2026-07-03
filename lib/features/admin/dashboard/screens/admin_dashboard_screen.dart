@@ -5,7 +5,9 @@ import 'package:smart_meal_management/app/router/route_names.dart';
 import 'package:smart_meal_management/core/theme/app_colors.dart';
 import 'package:smart_meal_management/core/theme/app_typography.dart';
 import 'package:smart_meal_management/features/admin/dashboard/providers/admin_dashboard_provider.dart';
+import 'package:smart_meal_management/features/admin/attendance/screens/correction_requests_screen.dart';
 import 'package:smart_meal_management/features/admin/dashboard/widgets/admin_greeting_card.dart';
+import 'package:smart_meal_management/features/notices/screens/notice_composer_screen.dart';
 import 'package:smart_meal_management/features/notices/widgets/notice_bell.dart';
 import 'package:smart_meal_management/features/admin/dashboard/widgets/quick_action_grid.dart';
 import 'package:smart_meal_management/features/admin/dashboard/widgets/stats_summary_row.dart';
@@ -63,6 +65,26 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
       organizationId: user.organizationId,
       name: user.name,
     );
+  }
+
+  /// FR-ADM-050: dashboard "Publish Notice" quick action — opens the composer
+  /// scoped to the currently selected group (or org-wide when none).
+  Future<void> _publishNotice(AuthProvider auth) async {
+    final user = auth.currentUser;
+    if (user == null) return;
+    final created = await Navigator.of(context).push<bool>(
+      MaterialPageRoute(
+        builder: (_) => NoticeComposerScreen(
+          organizationId: user.organizationId,
+          groupId: _provider.selectedGroupId,
+        ),
+      ),
+    );
+    if (created == true && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Notice published')),
+      );
+    }
   }
 
   @override
@@ -148,7 +170,15 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                 // ── Quick actions ────────────────────────────────────────────
                 const AppSectionTitle(title: 'Quick Actions'),
                 const SizedBox(height: 12),
-                const QuickActionGrid(),
+                // FR-ADM-050 (ISSUE-15): "Publish Notice" + corrections queue
+                // are first-class dashboard actions, not buried in sub-screens.
+                QuickActionGrid(
+                  onPublishNotice: () => _publishNotice(auth),
+                  onReviewCorrections: () => Navigator.of(context).push(
+                    MaterialPageRoute(
+                        builder: (_) => const CorrectionRequestsScreen()),
+                  ),
+                ),
 
                 const SizedBox(height: 22),
 

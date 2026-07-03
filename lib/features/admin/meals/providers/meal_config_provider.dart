@@ -191,9 +191,10 @@ class MealConfigProvider extends ChangeNotifier {
 
     switch (result) {
       case Ok(:final value):
-        // Sort by admin-set order for consistent display
+        // FR-MEAL-007 (ISSUE-18): chronological by attendance-window open
+        // time, admin order as tie-breaker — consistent across all screens.
         _meals = List.of(value)
-          ..sort((a, b) => a.order.compareTo(b.order));
+          ..sort(MealModel.compareChronological);
         _cacheMeals(organizationId, groupId);
       case Err(:final failure):
         _error = failure.message;
@@ -382,7 +383,7 @@ class MealConfigProvider extends ChangeNotifier {
     switch (result) {
       case Ok(:final value):
         _meals = [..._meals, value]
-          ..sort((a, b) => a.order.compareTo(b.order));
+          ..sort(MealModel.compareChronological);
         _cacheMeals(organizationId, groupId);
         // Seed the image cache with the bytes we just uploaded so the new meal
         // photo renders instantly under its new URL (no CDN re-download).
@@ -781,6 +782,29 @@ class MealConfigProvider extends ChangeNotifier {
     );
   }
 
+  /// FR-MEAL-007 (ISSUE-18): chronological comparator for planner day entries.
+  /// Effective open time = per-day override ?? master meal template window;
+  /// entries without a resolvable window sort last; admin order tie-break.
+  int _compareEntriesChronological(DayMealEntry a, DayMealEntry b) {
+    final ak = _entryChronoKey(a);
+    final bk = _entryChronoKey(b);
+    if (ak != bk) return ak.compareTo(bk);
+    final byOrder = a.order.compareTo(b.order);
+    if (byOrder != 0) return byOrder;
+    return a.mealId.compareTo(b.mealId);
+  }
+
+  int _entryChronoKey(DayMealEntry e) {
+    final override = e.openTime;
+    if (override != null && override.isNotEmpty) {
+      return MealModel.chronoMinutes(override);
+    }
+    for (final m in _meals) {
+      if (m.id == e.mealId) return m.chronoKey;
+    }
+    return 24 * 60;
+  }
+
   /// Copies the current week's schedule to represent "previous week" as a
   /// convenience — effectively resets all days to have all active meals enabled.
   /// On the backend this would fetch the previous ISO-week's published schedule.
@@ -801,7 +825,7 @@ class MealConfigProvider extends ChangeNotifier {
                 price: m.price,
               ))
           .toList()
-        ..sort((a, b) => a.order.compareTo(b.order));
+        ..sort(_compareEntriesChronological);
       return DaySchedule(day: day, meals: entries);
     }).toList();
 
@@ -994,7 +1018,7 @@ class MealConfigProvider extends ChangeNotifier {
         if (enabled) {
           if (!entries.any((e) => e.mealId == mealId)) {
             entries.add(buildEntry());
-            entries.sort((a, b) => a.order.compareTo(b.order));
+            entries.sort(_compareEntriesChronological);
           }
         } else {
           entries.removeWhere((e) => e.mealId == mealId);

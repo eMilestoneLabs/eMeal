@@ -2,32 +2,40 @@ import 'package:flutter/material.dart';
 import 'package:smart_meal_management/core/theme/app_colors.dart';
 import 'package:smart_meal_management/core/theme/app_typography.dart';
 import 'package:smart_meal_management/core/utils/name_display.dart';
-import 'package:smart_meal_management/data/repositories/vacation_repository.dart';
+import 'package:smart_meal_management/data/repositories/correction_repository.dart';
+import 'package:smart_meal_management/shared/models/correction_request_model.dart';
 import 'package:smart_meal_management/shared/models/result.dart';
-import 'package:smart_meal_management/shared/models/vacation_request_model.dart';
 
-/// Issue 3 — Admin "Vacation Requests" management screen.
+/// Module 33 — Admin "Correction Requests" queue (FR-ACR-010, ISSUE-17).
 ///
-/// Admins review member vacation requests and Approve / Reject / Cancel them.
-/// Approving turns the member's vacation mode on (server-side); cancelling an
-/// approved request turns it back off. Self-contained and additive.
-class VacationRequestsScreen extends StatefulWidget {
-  const VacationRequestsScreen({super.key});
+/// Members raise post-window attendance corrections (e.g. "I ate — mark me
+/// Present"); admins Approve (change applies + bills) or Reject (nothing
+/// changes). Liability-decreasing corrections auto-approve server-side, so
+/// this queue is mostly claim-Present reviews. Mirrors VacationRequestsScreen.
+class CorrectionRequestsScreen extends StatefulWidget {
+  const CorrectionRequestsScreen({super.key});
 
   @override
-  State<VacationRequestsScreen> createState() => _VacationRequestsScreenState();
+  State<CorrectionRequestsScreen> createState() =>
+      _CorrectionRequestsScreenState();
 }
 
-class _VacationRequestsScreenState extends State<VacationRequestsScreen> {
-  final _repo = VacationRepository();
+class _CorrectionRequestsScreenState extends State<CorrectionRequestsScreen> {
+  final _repo = CorrectionRepository();
 
   bool _loading = true;
   String? _error;
   String? _busyId;
   String _filter = 'pending';
-  List<VacationRequestModel> _items = [];
+  List<CorrectionRequestModel> _items = [];
 
-  static const _filters = ['pending', 'approved', 'rejected', 'cancelled'];
+  static const _filters = [
+    'pending',
+    'approved',
+    'rejected',
+    'expired',
+    'cancelled',
+  ];
 
   @override
   void initState() {
@@ -57,8 +65,8 @@ class _VacationRequestsScreenState extends State<VacationRequestsScreen> {
   }
 
   Future<void> _act(
-    VacationRequestModel r,
-    Future<Result<VacationRequestModel>> Function() action,
+    CorrectionRequestModel r,
+    Future<Result<CorrectionRequestModel>> Function() action,
     String successLabel,
   ) async {
     if (_busyId != null) return;
@@ -112,7 +120,7 @@ class _VacationRequestsScreenState extends State<VacationRequestsScreen> {
     return Scaffold(
       backgroundColor: isDark ? AppColors.backgroundDark : AppColors.background,
       appBar: AppBar(
-        title: Text('Vacation Requests', style: AppTypography.titleLarge),
+        title: Text('Correction Requests', style: AppTypography.titleLarge),
         backgroundColor: isDark ? AppColors.surfaceDark : AppColors.surface,
         surfaceTintColor: Colors.transparent,
         actions: [
@@ -181,7 +189,7 @@ class _VacationRequestsScreenState extends State<VacationRequestsScreen> {
     );
   }
 
-  Widget _card(VacationRequestModel r, bool isDark) {
+  Widget _card(CorrectionRequestModel r, bool isDark) {
     final busy = _busyId == r.id;
     final c = _statusColor(r.status);
     return Container(
@@ -224,16 +232,26 @@ class _VacationRequestsScreenState extends State<VacationRequestsScreen> {
           const SizedBox(height: 8),
           Row(
             children: [
-              const Icon(Icons.event_rounded,
+              const Icon(Icons.restaurant_rounded,
                   size: 15, color: AppColors.textTertiary),
               const SizedBox(width: 6),
-              Text(
-                '${_fmt(r.startDate)}  →  ${_fmt(r.endDate)}',
-                style: AppTypography.bodySmall
-                    .copyWith(color: AppColors.textSecondary),
+              Expanded(
+                child: Text(
+                  '${r.typeLabel} · ${r.mealName ?? 'Meal'} · ${_fmt(r.attendanceDate)}',
+                  style: AppTypography.bodySmall
+                      .copyWith(color: AppColors.textSecondary),
+                ),
               ),
             ],
           ),
+          if (r.isMemberConfirmation) ...[
+            const SizedBox(height: 6),
+            Text(
+              'Awaiting the member’s confirmation (admin-proposed increase)',
+              style: AppTypography.labelSmall
+                  .copyWith(color: AppColors.warning),
+            ),
+          ],
           if (r.reason != null && r.reason!.isNotEmpty) ...[
             const SizedBox(height: 6),
             Text(
@@ -273,26 +291,19 @@ class _VacationRequestsScreenState extends State<VacationRequestsScreen> {
     );
   }
 
-  List<Widget> _actionsFor(VacationRequestModel r) {
-    if (r.isPending) {
+  List<Widget> _actionsFor(CorrectionRequestModel r) {
+    // Member confirmations are decided by the MEMBER, never here (FR-OVR-020).
+    if (r.isPending && !r.isMemberConfirmation) {
       return [
         _btn('Approve', AppColors.present, () {
-          _act(r, () => _repo.approve(r.id), 'Request approved.');
+          _act(r, () => _repo.approve(r.id),
+              'Approved — the record has been updated.');
         }),
         const SizedBox(width: 8),
         _btn('Reject', AppColors.absent, () async {
           final note = await _askNote('Reject request');
           await _act(r, () => _repo.reject(r.id, note: note),
-              'Request rejected.');
-        }, outlined: true),
-      ];
-    }
-    if (r.isApproved) {
-      return [
-        _btn('Cancel vacation', AppColors.warning, () async {
-          final note = await _askNote('Cancel vacation');
-          await _act(r, () => _repo.cancel(r.id, note: note),
-              'Vacation cancelled.');
+              'Request rejected — nothing changed.');
         }, outlined: true),
       ];
     }
@@ -333,15 +344,14 @@ class _VacationRequestsScreenState extends State<VacationRequestsScreen> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.beach_access_rounded, size: 40, color: color),
-            const SizedBox(height: 12),
-            Text(msg,
-                textAlign: TextAlign.center,
-                style: AppTypography.bodyMedium
-                    .copyWith(color: AppColors.textSecondary)),
+            Text(
+              msg,
+              textAlign: TextAlign.center,
+              style: AppTypography.bodyMedium.copyWith(color: color),
+            ),
             if (onRetry != null) ...[
               const SizedBox(height: 12),
-              FilledButton(onPressed: onRetry, child: const Text('Retry')),
+              OutlinedButton(onPressed: onRetry, child: const Text('Retry')),
             ],
           ],
         ),
@@ -352,16 +362,11 @@ class _VacationRequestsScreenState extends State<VacationRequestsScreen> {
   static String _fmt(DateTime d) =>
       '${d.day.toString().padLeft(2, '0')}/${d.month.toString().padLeft(2, '0')}/${d.year}';
 
-  static Color _statusColor(String status) {
-    switch (status) {
-      case 'approved':
-        return AppColors.present;
-      case 'rejected':
-        return AppColors.absent;
-      case 'cancelled':
-        return AppColors.textTertiary;
-      default:
-        return AppColors.warning; // pending
-    }
-  }
+  static Color _statusColor(String s) => switch (s) {
+        'pending' => AppColors.warning,
+        'approved' => AppColors.present,
+        'rejected' => AppColors.absent,
+        'expired' => AppColors.textTertiary,
+        _ => AppColors.textSecondary,
+      };
 }

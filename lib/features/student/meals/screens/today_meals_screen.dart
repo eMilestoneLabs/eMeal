@@ -12,6 +12,8 @@ import 'package:smart_meal_management/features/student/dashboard/providers/stude
 import 'package:smart_meal_management/shared/models/attendance_model.dart';
 import 'package:smart_meal_management/shared/models/group_model.dart';
 import 'package:smart_meal_management/shared/models/meal_model.dart';
+import 'package:smart_meal_management/shared/models/preference_group_model.dart';
+import 'package:smart_meal_management/shared/widgets/preference_group_selector.dart';
 import 'package:smart_meal_management/shared/widgets/cached_photo.dart';
 
 /// Student "Meals" tab screen — today's meal cards with attendance marking.
@@ -60,7 +62,12 @@ class _TodayMealsScreenState extends State<TodayMealsScreen> {
     if (dashboardProvider != null) await dashboardProvider.load(user: user);
   }
 
-  void _mark(MealModel meal, AttendanceStatus status, {String? preference}) {
+  void _mark(
+    MealModel meal,
+    AttendanceStatus status, {
+    String? preference,
+    List<PreferenceSelection>? selections,
+  }) {
     final user = AuthProviderScope.of(context).currentUser;
     if (user == null) return;
     final dashboardProvider = StudentDashboardScope.maybeOf(context);
@@ -70,6 +77,7 @@ class _TodayMealsScreenState extends State<TodayMealsScreen> {
       meal: meal,
       status: status,
       preference: preference,
+      selections: selections,
     );
   }
 
@@ -202,6 +210,9 @@ class _TodayMealsScreenState extends State<TodayMealsScreen> {
                                             .toList(),
                                 onMark: (s, pref) =>
                                     _mark(meal, s, preference: pref),
+                                // Module 36: grouped-selection marks.
+                                onMarkWithSelections: (s, selections) =>
+                                    _mark(meal, s, selections: selections),
                               );
                             },
                           ),
@@ -334,7 +345,15 @@ class _TodayMealCard extends StatefulWidget {
     this.snapshotPrice,
     this.preferencesEnabled = false,
     this.enabledPreferences = const [],
+    this.onMarkWithSelections,
   });
+
+  /// Module 36 (FR-PG-030/032): used INSTEAD of [onMark] when the meal has
+  /// explicit preference groups — sends the full selection set with Present.
+  final void Function(
+    AttendanceStatus status,
+    List<PreferenceSelection> selections,
+  )? onMarkWithSelections;
 
   final MealModel meal;
   final AttendanceStatus? status;
@@ -356,6 +375,27 @@ class _TodayMealCard extends StatefulWidget {
 
 class _TodayMealCardState extends State<_TodayMealCard> {
   String? _selectedPref;
+
+  // Module 36: grouped-selection state (explicit preference groups).
+  List<PreferenceSelection> _groupSelections = const [];
+  bool _groupComplete = false;
+
+  bool get _hasPreferenceGroups =>
+      widget.meal.preferenceGroups.isNotEmpty &&
+      widget.onMarkWithSelections != null;
+
+  void _submit(AttendanceStatus s) {
+    if (_hasPreferenceGroups) {
+      widget.onMarkWithSelections!(
+        s,
+        s == AttendanceStatus.present
+            ? _groupSelections
+            : const <PreferenceSelection>[],
+      );
+      return;
+    }
+    widget.onMark(s, _selectedPref);
+  }
 
   bool get _canMark =>
       widget.isWindowOpen &&
@@ -591,7 +631,7 @@ class _TodayMealCardState extends State<_TodayMealCard> {
               isDark: isDark,
               canChange: widget.isWindowOpen,
               windowClosed: widget.isWindowPast,
-              onMark: (s) => widget.onMark(s, _selectedPref),
+              onMark: _submit,
             )
 
           // ── Action area (pending + window open/past) ───────────────────
@@ -599,21 +639,40 @@ class _TodayMealCardState extends State<_TodayMealCard> {
             // Default attendance flip: show "Mark Absent" as primary when on
             if (widget.isDefaultAttend && widget.isWindowOpen)
               _DefaultAttendActions(
-                onMarkAbsent: () =>
-                    widget.onMark(AttendanceStatus.absent, _selectedPref),
-                onMarkSkipped: () =>
-                    widget.onMark(AttendanceStatus.skipped, _selectedPref),
+                onMarkAbsent: () => _submit(AttendanceStatus.absent),
+                onMarkSkipped: () => _submit(AttendanceStatus.skipped),
                 isDark: isDark,
               )
-            else if (widget.isWindowOpen)
+            else if (widget.isWindowOpen) ...[
+              // Module 36 (FR-PG-030): grouped sections with live price.
+              if (_hasPreferenceGroups)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(
+                      AppConstants.space16, AppConstants.space12,
+                      AppConstants.space16, 0),
+                  child: PreferenceGroupSelector(
+                    groups: widget.meal.preferenceGroups,
+                    enabled: _canMark,
+                    onChanged: (selections, delta, complete) => setState(() {
+                      _groupSelections = selections;
+                      _groupComplete = complete;
+                    }),
+                  ),
+                ),
               _AttendActions(
                 canMark: _canMark,
                 preference: _selectedPref,
                 onPreferenceChanged: (p) => setState(() => _selectedPref = p),
-                onMark: (s) => widget.onMark(s, _selectedPref),
-                preferencesEnabled: widget.preferencesEnabled,
-                enabledPreferences: widget.enabledPreferences,
-              )
+                onMark: _submit,
+                // Flat chips hide when explicit groups render above; the
+                // Present gate then follows the grouped-selection state.
+                preferencesEnabled:
+                    !_hasPreferenceGroups && widget.preferencesEnabled,
+                enabledPreferences:
+                    _hasPreferenceGroups ? const [] : widget.enabledPreferences,
+                presentLocked: _hasPreferenceGroups && !_groupComplete,
+              ),
+            ]
             else if (widget.isWindowPast)
               Padding(
                 padding: const EdgeInsets.fromLTRB(
@@ -725,7 +784,12 @@ class _AttendActions extends StatelessWidget {
     required this.onMark,
     this.preferencesEnabled = false,
     this.enabledPreferences = const [],
+    this.presentLocked = false,
   });
+
+  /// Module 36 (FR-PG-032): Present stays disabled until the grouped
+  /// selection above is complete (Absent/Skip stay enabled).
+  final bool presentLocked;
 
   final bool canMark;
   final String? preference;
@@ -741,7 +805,8 @@ class _AttendActions extends StatelessWidget {
         preferencesEnabled && enabledPreferences.isNotEmpty;
     // Spec gating: Present stays disabled until a preference is picked when
     // preferences are required; Skip / Absent remain enabled regardless.
-    final canMarkPresent = canMark && (!showPrefs || preference != null);
+    final canMarkPresent =
+        canMark && !presentLocked && (!showPrefs || preference != null);
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(

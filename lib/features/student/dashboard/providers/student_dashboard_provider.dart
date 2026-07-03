@@ -14,6 +14,7 @@ import 'package:smart_meal_management/data/services/notification_service.dart';
 import 'package:smart_meal_management/shared/models/vacation_request_model.dart';
 import 'package:smart_meal_management/features/student/providers/group_config_provider.dart';
 import 'package:smart_meal_management/shared/models/attendance_model.dart';
+import 'package:smart_meal_management/shared/models/preference_group_model.dart';
 import 'package:smart_meal_management/shared/models/group_model.dart';
 import 'package:smart_meal_management/shared/models/meal_model.dart';
 import 'package:smart_meal_management/shared/models/paginated_response.dart';
@@ -254,11 +255,28 @@ class StudentDashboardProvider extends ChangeNotifier {
               .map(AttendanceModel.fromJson)
               .toList();
           final gn = cached['groupName'];
-          _todayMeals = meals..sort((a, b) => a.order.compareTo(b.order));
+          _todayMeals = meals..sort(MealModel.compareChronological);
           _todayAttendance = att;
           _weekHistory = hist;
           _streakDays = _computeStreak(_weekHistory);
           if (gn is String) _groupName = gn;
+          // Cold-start zeros fix: restore the 30-day summary so the KPI cards
+          // (attendance %, present/absent counts) paint last-known values
+          // instead of 0 while the network refresh runs.
+          final sm = cached['summary'];
+          if (sm is Map) {
+            _summary = AttendanceSummary.fromJson(sm.cast<String, dynamic>());
+          }
+          // Restore the group meal-config so mode-driven widgets/tabs render
+          // in their last-known mode instead of defaults, then snapping.
+          final gc = cached['groupConfig'];
+          if (gc is Map) {
+            _groupConfig = GroupMealConfig.fromJson(gc.cast<String, dynamic>());
+            _groupConfigProvider?.update(
+              config: _groupConfig,
+              groupName: _groupName,
+            );
+          }
         } catch (_) {/* ignore corrupt cache; fetch will populate */}
       }
     }
@@ -302,7 +320,7 @@ class StudentDashboardProvider extends ChangeNotifier {
     // Meals
     if (results[0] case Ok(:final value)) {
       _todayMeals = (value as List<MealModel>)
-        ..sort((a, b) => a.order.compareTo(b.order));
+        ..sort(MealModel.compareChronological);
     }
 
     // Today attendance
@@ -377,6 +395,10 @@ class StudentDashboardProvider extends ChangeNotifier {
         'todayAtt': _todayAttendance.map((a) => a.toJson()).toList(),
         'weekHist': _weekHistory.map((a) => a.toJson()).toList(),
         'groupName': _groupName,
+        // Cold-start zeros fix: persist the KPI summary + meal-config so the
+        // next cache-first paint restores them (never 0 / default mode).
+        if (_summary != null) 'summary': _summary!.toJson(),
+        'groupConfig': _groupConfig.toJson(),
       });
     }
 
@@ -425,6 +447,9 @@ class StudentDashboardProvider extends ChangeNotifier {
     required MealModel meal,
     required AttendanceStatus status,
     String? preference,
+    // Module 36 (FR-PG-031): multi-group selection set for Present marks on
+    // meals with explicit preference groups; null = legacy flat path.
+    List<PreferenceSelection>? selections,
   }) async {
     final groupId =
         user.groupId ?? (user.groupIds.isNotEmpty ? user.groupIds.first : null);
@@ -440,8 +465,11 @@ class StudentDashboardProvider extends ChangeNotifier {
     );
 
     final optimistic = existingIdx != -1
-        ? _todayAttendance[existingIdx]
-            .copyWith(status: status, preference: preference, markedAt: today)
+        ? _todayAttendance[existingIdx].copyWith(
+            status: status,
+            preference: preference,
+            markedAt: today,
+            selections: selections)
         : AttendanceModel(
             id: 'temp_${meal.id}_${today.millisecondsSinceEpoch}',
             mealId: meal.id,
@@ -452,6 +480,7 @@ class StudentDashboardProvider extends ChangeNotifier {
             date: today,
             markedAt: today,
             preference: preference,
+            selections: selections,
           );
 
     final snapshot = List<AttendanceModel>.from(_todayAttendance);

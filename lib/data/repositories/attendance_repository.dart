@@ -1,3 +1,4 @@
+import 'package:smart_meal_management/core/errors/failure.dart';
 import 'package:smart_meal_management/data/contracts/i_attendance_repository.dart';
 import 'package:smart_meal_management/data/services/dio_api_service.dart';
 import 'package:smart_meal_management/shared/models/attendance_model.dart';
@@ -27,6 +28,10 @@ class AttendanceRepository implements IAttendanceRepository {
         if (_isMarkableStatus(record.status)) 'status': record.status.name,
         if (record.preference != null) 'preference': record.preference,
         if (record.note != null) 'note': record.note,
+        // Module 36 (FR-PG-031): multi-group selections travel only when the
+        // meal carries explicit preference groups (server validates).
+        if (record.selections != null)
+          'selections': record.selections!.map((s) => s.toJson()).toList(),
       };
 
   static AttendanceModel _mergeMarkResponse(
@@ -54,6 +59,9 @@ class AttendanceRepository implements IAttendanceRepository {
           : (j['price'] != null
               ? int.tryParse(j['price'].toString())
               : record.price),
+      // Module 36: server-confirmed selection snapshot (null = legacy meal).
+      preferences:
+          j['preferences'] is List ? j['preferences'] as List<dynamic> : null,
     );
   }
 
@@ -182,6 +190,17 @@ class AttendanceRepository implements IAttendanceRepository {
     );
     return switch (result) {
       Err(:final failure) => Err(failure),
+      // FR-OVR-001 (Module 33): a liability-increasing override is NOT applied
+      // by the backend — it creates a member confirmation instead. Surface
+      // that as a friendly failure so every call site reports it through its
+      // normal message path (the record genuinely did not change).
+      Ok(:final value) when value['requiresMemberConsent'] == true => Err(
+          ValidationFailure(
+            message: (value['message'] ??
+                    'Member consent required — a confirmation request was sent to the member.')
+                .toString(),
+          ),
+        ),
       Ok(:final value) => Ok(_mergeMarkResponse(record, value)),
     };
   }

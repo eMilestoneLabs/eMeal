@@ -105,7 +105,7 @@ class _StaffAttendanceScreenState extends State<StaffAttendanceScreen> {
     List<MealModel> meals = [];
     if (mealsRes case Ok(:final value)) {
       meals = value.where((m) => m.isActive).toList()
-        ..sort((a, b) => a.order.compareTo(b.order));
+        ..sort(MealModel.compareChronological);
     } else if (mealsRes case Err(:final failure)) {
       _error = failure.message;
     }

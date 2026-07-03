@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart';
+import 'package:smart_meal_management/shared/models/preference_group_model.dart';
 
 enum AttendanceStatus { pending, present, absent, skipped, onVacation }
 
@@ -35,6 +36,8 @@ class AttendanceModel {
     this.userName,
     this.userPhone,
     this.price,
+    this.selections,
+    this.preferences,
   });
 
   final String id;
@@ -59,6 +62,14 @@ class AttendanceModel {
   /// Additive: ₹ price snapshot at mark time (per-day override or master).
   /// Null for pre-pricing records — billing falls back to the master meal price.
   final int? price;
+
+  /// Module 36 (FR-PG-031): outgoing multi-group selection set — sent with
+  /// Present marks on meals that carry explicit preference groups.
+  final List<PreferenceSelection>? selections;
+
+  /// Module 36 (FR-PG-013): immutable selection snapshot from the backend
+  /// ([{groupLabel, optionLabel, quantity, ...}]) — display-only.
+  final List<dynamic>? preferences;
 
   factory AttendanceModel.fromJson(Map<String, dynamic> j) => AttendanceModel(
         id: j['id'] ?? '',
@@ -87,6 +98,9 @@ class AttendanceModel {
             : (j['price'] != null
                 ? int.tryParse(j['price'].toString())
                 : null),
+        preferences: j['preferences'] is List
+            ? j['preferences'] as List<dynamic>
+            : null,
       );
 
   Map<String, dynamic> toJson() => {
@@ -104,6 +118,7 @@ class AttendanceModel {
         'userName': userName,
         'userPhone': userPhone,
         'price': price,
+        'preferences': preferences,
       };
 
   AttendanceModel copyWith({
@@ -113,6 +128,8 @@ class AttendanceModel {
     String? note,
     String? mealName,
     int? price,
+    List<PreferenceSelection>? selections,
+    List<dynamic>? preferences,
   }) =>
       AttendanceModel(
         id: id,
@@ -129,6 +146,8 @@ class AttendanceModel {
         userName: userName,
         userPhone: userPhone,
         price: price ?? this.price,
+        selections: selections ?? this.selections,
+        preferences: preferences ?? this.preferences,
       );
 }
 

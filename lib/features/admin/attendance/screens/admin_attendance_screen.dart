@@ -8,6 +8,7 @@ import 'package:smart_meal_management/data/repositories/attendance_repository.da
 import 'package:smart_meal_management/data/repositories/meal_repository.dart';
 import 'package:smart_meal_management/shared/models/meal_model.dart';
 import 'package:smart_meal_management/features/admin/attendance/providers/admin_attendance_provider.dart';
+import 'package:smart_meal_management/features/admin/attendance/screens/correction_requests_screen.dart';
 import 'package:smart_meal_management/features/admin/attendance/screens/vacation_requests_screen.dart';
 import 'package:smart_meal_management/features/admin/attendance/widgets/attendance_filter_bar.dart';
 import 'package:smart_meal_management/features/admin/attendance/widgets/member_attendance_row.dart';
@@ -224,6 +225,16 @@ class _AdminAttendanceScreenState extends State<AdminAttendanceScreen> {
                   builder: (_) => const VacationRequestsScreen()),
             ),
             icon: const Icon(Icons.beach_access_rounded, size: 20),
+          ),
+          // Module 33 (ISSUE-17): post-window correction requests queue —
+          // approve applies + bills; reject changes nothing.
+          IconButton(
+            tooltip: 'Correction requests',
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute(
+                  builder: (_) => const CorrectionRequestsScreen()),
+            ),
+            icon: const Icon(Icons.rule_rounded, size: 20),
           ),
           // Issue 5: an admin / manager can mark THEIR OWN attendance for today.
           if (_selectedGroupId != null)
@@ -619,7 +630,7 @@ class _MyAttendanceSheetState extends State<_MyAttendanceSheet> {
         if (r.preference != null) _selectedPref[r.mealId] = r.preference;
       }
     }
-    meals.sort((a, b) => a.order.compareTo(b.order));
+    meals.sort(MealModel.compareChronological);
     setState(() {
       _meals = meals;
       _loading = false;

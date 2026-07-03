@@ -5,10 +5,12 @@ import 'package:smart_meal_management/core/constants/realtime_events.dart';
 import 'package:smart_meal_management/core/theme/app_colors.dart';
 import 'package:smart_meal_management/core/theme/app_typography.dart';
 import 'package:smart_meal_management/data/repositories/notice_repository.dart';
+import 'package:smart_meal_management/data/repositories/notification_repository.dart';
 import 'package:smart_meal_management/data/services/realtime_service.dart';
 import 'package:smart_meal_management/data/services/response_cache_service.dart';
 import 'package:smart_meal_management/features/notices/screens/notice_composer_screen.dart';
 import 'package:smart_meal_management/shared/models/notice_model.dart';
+import 'package:smart_meal_management/shared/models/notification_diagnostics_model.dart';
 import 'package:smart_meal_management/shared/models/result.dart';
 
 /// Notice board feed (Phase B) — bell center for students + admins.
@@ -142,6 +144,26 @@ class _NoticeFeedScreenState extends State<NoticeFeedScreen> {
     if (created == true) await _load();
   }
 
+  /// FR-NOTX-018 (ISSUE-16): admin-visible delivery diagnostics — makes
+  /// "push is on but nothing arrives" observable (channel state, registered
+  /// devices, last-send outcome). The in-app board itself is always reliable.
+  Future<void> _showDeliveryStatus() async {
+    final res = await NotificationRepository().getDeliveryDiagnostics();
+    if (!mounted) return;
+    switch (res) {
+      case Ok(:final value):
+        showModalBottomSheet<void>(
+          context: context,
+          backgroundColor: Colors.transparent,
+          builder: (_) => _DeliveryStatusSheet(diagnostics: value),
+        );
+      case Err(:final failure):
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Could not load delivery status: ${failure.message}')),
+        );
+    }
+  }
+
   Future<void> _delete(NoticeModel n) async {
     final ok = await showDialog<bool>(
       context: context,
@@ -179,6 +201,12 @@ class _NoticeFeedScreenState extends State<NoticeFeedScreen> {
             TextButton(
               onPressed: _markAllRead,
               child: Text('Mark all read', style: AppTypography.labelMedium),
+            ),
+          if (widget.isAdmin)
+            IconButton(
+              tooltip: 'Delivery status',
+              icon: const Icon(Icons.troubleshoot_rounded),
+              onPressed: _showDeliveryStatus,
             ),
         ],
       ),
@@ -511,6 +539,126 @@ class _ErrorState extends StatelessWidget {
           child: TextButton(onPressed: onRetry, child: const Text('Retry')),
         ),
       ],
+    );
+  }
+}
+
+// ── Delivery status sheet (FR-NOTX-018 / ISSUE-16) ───────────────────────────
+
+class _DeliveryStatusSheet extends StatelessWidget {
+  const _DeliveryStatusSheet({required this.diagnostics});
+  final NotificationDiagnostics diagnostics;
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final d = diagnostics;
+    final last = d.lastSend;
+    return Container(
+      margin: const EdgeInsets.all(12),
+      padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
+      decoration: BoxDecoration(
+        color: isDark ? AppColors.surfaceDark : AppColors.surface,
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Center(
+            child: Container(
+              width: 36,
+              height: 4,
+              decoration: BoxDecoration(
+                color: AppColors.textTertiary.withValues(alpha: 0.4),
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+          ),
+          const SizedBox(height: 14),
+          Text('Notification delivery', style: AppTypography.titleMedium),
+          const SizedBox(height: 4),
+          Text(
+            'In-app notices always reach everyone. Push alerts also need a '
+            'registered device.',
+            style:
+                AppTypography.bodySmall.copyWith(color: AppColors.textTertiary),
+          ),
+          const SizedBox(height: 16),
+          _statusRow(
+            icon: d.pushConfigured
+                ? Icons.notifications_active_rounded
+                : Icons.notifications_off_rounded,
+            color: d.pushConfigured ? AppColors.present : AppColors.warning,
+            label: 'Push channel',
+            value: d.pushConfigured ? 'Active' : 'Not configured (in-app only)',
+          ),
+          _statusRow(
+            icon: Icons.phone_android_rounded,
+            color: AppColors.info,
+            label: 'Registered devices',
+            value: '${d.registeredDevices} of ${d.totalMembers} members',
+          ),
+          if (d.membersWithoutDevice > 0)
+            _statusRow(
+              icon: Icons.phonelink_erase_rounded,
+              color: AppColors.textTertiary,
+              label: 'In-app only',
+              value:
+                  '${d.membersWithoutDevice} member(s) have no push device yet',
+            ),
+          if (last != null)
+            _statusRow(
+              icon: last.failed == 0
+                  ? Icons.check_circle_rounded
+                  : Icons.error_outline_rounded,
+              color: last.failed == 0 ? AppColors.present : AppColors.warning,
+              label: 'Last send',
+              value:
+                  '"${last.title}" — ${last.successful}/${last.total} delivered'
+                  '${last.at != null ? ' · ${_relativeTime(last.at!.toLocal())}' : ''}',
+            )
+          else
+            _statusRow(
+              icon: Icons.schedule_rounded,
+              color: AppColors.textTertiary,
+              label: 'Last send',
+              value: 'No push sent in the last 7 days',
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _statusRow({
+    required IconData icon,
+    required Color color,
+    required String label,
+    required String value,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, size: 20, color: color),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(label, style: AppTypography.labelMedium),
+                const SizedBox(height: 2),
+                Text(
+                  value,
+                  style: AppTypography.bodySmall
+                      .copyWith(color: AppColors.textSecondary),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

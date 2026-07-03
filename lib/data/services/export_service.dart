@@ -17,6 +17,69 @@ class ExportService {
 
   static final ExportService instance = ExportService._();
 
+  /// FR-EXP-042 (ISSUE-14): brand line stamped on every export (PDF/XLSX/CSV).
+  static const String brandLine = 'MealAttend · Powered by eMilestone';
+
+  /// FR-EXP-043 / FR-ANL-031: timezone label the report's dates are rendered
+  /// in (device local — all record timestamps are converted locally),
+  /// e.g. "IST (UTC+05:30)".
+  static String tzLabel() {
+    final now = DateTime.now();
+    final off = now.timeZoneOffset;
+    final sign = off.isNegative ? '-' : '+';
+    final h = off.inHours.abs().toString().padLeft(2, '0');
+    final m = (off.inMinutes.abs() % 60).toString().padLeft(2, '0');
+    return '${now.timeZoneName} (UTC$sign$h:$m)';
+  }
+
+  /// FR-EXP-042/043: one-line report metadata — scope, period, timezone,
+  /// generated-at. Used in PDF headers/footers and XLSX/CSV metadata rows.
+  String _metaLine({required String scopeLabel, String? periodLabel}) =>
+      '$scopeLabel'
+      '${periodLabel != null ? '  |  Period: $periodLabel' : ''}'
+      '  |  Timezone: ${tzLabel()}'
+      '  |  Generated: ${_formatDateTime(DateTime.now())}';
+
+  /// FR-EXP-042: A4 page theme with the translucent diagonal brand watermark.
+  pw.PageTheme _brandedPageTheme() => pw.PageTheme(
+        pageFormat: PdfPageFormat.a4,
+        margin: const pw.EdgeInsets.all(32),
+        buildBackground: (context) => pw.Center(
+          child: pw.Transform.rotate(
+            angle: 0.6,
+            child: pw.Opacity(
+              opacity: 0.05,
+              child: pw.Text(
+                'MealAttend',
+                style: pw.TextStyle(
+                  fontSize: 88,
+                  fontWeight: pw.FontWeight.bold,
+                  color: PdfColors.indigo,
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+
+  /// FR-EXP-042: branded footer with page numbers on every PDF page.
+  pw.Widget _brandedFooter(pw.Context context) => pw.Column(
+        crossAxisAlignment: pw.CrossAxisAlignment.start,
+        children: [
+          pw.Divider(color: PdfColors.grey400, height: 8),
+          pw.Row(
+            mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+            children: [
+              pw.Text(brandLine, style: const pw.TextStyle(fontSize: 8)),
+              pw.Text(
+                'Page ${context.pageNumber} of ${context.pagesCount}',
+                style: const pw.TextStyle(fontSize: 8),
+              ),
+            ],
+          ),
+        ],
+      );
+
   List<String> _headers(bool pricingEnabled) => [
         'Name',
         'Group',
@@ -82,8 +145,9 @@ class ExportService {
 
     pdf.addPage(
       pw.MultiPage(
-        pageFormat: PdfPageFormat.a4,
-        margin: const pw.EdgeInsets.all(32),
+        // FR-EXP-042: branded page theme (diagonal watermark) + footer.
+        pageTheme: _brandedPageTheme(),
+        footer: _brandedFooter,
         header: (context) => pw.Column(
           crossAxisAlignment: pw.CrossAxisAlignment.start,
           children: [
@@ -92,19 +156,31 @@ class ExportService {
               style: pw.TextStyle(fontSize: 18, fontWeight: pw.FontWeight.bold),
             ),
             pw.SizedBox(height: 4),
+            // FR-EXP-043: period + timezone + generated-at on the header.
             pw.Text(
-              'Group: $groupName${dateRangeLabel != null ? '  |  Period: $dateRangeLabel' : ''}',
-              style: const pw.TextStyle(fontSize: 11),
-            ),
-            pw.SizedBox(height: 4),
-            pw.Text(
-              'Generated: ${_formatDate(DateTime.now())}',
+              _metaLine(
+                scopeLabel: 'Group: $groupName',
+                periodLabel: dateRangeLabel,
+              ),
               style: const pw.TextStyle(fontSize: 10),
             ),
             pw.Divider(),
           ],
         ),
+        // FR-EXP-041 (ISSUE-14): Summary FIRST, detailed line-items second.
         build: (context) => [
+          pw.Text(
+            'Billing Summary',
+            style: pw.TextStyle(fontSize: 14, fontWeight: pw.FontWeight.bold),
+          ),
+          pw.SizedBox(height: 8),
+          ...summaries.map((s) => _pdfSummaryBlock(s, pricingEnabled)),
+          pw.SizedBox(height: 18),
+          pw.Text(
+            'Detailed Records',
+            style: pw.TextStyle(fontSize: 14, fontWeight: pw.FontWeight.bold),
+          ),
+          pw.SizedBox(height: 8),
           pw.TableHelper.fromTextArray(
             headers: _headers(pricingEnabled),
             data: rows
@@ -120,13 +196,6 @@ class ExportService {
                 const pw.BoxDecoration(color: PdfColors.grey100),
             border: pw.TableBorder.all(color: PdfColors.grey400, width: 0.5),
           ),
-          pw.SizedBox(height: 18),
-          pw.Text(
-            'Billing Summary',
-            style: pw.TextStyle(fontSize: 14, fontWeight: pw.FontWeight.bold),
-          ),
-          pw.SizedBox(height: 8),
-          ...summaries.map((s) => _pdfSummaryBlock(s, pricingEnabled)),
         ],
       ),
     );
@@ -199,14 +268,13 @@ class ExportService {
     final summaries = BillingService.summarize(rows);
     final buffer = StringBuffer();
 
-    buffer.writeln(_headers(pricingEnabled).map(_csvEscape).join(','));
-    for (final r in rows) {
-      buffer.writeln(_rowCells(r, groupName, pricingEnabled)
-          .map(_csvEscape)
-          .join(','));
-    }
-
+    // FR-EXP-042/043 (ISSUE-14): leading comment rows — brand + metadata.
+    buffer.writeln('# $brandLine');
+    buffer.writeln(
+        '# ${_metaLine(scopeLabel: 'Group: $groupName', periodLabel: dateRangeLabel)}');
     buffer.writeln();
+
+    // FR-EXP-041: Summary FIRST, detailed line-items second.
     buffer.writeln('Billing Summary');
     for (final s in summaries) {
       buffer.writeln(_csvEscape(s.userName));
@@ -218,6 +286,15 @@ class ExportService {
       buffer.writeln(
           ',Present: ${s.present},Skipped: ${s.skipped},Absent: ${s.absent},Total meals: ${s.totalMeals}');
       if (pricingEnabled) buffer.writeln(',Total Bill: ₹${s.totalBill}');
+    }
+
+    buffer.writeln();
+    buffer.writeln('Detailed Records');
+    buffer.writeln(_headers(pricingEnabled).map(_csvEscape).join(','));
+    for (final r in rows) {
+      buffer.writeln(_rowCells(r, groupName, pricingEnabled)
+          .map(_csvEscape)
+          .join(','));
     }
 
     final dir = await getTemporaryDirectory();
@@ -251,21 +328,23 @@ class ExportService {
     final summaries = BillingService.summarize(rows);
 
     final book = xls.Excel.createExcel();
-    final sheetName = 'Attendance';
-    final sheet = book[sheetName];
 
-    sheet.appendRow(
-      _headers(pricingEnabled).map((h) => xls.TextCellValue(h)).toList(),
-    );
-    for (final r in rows) {
-      sheet.appendRow(
-        _rowCells(r, groupName, pricingEnabled)
-            .map((c) => xls.TextCellValue(c))
-            .toList(),
-      );
+    // FR-EXP-042/043: brand + metadata band at the top of a sheet.
+    void brandBand(xls.Sheet sheet) {
+      sheet.appendRow([xls.TextCellValue(brandLine)]);
+      sheet.appendRow([
+        xls.TextCellValue(_metaLine(
+          scopeLabel: 'Group: $groupName',
+          periodLabel: dateRangeLabel,
+        )),
+      ]);
+      sheet.appendRow([xls.TextCellValue('')]);
     }
 
+    // FR-EXP-041 (ISSUE-14): the Billing Summary sheet comes FIRST and is the
+    // default sheet the workbook opens on; detailed rows are secondary.
     final sum = book['Billing Summary'];
+    brandBand(sum);
     sum.appendRow([
       xls.TextCellValue('Name'),
       xls.TextCellValue('Present'),
@@ -285,8 +364,21 @@ class ExportService {
       ]);
     }
 
+    final sheet = book['Attendance'];
+    brandBand(sheet);
+    sheet.appendRow(
+      _headers(pricingEnabled).map((h) => xls.TextCellValue(h)).toList(),
+    );
+    for (final r in rows) {
+      sheet.appendRow(
+        _rowCells(r, groupName, pricingEnabled)
+            .map((c) => xls.TextCellValue(c))
+            .toList(),
+      );
+    }
+
     if (book.sheets.containsKey('Sheet1')) book.delete('Sheet1');
-    book.setDefaultSheet(sheetName);
+    book.setDefaultSheet('Billing Summary');
 
     final bytes = book.encode();
     if (bytes == null) {
@@ -329,8 +421,9 @@ class ExportService {
 
     pdf.addPage(
       pw.MultiPage(
-        pageFormat: PdfPageFormat.a4,
-        margin: const pw.EdgeInsets.all(32),
+        // FR-EXP-042: branded page theme (diagonal watermark) + footer.
+        pageTheme: _brandedPageTheme(),
+        footer: _brandedFooter,
         header: (context) => pw.Column(
           crossAxisAlignment: pw.CrossAxisAlignment.start,
           children: [
@@ -339,19 +432,19 @@ class ExportService {
               style: pw.TextStyle(fontSize: 18, fontWeight: pw.FontWeight.bold),
             ),
             pw.SizedBox(height: 4),
-            pw.Text(
-              'Event: $eventName${eventDateLabel != null ? '  |  Date: $eventDateLabel' : ''}',
-              style: const pw.TextStyle(fontSize: 11),
-            ),
-            pw.SizedBox(height: 4),
+            // FR-EXP-041: summary figures first — the headline counts.
             pw.Text(
               'Guests: $totalGuests  |  Adults: $totalAdults  |  Children: $totalChildren'
               '  |  Veg: $totalVeg  |  Non-Veg: $totalNonVeg',
               style: const pw.TextStyle(fontSize: 10),
             ),
             pw.SizedBox(height: 4),
+            // FR-EXP-043: date + timezone + generated-at on the header.
             pw.Text(
-              'Generated: ${_formatDate(DateTime.now())}',
+              _metaLine(
+                scopeLabel: 'Event: $eventName',
+                periodLabel: eventDateLabel,
+              ),
               style: const pw.TextStyle(fontSize: 10),
             ),
             pw.Divider(),
@@ -387,6 +480,11 @@ class ExportService {
     String? eventDateLabel,
   }) async {
     final buffer = StringBuffer();
+    // FR-EXP-042/043 (ISSUE-14): leading comment rows — brand + metadata.
+    buffer.writeln('# $brandLine');
+    buffer.writeln(
+        '# ${_metaLine(scopeLabel: 'Event: $eventName', periodLabel: eventDateLabel)}');
+    buffer.writeln();
     buffer.writeln('Party,Name,Type,Attendance,Meal Preference,Party Total');
 
     for (final party in parties) {

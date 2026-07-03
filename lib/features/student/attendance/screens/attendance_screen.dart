@@ -5,11 +5,14 @@ import 'package:smart_meal_management/core/constants/app_constants.dart';
 import 'package:smart_meal_management/core/theme/app_colors.dart';
 import 'package:smart_meal_management/core/theme/app_typography.dart';
 import 'package:smart_meal_management/features/auth/providers/auth_provider.dart';
+import 'package:smart_meal_management/features/student/attendance/screens/my_corrections_screen.dart';
 import 'package:smart_meal_management/features/student/attendance/widgets/attendance_action_card.dart';
+import 'package:smart_meal_management/features/student/attendance/widgets/correction_request_sheet.dart';
 import 'package:smart_meal_management/features/student/dashboard/providers/student_dashboard_provider.dart';
 import 'package:smart_meal_management/features/student/providers/group_config_provider.dart';
 import 'package:smart_meal_management/shared/models/attendance_model.dart';
 import 'package:smart_meal_management/shared/models/meal_model.dart';
+import 'package:smart_meal_management/shared/models/preference_group_model.dart';
 
 /// Student attendance screen — today's meals with per-meal action cards.
 ///
@@ -71,7 +74,38 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
     if (dashProvider != null) await dashProvider.load(user: user);
   }
 
-  void _mark(MealModel meal, AttendanceStatus status, {String? preference}) {
+  /// Module 33 (ISSUE-17): raise a correction request for a closed meal.
+  /// The record (and bill) only changes after admin approval — auto-approved
+  /// decreases come back status=approved and refresh immediately.
+  Future<void> _openCorrectionSheet(MealModel meal) async {
+    final dashProvider = StudentDashboardScope.maybeOf(context);
+    final created = await showCorrectionRequestSheet(
+      context,
+      meals: dashProvider?.todayMeals ?? [meal],
+      initialMeal: meal,
+    );
+    if (!mounted || created == null) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(created.isApproved
+            ? 'Applied — your record has been corrected.'
+            : 'Request sent — awaiting admin review.'),
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+    // Auto-approved corrections change today's records — refresh silently.
+    if (created.isApproved) {
+      final user = AuthProviderScope.of(context).currentUser;
+      if (user != null) dashProvider?.load(user: user);
+    }
+  }
+
+  void _mark(
+    MealModel meal,
+    AttendanceStatus status, {
+    String? preference,
+    List<PreferenceSelection>? selections,
+  }) {
     final user = AuthProviderScope.of(context).currentUser;
     if (user == null) return;
     final dashProvider = StudentDashboardScope.maybeOf(context);
@@ -81,6 +115,7 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
       meal: meal,
       status: status,
       preference: preference,
+      selections: selections,
     );
   }
 
@@ -118,6 +153,12 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
           appBar: _AttendanceAppBar(
             isDark: isDark,
             onHistoryTap: () => context.push(RouteNames.studentAttendanceHistory),
+            onCorrectionsTap: () => Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (_) =>
+                    MyCorrectionsScreen(meals: dashProvider.todayMeals),
+              ),
+            ),
           ),
 
           body: !hasGroup
@@ -232,6 +273,15 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
                                 enabledPreferences: enabledPrefs,
                                 onMark: (s, {String? preference}) =>
                                     _mark(meal, s, preference: preference),
+                                // Module 36: explicit-group meals send the
+                                // full selection set (FR-PG-030/031).
+                                onMarkWithSelections: (s, selections) =>
+                                    _mark(meal, s, selections: selections),
+                                // Module 33 (ISSUE-17): post-window correction
+                                // request — hidden during vacation mode.
+                                onRequestCorrection: isVacation
+                                    ? null
+                                    : () => _openCorrectionSheet(meal),
                               );
                             },
                           ),
@@ -266,10 +316,15 @@ class _AttendanceAppBar extends StatelessWidget
   const _AttendanceAppBar({
     required this.isDark,
     required this.onHistoryTap,
+    required this.onCorrectionsTap,
   });
 
   final bool isDark;
   final VoidCallback onHistoryTap;
+
+  /// Module 33 (ISSUE-17): opens "My Corrections" — post-window requests,
+  /// admin confirmations, and their statuses.
+  final VoidCallback onCorrectionsTap;
 
   @override
   Size get preferredSize => const Size.fromHeight(kToolbarHeight);
@@ -288,6 +343,15 @@ class _AttendanceAppBar extends StatelessWidget
         ),
       ),
       actions: [
+        IconButton(
+          tooltip: 'My corrections',
+          onPressed: onCorrectionsTap,
+          icon: const Icon(
+            Icons.rule_rounded,
+            size: 20,
+            color: AppColors.primary,
+          ),
+        ),
         TextButton.icon(
           onPressed: onHistoryTap,
           icon: const Icon(

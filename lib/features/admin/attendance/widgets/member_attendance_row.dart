@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:smart_meal_management/core/utils/name_display.dart';
 import 'package:smart_meal_management/core/utils/time_format.dart';
 import 'package:smart_meal_management/core/theme/app_colors.dart';
 import 'package:smart_meal_management/core/theme/app_typography.dart';
@@ -21,9 +22,10 @@ class MemberAttendanceRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Issue #7: prefer the joined member name from the record; fall back to any
-    // explicitly supplied name, then to initials only as a last resort.
-    final name = record.userName ?? memberName ?? _initials(record.userId);
+    // FR-NAME-001 (ISSUE-3): prefer the joined canonical name from the record,
+    // then any explicitly supplied name, then the safe "Member" placeholder —
+    // never a raw user id or "null".
+    final name = displayMemberName(record.userName ?? memberName);
     final statusColor = _statusColor(record.status);
     final statusLabel = _statusLabel(record.status);
 
@@ -107,11 +109,6 @@ class MemberAttendanceRow extends StatelessWidget {
         ),
       ),
     );
-  }
-
-  String _initials(String userId) {
-    final parts = userId.split('_');
-    return parts.last.isNotEmpty ? parts.last[0].toUpperCase() : 'U';
   }
 
   Color _statusColor(AttendanceStatus s) {

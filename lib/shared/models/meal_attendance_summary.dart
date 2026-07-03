@@ -66,4 +66,19 @@ class MealAttendanceSummary {
       preferenceBreakdown: breakdown,
     );
   }
+
+  /// Round-trip serializer for the local response cache (cache-first paint).
+  /// Emits the backend field names so [fromJson] parses it back unchanged.
+  Map<String, dynamic> toJson() => {
+        'mealId': mealId,
+        'slotKey': slotKey,
+        'mealName': mealName,
+        'date': date,
+        'totalMembers': totalMembers,
+        'presentDays': presentCount,
+        'absentDays': absentCount,
+        'skippedDays': skippedCount,
+        'snapshotPrice': snapshotPrice,
+        'preferenceBreakdown': preferenceBreakdown,
+      };
 }

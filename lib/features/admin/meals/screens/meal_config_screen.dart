@@ -5,6 +5,7 @@ import 'package:smart_meal_management/app/router/route_names.dart';
 import 'package:smart_meal_management/core/theme/app_colors.dart';
 import 'package:smart_meal_management/core/utils/time_format.dart';
 import 'package:smart_meal_management/features/admin/meals/providers/meal_config_provider.dart';
+import 'package:smart_meal_management/features/admin/meals/screens/preference_groups_screen.dart';
 import 'package:smart_meal_management/features/admin/meals/widgets/meal_config_form.dart';
 import 'package:smart_meal_management/shared/models/meal_model.dart';
 import 'package:smart_meal_management/shared/widgets/app_empty_state.dart';
@@ -257,6 +258,13 @@ class _MealConfigScreenState extends State<MealConfigScreen> {
                           meal: meal,
                           onEdit: () =>
                               _showEditMealSheet(context, meal),
+                          // Module 36 (FR-PG-080): per-meal preference builder.
+                          onPreferences: () => Navigator.of(context).push(
+                            MaterialPageRoute(
+                              builder: (_) =>
+                                  PreferenceGroupsScreen(meal: meal),
+                            ),
+                          ),
                           onDelete: () =>
                               _confirmDelete(context, meal),
                           onToggle: (enabled) => _provider.updateMeal(
@@ -557,12 +565,16 @@ class _MealTile extends StatelessWidget {
     required this.onEdit,
     required this.onDelete,
     required this.onToggle,
+    required this.onPreferences,
   });
 
   final MealModel meal;
   final VoidCallback onEdit;
   final VoidCallback onDelete;
   final ValueChanged<bool> onToggle;
+
+  /// Module 36 (FR-PG-080): opens the preference-group builder for this meal.
+  final VoidCallback onPreferences;
 
   @override
   Widget build(BuildContext context) {
@@ -660,6 +672,10 @@ class _MealTile extends StatelessWidget {
                 child: Text('Edit'),
               ),
               const PopupMenuItem(
+                value: _MealAction.preferences,
+                child: Text('Preference Groups'),
+              ),
+              const PopupMenuItem(
                 value: _MealAction.delete,
                 child: Text('Delete'),
               ),
@@ -670,6 +686,8 @@ class _MealTile extends StatelessWidget {
                   onToggle(!meal.isActive);
                 case _MealAction.edit:
                   onEdit();
+                case _MealAction.preferences:
+                  onPreferences();
                 case _MealAction.delete:
                   onDelete();
               }
@@ -681,4 +699,4 @@ class _MealTile extends StatelessWidget {
   }
 }
 
-enum _MealAction { toggle, edit, delete }
+enum _MealAction { toggle, edit, preferences, delete }
