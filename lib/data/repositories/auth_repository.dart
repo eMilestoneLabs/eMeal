@@ -318,6 +318,8 @@ class AuthRepository implements IAuthRepository {
         if (user.avatarUrl != null) 'avatarUrl': user.avatarUrl,
         'isVacationMode': user.isVacationMode,
         'isDefaultAttendance': user.isDefaultAttendance,
+        // SRS Module 01: Login Preference changeable from Profile settings.
+        'loginPreference': user.loginPreference,
       },
     );
     switch (result) {

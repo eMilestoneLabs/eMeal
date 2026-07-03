@@ -20,6 +20,7 @@ class UserModel extends Equatable {
     this.isDefaultAttendance = false,
     this.remindersEnabled = true,
     this.emailVerified = false,
+    this.loginPreference = 'email',
     this.createdAt,
   });
 
@@ -51,6 +52,10 @@ class UserModel extends Equatable {
   /// SRS AUTH-036/040 — true once the user's email has been verified via OTP.
   /// Drives the verified/unverified badge on profile screens.
   final bool emailVerified;
+
+  /// SRS AUTH-011/012 — default credential for password login ('email' or
+  /// 'mobile'). Changeable from Profile settings after email verification.
+  final String loginPreference;
 
   final DateTime? createdAt;
 
@@ -90,6 +95,7 @@ class UserModel extends Equatable {
         isDefaultAttendance: j['isDefaultAttendance'] ?? false,
         remindersEnabled: j['remindersEnabled'] ?? true,
         emailVerified: j['emailVerified'] ?? false,
+        loginPreference: j['loginPreference'] ?? 'email',
         createdAt:
             j['createdAt'] != null ? DateTime.parse(j['createdAt']) : null,
       );
@@ -111,6 +117,7 @@ class UserModel extends Equatable {
         'isDefaultAttendance': isDefaultAttendance,
         'remindersEnabled': remindersEnabled,
         'emailVerified': emailVerified,
+        'loginPreference': loginPreference,
         'createdAt': createdAt?.toIso8601String(),
       };
 
@@ -155,6 +162,7 @@ class UserModel extends Equatable {
     bool? isDefaultAttendance,
     bool? remindersEnabled,
     bool? emailVerified,
+    String? loginPreference,
     /// Pass [UserModel.absent] to explicitly clear this field to null.
     Object? createdAt = _absent,
   }) =>
@@ -179,6 +187,7 @@ class UserModel extends Equatable {
         isDefaultAttendance: isDefaultAttendance ?? this.isDefaultAttendance,
         remindersEnabled: remindersEnabled ?? this.remindersEnabled,
         emailVerified: emailVerified ?? this.emailVerified,
+        loginPreference: loginPreference ?? this.loginPreference,
         createdAt: identical(createdAt, _absent)
             ? this.createdAt
             : createdAt as DateTime?,
@@ -205,5 +214,6 @@ class UserModel extends Equatable {
         isDefaultAttendance,
         remindersEnabled,
         emailVerified,
+        loginPreference,
       ];
 }

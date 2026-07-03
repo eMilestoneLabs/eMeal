@@ -444,6 +444,19 @@ class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
                           child: SizedBox(height: AppConstants.space24)),
                     ],
 
+                    // ── No meal today (SRS FR-MODE-032 / LOOP-094) ───────
+                    // Planner mode with no published meal for today = holiday
+                    // or off-day: explicit state, nothing markable or billed.
+                    if (provider.mealsEnabled &&
+                        !provider.isLoading &&
+                        provider.todayMeals.isEmpty &&
+                        (provider.groupConfig.weeklyMenuEnabled ||
+                            provider.groupConfig.dayWiseMealsEnabled)) ...[
+                      const SliverToBoxAdapter(child: _NoMealTodayCard()),
+                      const SliverToBoxAdapter(
+                          child: SizedBox(height: AppConstants.space24)),
+                    ],
+
                     // ── 30-Day Attendance Summary ─────────────────────────
                     if (provider.summary != null) ...[
                       SliverToBoxAdapter(
@@ -478,6 +491,10 @@ class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
                               context.go(RouteNames.studentAttendance),
                           onHistory: () =>
                               context.go(RouteNames.studentAttendanceHistory),
+                          // FR-MODE-013: Meal Mode adds Today's Meals.
+                          onMeals: provider.mealsEnabled
+                              ? () => context.go(RouteNames.studentAttendance)
+                              : null,
                           onMenu: provider.mealsEnabled &&
                                   provider.weeklyMenuEnabled
                               ? () => context.go(RouteNames.studentWeeklyMenu)
@@ -810,15 +827,87 @@ class _StatPill extends StatelessWidget {
   }
 }
 
+/// SRS FR-MODE-032 (LOOP-094) — explicit "No meal today" state for planner
+/// off-days/holidays: nothing to mark, nothing billed, no wrong absences.
+class _NoMealTodayCard extends StatelessWidget {
+  const _NoMealTodayCard();
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: AppConstants.space20),
+      child: Container(
+        padding: const EdgeInsets.all(AppConstants.space20),
+        decoration: BoxDecoration(
+          color: isDark ? AppColors.surfaceDark : AppColors.surface,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+            color: isDark ? AppColors.borderDark : AppColors.border,
+          ),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 48,
+              height: 48,
+              decoration: BoxDecoration(
+                color: AppColors.primary.withValues(alpha: 0.08),
+                borderRadius: BorderRadius.circular(14),
+              ),
+              child: const Icon(
+                Icons.event_busy_rounded,
+                color: AppColors.primary,
+                size: 24,
+              ),
+            ),
+            const SizedBox(width: AppConstants.space16),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'No meal today',
+                    style: AppTypography.titleSmall.copyWith(
+                      color: isDark
+                          ? AppColors.textPrimaryDark
+                          : AppColors.textPrimary,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    'No meal is scheduled for today — attendance is not required.',
+                    style: AppTypography.bodySmall.copyWith(
+                      color: isDark
+                          ? AppColors.textSecondaryDark
+                          : AppColors.textSecondary,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// SRS FR-MODE-013 — mode-adaptive quick actions:
+/// Attendance-Only shows {Attendance, History}; Meal Mode adds {Meals} and
+/// {Menu} (the latter only when the Weekly Menu is enabled).
 class _QuickActionsRow extends StatelessWidget {
   const _QuickActionsRow({
     this.onAttendance,
     this.onHistory,
+    this.onMeals,
     this.onMenu,
   });
 
   final VoidCallback? onAttendance;
   final VoidCallback? onHistory;
+  final VoidCallback? onMeals;
   final VoidCallback? onMenu;
 
   @override
@@ -842,6 +931,17 @@ class _QuickActionsRow extends StatelessWidget {
             onTap: onHistory,
           ),
         ),
+        if (onMeals != null) ...[
+          const SizedBox(width: AppConstants.space12),
+          Expanded(
+            child: _QuickActionTile(
+              icon: Icons.restaurant_rounded,
+              label: 'Meals',
+              color: AppColors.info,
+              onTap: onMeals,
+            ),
+          ),
+        ],
         if (onMenu != null) ...[
           const SizedBox(width: AppConstants.space12),
           Expanded(

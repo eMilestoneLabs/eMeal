@@ -13,6 +13,7 @@ import 'package:smart_meal_management/core/theme/app_typography.dart';
 import 'package:smart_meal_management/data/services/image_cache_seeder.dart';
 import 'package:smart_meal_management/features/auth/providers/auth_provider.dart';
 import 'package:smart_meal_management/features/auth/widgets/email_verification_badge.dart';
+import 'package:smart_meal_management/features/auth/widgets/login_preference_selector.dart';
 import 'package:smart_meal_management/features/student/profile/providers/student_profile_provider.dart';
 import 'package:smart_meal_management/shared/widgets/cached_photo.dart';
 
@@ -1015,12 +1016,24 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
   final _formKey = GlobalKey<FormState>();
   bool _saving = false;
 
+  /// SRS Module 01 (Part 3): Login Preference is changeable from Profile
+  /// settings after email verification.
+  late String _loginPref;
+
   @override
   void initState() {
     super.initState();
     _nameCtrl = TextEditingController(text: widget.initialName);
     _phoneCtrl = TextEditingController(text: widget.initialPhone);
     _emailCtrl = TextEditingController(text: widget.initialEmail);
+    _loginPref =
+        widget.authProvider.currentUser?.loginPreference ?? 'email';
+    // Re-evaluate the Mobile option's availability as the phone field changes.
+    _phoneCtrl.addListener(_onPhoneChanged);
+  }
+
+  void _onPhoneChanged() {
+    if (mounted) setState(() {});
   }
 
   @override
@@ -1045,6 +1058,7 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
       name: _nameCtrl.text.trim(),
       phone: _phoneCtrl.text.trim(),
       email: _emailCtrl.text.trim(),
+      loginPreference: _loginPref,
     );
 
     // Issue #2: report the real backend result — no more unconditional success.
@@ -1156,6 +1170,18 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
                 if (!v.contains('@')) return 'Enter a valid email';
                 return null;
               },
+            ),
+            const SizedBox(height: AppConstants.space16),
+
+            // Login Preference — SRS Module 01 (Part 3 business rule):
+            // changeable from Profile settings after email verification.
+            LoginPreferenceSelector(
+              value: _loginPref,
+              emailVerified:
+                  widget.authProvider.currentUser?.emailVerified ?? false,
+              hasPhone: _phoneCtrl.text.trim().isNotEmpty,
+              isDark: isDark,
+              onChanged: (v) => setState(() => _loginPref = v),
             ),
             const SizedBox(height: AppConstants.space24),
 

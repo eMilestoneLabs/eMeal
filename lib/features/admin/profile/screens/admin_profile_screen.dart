@@ -13,6 +13,7 @@ import 'package:smart_meal_management/data/repositories/group_repository.dart';
 import 'package:smart_meal_management/data/services/image_cache_seeder.dart';
 import 'package:smart_meal_management/features/auth/providers/auth_provider.dart';
 import 'package:smart_meal_management/features/auth/widgets/email_verification_badge.dart';
+import 'package:smart_meal_management/features/auth/widgets/login_preference_selector.dart';
 import 'package:smart_meal_management/shared/models/result.dart';
 import 'package:smart_meal_management/shared/models/user_model.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -113,6 +114,9 @@ class _AdminProfileScreenState extends State<AdminProfileScreen> {
     final auth = AuthProviderScope.of(context);
     final nameCtrl = TextEditingController(text: user.name);
     final phoneCtrl = TextEditingController(text: user.phone ?? '');
+    // SRS Module 01 (Part 3): Login Preference changeable from Profile
+    // settings after email verification.
+    String loginPref = user.loginPreference;
 
     final saved = await showModalBottomSheet<bool>(
       context: context,
@@ -151,10 +155,20 @@ class _AdminProfileScreenState extends State<AdminProfileScreen> {
                 TextField(
                   controller: phoneCtrl,
                   keyboardType: TextInputType.phone,
+                  onChanged: (_) => setSheet(() {}),
                   decoration: const InputDecoration(
                     labelText: 'Phone',
                     border: OutlineInputBorder(),
                   ),
+                ),
+                const SizedBox(height: AppConstants.space16),
+                LoginPreferenceSelector(
+                  value: loginPref,
+                  emailVerified: user.emailVerified,
+                  hasPhone: phoneCtrl.text.trim().isNotEmpty,
+                  isDark:
+                      Theme.of(ctx).brightness == Brightness.dark,
+                  onChanged: (v) => setSheet(() => loginPref = v),
                 ),
                 const SizedBox(height: AppConstants.space20),
                 SizedBox(
@@ -169,6 +183,7 @@ class _AdminProfileScreenState extends State<AdminProfileScreen> {
                               user.copyWith(
                                 name: nameCtrl.text.trim(),
                                 phone: phoneCtrl.text.trim(),
+                                loginPreference: loginPref,
                               ),
                             );
                             if (ctx.mounted) Navigator.of(ctx).pop(ok);

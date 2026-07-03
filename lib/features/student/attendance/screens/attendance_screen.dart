@@ -206,10 +206,21 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
                             child: SizedBox(height: AppConstants.space12)),
 
                       // ── No meals / empty state ───────────────────────────
+                      // SRS FR-MODE-032 (LOOP-094): in planner mode an empty
+                      // day is a holiday/off-day ("No meal today"), not a
+                      // configuration problem.
                       if (meals.isEmpty)
                         SliverFillRemaining(
                           hasScrollBody: false,
-                          child: _NoMealsView(isDark: isDark),
+                          child: _NoMealsView(
+                            isDark: isDark,
+                            isPlannerOffDay: (GroupConfigScope.maybeOf(context)
+                                        ?.weeklyMenuEnabled ??
+                                    false) ||
+                                (GroupConfigScope.maybeOf(context)
+                                        ?.dayWiseMealsEnabled ??
+                                    false),
+                          ),
                         )
                       else ...[
                         // ── Date/label header ──────────────────────────────
@@ -585,8 +596,12 @@ class _NoGroupView extends StatelessWidget {
 // ── No meals empty state ───────────────────────────────────────────────────────
 
 class _NoMealsView extends StatelessWidget {
-  const _NoMealsView({required this.isDark});
+  const _NoMealsView({required this.isDark, this.isPlannerOffDay = false});
   final bool isDark;
+
+  /// SRS FR-MODE-032: planner mode + empty day = holiday/off-day, shown as an
+  /// explicit "No meal today" state (unmarkable, unbilled) — not a config error.
+  final bool isPlannerOffDay;
 
   @override
   Widget build(BuildContext context) {
@@ -603,15 +618,17 @@ class _NoMealsView extends StatelessWidget {
                 color: AppColors.primary.withValues(alpha: 0.08),
                 borderRadius: BorderRadius.circular(20),
               ),
-              child: const Icon(
-                Icons.no_meals_rounded,
+              child: Icon(
+                isPlannerOffDay
+                    ? Icons.event_busy_rounded
+                    : Icons.no_meals_rounded,
                 size: 34,
                 color: AppColors.primary,
               ),
             ),
             const SizedBox(height: AppConstants.space20),
             Text(
-              'No meal configured',
+              isPlannerOffDay ? 'No meal today' : 'No meal configured',
               style: AppTypography.titleMedium.copyWith(
                 color: isDark ? AppColors.textPrimaryDark : AppColors.textPrimary,
                 fontWeight: FontWeight.w700,
@@ -619,8 +636,11 @@ class _NoMealsView extends StatelessWidget {
             ),
             const SizedBox(height: AppConstants.space8),
             Text(
-              'No meal has been configured by the admin/manager.\n'
-              'Attendance is not allowed.',
+              isPlannerOffDay
+                  ? 'No meal is scheduled for today.\n'
+                      'Attendance is not required — nothing will be billed.'
+                  : 'No meal has been configured by the admin/manager.\n'
+                      'Attendance is not allowed.',
               style: AppTypography.bodySmall.copyWith(
                 color: isDark
                     ? AppColors.textSecondaryDark

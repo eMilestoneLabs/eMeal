@@ -49,6 +49,10 @@ abstract final class RealtimeEvents {
   /// Member joined / removed / role changed. Room: `group:{groupId}`.
   static const String groupMemberUpdated = 'group.member.updated.v1';
 
+  /// SRS FR-MODE-012: group meal-config / mode flags changed by an admin.
+  /// Room: `group:{groupId}` — dashboards re-fetch so meal widgets adapt live.
+  static const String groupConfigUpdated = 'group.config.updated.v1';
+
   /// Admin/student dashboard cache bust. Room: org / admin.
   static const String dashboardSummaryUpdated = 'dashboard.summary.updated.v1';
 

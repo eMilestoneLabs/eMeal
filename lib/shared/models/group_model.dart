@@ -158,8 +158,11 @@ enum MealPreferenceOption {
 ///
 /// No hardcoded attendance windows — windows live on each [MealModel].
 class GroupMealConfig extends Equatable {
+  // SRS FR-MODE-005: an UNRESOLVED config (no payload yet / partial load)
+  // degrades to Attendance-Only — never show meal UI the mode can't support.
+  // Real group configs always arrive with explicit values from the backend.
   const GroupMealConfig({
-    this.mealsEnabled = true,
+    this.mealsEnabled = false,
     this.weeklyMenuEnabled = true,
     this.dayWiseMealsEnabled = false,
     this.preferencesEnabled = false,
@@ -187,7 +190,9 @@ class GroupMealConfig extends Equatable {
   final bool mealPricingEnabled;
 
   factory GroupMealConfig.fromJson(Map<String, dynamic> j) => GroupMealConfig(
-        mealsEnabled: j['mealsEnabled'] ?? true,
+        // FR-MODE-005: a partial payload missing the mode flag = unresolved
+        // mode → safe Attendance-Only default (backend always sends it).
+        mealsEnabled: j['mealsEnabled'] ?? false,
         weeklyMenuEnabled: j['weeklyMenuEnabled'] ?? true,
         dayWiseMealsEnabled: j['dayWiseMealsEnabled'] ?? false,
         preferencesEnabled: j['preferencesEnabled'] ?? false,

@@ -92,6 +92,9 @@ class StudentDashboardProvider extends ChangeNotifier {
     RealtimeEvents.mealPublished,
     RealtimeEvents.schedulePublished,
     RealtimeEvents.dashboardSummaryUpdated,
+    // SRS FR-MODE-012: mode flip mid-session → refresh so meal widgets
+    // disappear/appear cleanly without stale actions.
+    RealtimeEvents.groupConfigUpdated,
   };
 
   // ── Getters ────────────────────────────────────────────────────────────────
