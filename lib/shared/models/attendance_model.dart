@@ -38,6 +38,7 @@ class AttendanceModel {
     this.price,
     this.selections,
     this.preferences,
+    this.source,
   });
 
   final String id;
@@ -71,6 +72,13 @@ class AttendanceModel {
   /// ([{groupLabel, optionLabel, quantity, ...}]) — display-only.
   final List<dynamic>? preferences;
 
+  /// SRS FR-TRUST-002/010 (Pass 7): how this record came to exist —
+  /// self | default | system_default | admin | request | verified.
+  /// Drives the "Auto-marked" badge and change-history display.
+  final String? source;
+
+  bool get isSystemDefault => source == 'system_default';
+
   factory AttendanceModel.fromJson(Map<String, dynamic> j) => AttendanceModel(
         id: j['id'] ?? '',
         mealId: j['mealId'] ?? '',
@@ -101,6 +109,7 @@ class AttendanceModel {
         preferences: j['preferences'] is List
             ? j['preferences'] as List<dynamic>
             : null,
+        source: j['source']?.toString(),
       );
 
   Map<String, dynamic> toJson() => {
@@ -119,6 +128,7 @@ class AttendanceModel {
         'userPhone': userPhone,
         'price': price,
         'preferences': preferences,
+        'source': source,
       };
 
   AttendanceModel copyWith({
@@ -148,6 +158,7 @@ class AttendanceModel {
         price: price ?? this.price,
         selections: selections ?? this.selections,
         preferences: preferences ?? this.preferences,
+        source: source,
       );
 }
 

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:smart_meal_management/core/utils/time_format.dart';
 import 'package:smart_meal_management/core/theme/app_colors.dart';
 import 'package:smart_meal_management/core/theme/app_typography.dart';
+import 'package:smart_meal_management/features/student/attendance/widgets/record_history_sheet.dart';
 import 'package:smart_meal_management/shared/models/attendance_model.dart';
 
 /// A timeline tile for attendance history.
@@ -77,7 +78,14 @@ class AttendanceTimelineTile extends StatelessWidget {
           Expanded(
             child: Padding(
               padding: const EdgeInsets.only(bottom: 16),
-              child: Container(
+              // FR-TRUST-010: tapping a record opens its full change history.
+              child: InkWell(
+                borderRadius: BorderRadius.circular(12),
+                onTap: record.id.isEmpty
+                    ? null
+                    : () =>
+                        RecordHistorySheet.show(context, recordId: record.id),
+                child: Container(
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
                   color: Theme.of(context).colorScheme.surface,
@@ -101,6 +109,28 @@ class AttendanceTimelineTile extends StatelessWidget {
                             style: AppTypography.bodySmall
                                 .copyWith(color: AppColors.textSecondary),
                           ),
+                          // FR-TRUST-002: system-default records are clearly
+                          // flagged — never silently indistinguishable from a
+                          // member's own tap.
+                          if (record.isSystemDefault) ...[
+                            const SizedBox(height: 4),
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 6, vertical: 2),
+                              decoration: BoxDecoration(
+                                color:
+                                    AppColors.warning.withValues(alpha: 0.12),
+                                borderRadius: BorderRadius.circular(6),
+                              ),
+                              child: Text(
+                                'Auto-marked (group policy)',
+                                style: AppTypography.labelSmall.copyWith(
+                                  color: AppColors.warning,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ),
+                          ],
                         ],
                       ),
                     ),
@@ -133,6 +163,7 @@ class AttendanceTimelineTile extends StatelessWidget {
                       ],
                     ),
                   ],
+                ),
                 ),
               ),
             ),

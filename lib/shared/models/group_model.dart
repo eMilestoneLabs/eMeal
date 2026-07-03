@@ -169,6 +169,7 @@ class GroupMealConfig extends Equatable {
     this.enabledPreferences = const [],
     this.vacationModeEnabled = false,
     this.mealPricingEnabled = false,
+    this.attendanceDefault = 'absent',
   });
 
   final bool mealsEnabled;
@@ -189,6 +190,13 @@ class GroupMealConfig extends Equatable {
   /// billing/exports. When false, no price UI appears anywhere.
   final bool mealPricingEnabled;
 
+  /// SRS FR-TRUST-001 (Pass 7): group trust model. 'absent' = opt-in (legacy —
+  /// not marking means not counted/billed); 'present' = opt-out (unmarked
+  /// members are auto-marked Present at window close, reversibly).
+  final String attendanceDefault;
+
+  bool get isOptOut => attendanceDefault == 'present';
+
   factory GroupMealConfig.fromJson(Map<String, dynamic> j) => GroupMealConfig(
         // FR-MODE-005: a partial payload missing the mode flag = unresolved
         // mode → safe Attendance-Only default (backend always sends it).
@@ -203,6 +211,7 @@ class GroupMealConfig extends Equatable {
         ),
         vacationModeEnabled: j['vacationModeEnabled'] ?? false,
         mealPricingEnabled: j['mealPricingEnabled'] ?? false,
+        attendanceDefault: j['attendanceDefault']?.toString() ?? 'absent',
       );
 
   Map<String, dynamic> toJson() => {
@@ -213,6 +222,7 @@ class GroupMealConfig extends Equatable {
         'enabledPreferences': enabledPreferences.map((e) => e.name).toList(),
         'vacationModeEnabled': vacationModeEnabled,
         'mealPricingEnabled': mealPricingEnabled,
+        'attendanceDefault': attendanceDefault,
       };
 
   GroupMealConfig copyWith({
@@ -223,6 +233,7 @@ class GroupMealConfig extends Equatable {
     List<MealPreferenceOption>? enabledPreferences,
     bool? vacationModeEnabled,
     bool? mealPricingEnabled,
+    String? attendanceDefault,
   }) =>
       GroupMealConfig(
         mealsEnabled: mealsEnabled ?? this.mealsEnabled,
@@ -232,6 +243,7 @@ class GroupMealConfig extends Equatable {
         enabledPreferences: enabledPreferences ?? this.enabledPreferences,
         vacationModeEnabled: vacationModeEnabled ?? this.vacationModeEnabled,
         mealPricingEnabled: mealPricingEnabled ?? this.mealPricingEnabled,
+        attendanceDefault: attendanceDefault ?? this.attendanceDefault,
       );
 
   @override
@@ -243,6 +255,7 @@ class GroupMealConfig extends Equatable {
         enabledPreferences,
         vacationModeEnabled,
         mealPricingEnabled,
+        attendanceDefault,
       ];
 }
 

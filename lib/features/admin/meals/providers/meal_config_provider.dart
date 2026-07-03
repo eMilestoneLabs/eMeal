@@ -71,6 +71,11 @@ class MealConfigProvider extends ChangeNotifier {
   bool get mealPricingEnabled => _mealPricingEnabled;
   bool get autoContinueLastWeek => _autoContinueLastWeek;
 
+  /// SRS FR-TRUST-001 (Pass 7): true when the group runs the opt-out trust
+  /// model (unmarked members auto-Present at window close). Read straight off
+  /// the selected group so it always reflects the last server state.
+  bool get optOutAttendance => _selectedGroup?.mealConfig.isOptOut ?? false;
+
   // ── Load ──────────────────────────────────────────────────────────────────
 
   Future<void> loadGroups({required String organizationId}) async {
@@ -568,6 +573,42 @@ class MealConfigProvider extends ChangeNotifier {
             );
           }).toList();
         }
+        _isSaving = false;
+        notifyListeners();
+        return true;
+      case Err(:final failure):
+        _error = failure.message;
+        _isSaving = false;
+        notifyListeners();
+        return false;
+    }
+  }
+
+  /// SRS FR-TRUST-001 (Pass 7): switch the group between opt-in ('absent',
+  /// legacy) and opt-out ('present') attendance defaults. Server audits the
+  /// flip and the sweep worker starts/stops materializing system defaults.
+  Future<bool> setAttendanceDefault({
+    required String organizationId,
+    required String groupId,
+    required bool optOut,
+  }) async {
+    if (_selectedGroup == null) return false;
+    _isSaving = true;
+    notifyListeners();
+
+    final updatedConfig = _selectedGroup!.mealConfig.copyWith(
+      attendanceDefault: optOut ? 'present' : 'absent',
+    );
+
+    final result = await _groupRepo.updateGroup(
+      organizationId: organizationId,
+      groupId: groupId,
+      mealConfig: updatedConfig,
+    );
+
+    switch (result) {
+      case Ok(:final value):
+        _selectedGroup = value;
         _isSaving = false;
         notifyListeners();
         return true;

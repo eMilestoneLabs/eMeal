@@ -234,6 +234,27 @@ class _MealConfigScreenState extends State<MealConfigScreen> {
                                 enabled: v,
                               ),
                     ),
+                    const SizedBox(height: 12),
+
+                    // ── Opt-out trust model (SRS FR-TRUST-001, Pass 7) ─────
+                    _ToggleTile(
+                      icon: Icons.how_to_reg_rounded,
+                      title: 'Opt-Out Attendance',
+                      subtitle: _provider.optOutAttendance
+                          ? 'Unmarked members are auto-marked Present at window '
+                              'close (they can correct it). Communicate this '
+                              'policy to your members.'
+                          : 'Opt-in (default): not marking means not counted '
+                              'or billed',
+                      value: _provider.optOutAttendance,
+                      onChanged: _provider.isSaving
+                          ? null
+                          : (v) => _provider.setAttendanceDefault(
+                                organizationId: _orgId,
+                                groupId: _provider.selectedGroup!.id,
+                                optOut: v,
+                              ),
+                    ),
                     const SizedBox(height: 24),
 
                     // ── Meal list ──────────────────────────────────────────

@@ -66,6 +66,16 @@ class AttendanceRepository implements IAttendanceRepository {
   }
 
   @override
+  Future<Result<Map<String, dynamic>>> getRecordHistory({
+    required String recordId,
+  }) async {
+    // SRS FR-TRUST-010 (Pass 7): member-visible change history.
+    return DioApiService.instance.get<Map<String, dynamic>>(
+      '/attendance/$recordId/history',
+    );
+  }
+
+  @override
   Future<Result<List<AttendanceModel>>> getTodayAttendance({
     required String userId,
     required String groupId,

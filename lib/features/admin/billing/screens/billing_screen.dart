@@ -4,6 +4,7 @@ import 'package:smart_meal_management/core/theme/app_colors.dart';
 import 'package:smart_meal_management/core/theme/app_typography.dart';
 import 'package:smart_meal_management/features/admin/billing/providers/member_billing_provider.dart';
 import 'package:smart_meal_management/features/admin/billing/screens/member_billing_detail_screen.dart';
+import 'package:smart_meal_management/features/admin/billing/widgets/billing_periods_sheet.dart';
 import 'package:smart_meal_management/features/auth/providers/auth_provider.dart';
 import 'package:smart_meal_management/shared/models/billing_summary.dart';
 import 'package:smart_meal_management/shared/models/group_model.dart';
@@ -78,6 +79,24 @@ class _BillingScreenState extends State<BillingScreen> {
         title: Text('Member Billing', style: AppTypography.titleLarge),
         backgroundColor: cs.surface,
         surfaceTintColor: Colors.transparent,
+        actions: [
+          // SRS FR-DISP-010 (Pass 7): finalize / reopen billing periods.
+          ListenableBuilder(
+            listenable: _provider,
+            builder: (context, _) => IconButton(
+              tooltip: 'Billing periods (finalize / reopen)',
+              icon: const Icon(Icons.lock_clock_rounded),
+              onPressed: _provider.groupId == null
+                  ? null
+                  : () => BillingPeriodsSheet.show(
+                        context,
+                        groupId: _provider.groupId!,
+                        from: _provider.from,
+                        to: _provider.to,
+                      ),
+            ),
+          ),
+        ],
       ),
       body: ListenableBuilder(
         listenable: _provider,

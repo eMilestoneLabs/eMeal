@@ -54,4 +54,12 @@ abstract interface class IAttendanceRepository {
   Future<Result<AttendanceModel>> updateAttendance({
     required AttendanceModel record,
   });
+
+  /// SRS FR-TRUST-010 (Pass 7): per-record change history — who set/changed
+  /// the record (self / admin / system default / verified), when, and why.
+  /// GET /attendance/{id}/history. Returns the raw payload
+  /// `{record: {...}, history: [{at, action, actorName, actorKind, ...}]}`.
+  Future<Result<Map<String, dynamic>>> getRecordHistory({
+    required String recordId,
+  });
 }
