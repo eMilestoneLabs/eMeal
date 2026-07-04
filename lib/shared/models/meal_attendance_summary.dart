@@ -26,6 +26,7 @@ class MealAttendanceSummary {
     this.guestChildren = 0,
     this.attendingTotal,
     this.guestPreferenceBreakdown = const {},
+    this.expectedParticipants,
   });
 
   final String mealId;
@@ -58,6 +59,11 @@ class MealAttendanceSummary {
 
   /// tag -> count for GUEST plates only (e.g. {"veg":2,"unspecified":1}).
   final Map<String, int> guestPreferenceBreakdown;
+
+  /// Pass 15 (FR-ANL-003): expected participants = active, non-blocked,
+  /// non-vacation members for this meal/date. Null on cached payloads from
+  /// pre-Pass-15 app builds (falls back to [totalMembers] where shown).
+  final int? expectedParticipants;
 
   /// Total plates to cook: present members + confirmed guests.
   int get effectiveAttendingTotal => attendingTotal ?? (presentCount + guestCount);
@@ -102,6 +108,9 @@ class MealAttendanceSummary {
           ? j['attendingTotal'] as int
           : int.tryParse(j['attendingTotal']?.toString() ?? ''),
       guestPreferenceBreakdown: _breakdown(j['guestPreferenceBreakdown']),
+      expectedParticipants: j['expectedParticipants'] is int
+          ? j['expectedParticipants'] as int
+          : int.tryParse(j['expectedParticipants']?.toString() ?? ''),
     );
   }
 
@@ -123,5 +132,6 @@ class MealAttendanceSummary {
         'guestChildren': guestChildren,
         'attendingTotal': attendingTotal,
         'guestPreferenceBreakdown': guestPreferenceBreakdown,
+        'expectedParticipants': expectedParticipants,
       };
 }

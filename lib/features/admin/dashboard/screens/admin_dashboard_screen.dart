@@ -16,6 +16,7 @@ import 'package:smart_meal_management/shared/models/group_model.dart';
 import 'package:smart_meal_management/shared/models/meal_attendance_summary.dart';
 import 'package:smart_meal_management/shared/models/meal_model.dart';
 import 'package:smart_meal_management/shared/widgets/app_section_title.dart';
+import 'package:smart_meal_management/shared/widgets/app_screen_states.dart';
 import 'package:smart_meal_management/features/auth/providers/auth_provider.dart';
 
 /// Admin home dashboard — greeting, KPI stats, quick actions, group list.
@@ -148,6 +149,16 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                 const AppSectionTitle(
                   title: 'Overview',
                   subtitle: 'Live attendance for the selected group',
+                ),
+                // Pass 15 (FR-ANL-022): "Updated X ago" surfaces only while the
+                // shown KPIs are stale cache; it disappears once the live
+                // refresh lands (FreshnessBadge self-hides when fresh).
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: Padding(
+                    padding: const EdgeInsets.only(top: 6),
+                    child: FreshnessBadge(lastUpdated: _provider.lastUpdated),
+                  ),
                 ),
                 const SizedBox(height: 12),
                 // Issue #5/#8: per-group stats with a group switcher (default group).
@@ -395,6 +406,21 @@ class _MealSummaryCard extends StatelessWidget {
                   label: 'Skipped', value: skipped, color: AppColors.skipped),
             ],
           ),
+          // Pass 15 (FR-ANL-003): expected participants for this meal —
+          // active, non-blocked members minus anyone on vacation. Shown as a
+          // quiet caption so admins can read "present vs. expected" at a glance.
+          if (summary?.expectedParticipants != null) ...[
+            const SizedBox(height: 6),
+            Text(
+              'Expected ${summary!.expectedParticipants} of '
+              '${summary!.totalMembers} members (excludes vacation)',
+              style: AppTypography.labelSmall.copyWith(
+                color: isDark
+                    ? AppColors.textSecondaryDark
+                    : AppColors.textSecondary,
+              ),
+            ),
+          ],
           // Module 22 (FR-HG-060/061, Pass 9): hosted-guest plates — extra
           // food the kitchen must cook, itemised apart from members.
           if ((summary?.guestCount ?? 0) > 0) ...[

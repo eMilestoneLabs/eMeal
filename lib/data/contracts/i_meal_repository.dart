@@ -82,9 +82,15 @@ abstract interface class IMealRepository {
 
   /// Issue 2: revert a published schedule back to draft (unpublish) so the
   /// admin can edit and re-publish.
+  ///
+  /// Pass 15 (FR-SCHX-003): when [hide] is true this is a FULL unpublish —
+  /// the week is hidden from students (server clears publishedAt) while the
+  /// draft and last snapshot stay recoverable. Default false keeps the legacy
+  /// edit-mode revert where students keep seeing the last published week.
   Future<Result<MealScheduleModel>> revertSchedule({
     required String organizationId,
     required String groupId,
     required String scheduleId,
+    bool hide = false,
   });
 }

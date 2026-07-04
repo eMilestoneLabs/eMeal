@@ -322,10 +322,15 @@ class MealRepository implements IMealRepository {
     required String organizationId,
     required String groupId,
     required String scheduleId,
+    bool hide = false,
   }) async {
     // Issue 2 LIVE: POST /schedules/:id/revert — admin only (unpublish).
+    // Pass 15 (FR-SCHX-003): send { hide: true } only for a full unpublish;
+    // omit the body otherwise so the legacy keep-visible revert is byte-for-
+    // byte unchanged.
     final result = await DioApiService.instance.post<Map<String, dynamic>>(
       '/schedules/$scheduleId/revert',
+      body: hide ? const {'hide': true} : null,
     );
     return switch (result) {
       Err(:final failure) => Err(failure),

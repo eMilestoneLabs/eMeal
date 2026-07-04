@@ -105,6 +105,13 @@ class AdminDashboardProvider extends ChangeNotifier {
   String? get error => _error;
   List<GroupModel> get groups => _groups;
 
+  /// Pass 15 (FR-ANL-022): when the shown analytics/KPIs were last refreshed
+  /// from the server. Set to the cache timestamp on a cached paint and to
+  /// now() when live data lands; drives the FreshnessBadge so a stale cached
+  /// dashboard is visibly flagged.
+  DateTime? _lastUpdated;
+  DateTime? get lastUpdated => _lastUpdated;
+
   /// Active meals for today — used by the meal window alert card.
   List<MealModel> get todayMeals => _todayMeals;
 
@@ -216,6 +223,14 @@ class AdminDashboardProvider extends ChangeNotifier {
       final cached = await ResponseCacheService.instance
           .read(dashKey, maxAge: const Duration(hours: 12));
       if (cached is Map) {
+        // Pass 15 (FR-ANL-022): remember how old the painted cache is so the
+        // freshness badge shows until the live refresh below lands.
+        ResponseCacheService.instance.readTimestamp(dashKey).then((ts) {
+          if (ts != null && _lastUpdated == null) {
+            _lastUpdated = ts;
+            notifyListeners();
+          }
+        });
         try {
           final groups = (cached['groups'] as List)
               .whereType<Map<String, dynamic>>()
@@ -277,6 +292,8 @@ class AdminDashboardProvider extends ChangeNotifier {
       if (_groups.isNotEmpty) {
         _writeDashCache(dashKey);
       }
+      // Pass 15 (FR-ANL-022): live data landed — stamp freshness.
+      _lastUpdated = DateTime.now();
       _isLoading = false;
       _isFetching = false;
       notifyListeners();
@@ -407,6 +424,8 @@ class AdminDashboardProvider extends ChangeNotifier {
       _writeDashCache(dashKey);
     }
 
+    // Pass 15 (FR-ANL-022): live data landed via the legacy wave path.
+    _lastUpdated = DateTime.now();
     _isLoading = false;
     _isFetching = false;
     notifyListeners();

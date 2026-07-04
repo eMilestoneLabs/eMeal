@@ -883,9 +883,14 @@ class MealConfigProvider extends ChangeNotifier {
 
   /// Issue 2: revert a PUBLISHED schedule back to draft so the admin can edit
   /// and re-publish. No-op when there is no persisted schedule (empty id).
+  ///
+  /// Pass 15 (FR-SCHX-003): [hide]=true is a FULL unpublish — the week is
+  /// hidden from students while the draft/snapshot stay recoverable. Default
+  /// false is the legacy keep-visible edit-mode revert (unchanged behaviour).
   Future<bool> revertToDraft({
     required String organizationId,
     required String groupId,
+    bool hide = false,
   }) async {
     final scheduleId = _weekSchedule?.id ?? '';
     if (scheduleId.isEmpty) return false;
@@ -896,6 +901,7 @@ class MealConfigProvider extends ChangeNotifier {
       organizationId: organizationId,
       groupId: groupId,
       scheduleId: scheduleId,
+      hide: hide,
     );
     switch (result) {
       case Ok(:final value):

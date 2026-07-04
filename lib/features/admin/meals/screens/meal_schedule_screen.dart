@@ -253,6 +253,61 @@ class _MealScheduleScreenState extends State<MealScheduleScreen>
     }
   }
 
+  /// Pass 15 (FR-SCHX-003): full UNPUBLISH — hide the week from students
+  /// entirely. Distinct from Revert to Draft (which keeps the last published
+  /// week visible while editing); the draft + last snapshot stay recoverable
+  /// on the server, so re-publishing restores it. Confirmed first because it
+  /// removes what members currently see.
+  Future<void> _unpublishHide() async {
+    if (_provider.selectedGroup == null) return;
+    final auth = AuthProviderScope.of(context);
+    final user = auth.currentUser;
+    if (user == null) return;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogCtx) => AlertDialog(
+        title: const Text('Unpublish this week?'),
+        content: const Text(
+          'Students will no longer see this week\'s menu. Your draft is kept '
+          'and you can publish again anytime to restore it.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogCtx).pop(false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(dialogCtx).pop(true),
+            style: TextButton.styleFrom(foregroundColor: AppColors.error),
+            child: const Text('Unpublish'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+
+    final orgId = user.organizationId;
+    final ok = await _provider.revertToDraft(
+      organizationId: orgId,
+      groupId: _provider.selectedGroup!.id,
+      hide: true,
+    );
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            ok
+                ? 'Unpublished — hidden from students. Publish again to restore.'
+                : _provider.error ?? 'Failed to unpublish',
+          ),
+          behavior: SnackBarBehavior.floating,
+          backgroundColor: ok ? AppColors.warning : AppColors.error,
+        ),
+      );
+    }
+  }
+
   /// Opens the per-day meal editor for [day] + [mealId].
   /// Changes made in the sheet call [MealConfigProvider.updateDayMealEntry]
   /// which updates ONLY that day's entry — all other days are untouched.
@@ -444,6 +499,21 @@ class _MealScheduleScreenState extends State<MealScheduleScreen>
                       ],
                     ),
                   ),
+                // Pass 15 (FR-SCHX-003): full unpublish — hide the week from
+                // students entirely (distinct from Revert to Draft, which
+                // keeps the last published week visible while editing).
+                if (isPublished)
+                  const PopupMenuItem(
+                    value: _ScheduleAction.unpublishHide,
+                    child: Row(
+                      children: [
+                        Icon(Icons.visibility_off_rounded,
+                            size: 18, color: AppColors.error),
+                        SizedBox(width: 10),
+                        Expanded(child: Text('Unpublish (hide from students)')),
+                      ],
+                    ),
+                  ),
               ],
               onSelected: (action) {
                 switch (action) {
@@ -451,6 +521,8 @@ class _MealScheduleScreenState extends State<MealScheduleScreen>
                     _copyFromPreviousWeek();
                   case _ScheduleAction.revertToDraft:
                     _revertSchedule();
+                  case _ScheduleAction.unpublishHide:
+                    _unpublishHide();
                   case _ScheduleAction.toggleRecurring:
                     _toggleRecurring();
                 }
@@ -2063,4 +2135,9 @@ class _PlannerGroupSelector extends StatelessWidget {
   }
 }
 
-enum _ScheduleAction { copyPrevious, revertToDraft, toggleRecurring }
+enum _ScheduleAction {
+  copyPrevious,
+  revertToDraft,
+  unpublishHide,
+  toggleRecurring,
+}
