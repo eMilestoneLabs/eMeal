@@ -42,14 +42,20 @@ class StudentSettingsProvider extends ChangeNotifier {
 
   // ── Mutators ───────────────────────────────────────────────────────────────
 
-  Future<void> setVacationMode(bool value) async {
+  /// Returns null on success, or the backend's human-readable failure message
+  /// (e.g. approval-required / network) so the screen can show it — a silent
+  /// snap-back toggle looked broken during live device tests.
+  Future<String?> setVacationMode(bool value) async {
     final user = _user;
-    if (user == null) return;
+    if (user == null) return 'Not signed in';
     // Issue 4: persist to the backend (PATCH /users/me via updateProfile) so an
     // early turn-off actually sticks across reloads — this was previously an
     // in-memory-only refreshUser. updateProfile also updates the live session.
     final ok = await _auth.updateProfile(user.copyWith(isVacationMode: value));
-    if (!ok) return;
+    if (!ok) {
+      return _auth.lastProfileError ??
+          'Could not update vacation mode — please try again';
+    }
     // Cancel all local notifications when vacation starts;
     // reminders will be rescheduled on next dashboard load when vacation ends.
     if (value) {
@@ -57,6 +63,7 @@ class StudentSettingsProvider extends ChangeNotifier {
     }
     // Note: rescheduling on vacation-off is handled by StudentDashboardProvider
     // on next load, so no action needed here.
+    return null;
   }
 
   Future<void> setDefaultAttendance(bool value) async {

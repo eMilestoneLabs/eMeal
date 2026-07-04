@@ -2,12 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:qr_flutter/qr_flutter.dart';
-import 'package:share_plus/share_plus.dart';
 import 'package:smart_meal_management/app/router/route_names.dart';
 import 'package:smart_meal_management/core/theme/app_colors.dart';
 import 'package:smart_meal_management/core/theme/app_typography.dart';
 import 'package:smart_meal_management/core/utils/time_format.dart';
 import 'package:smart_meal_management/core/utils/qr_payload_parser.dart';
+import 'package:smart_meal_management/core/utils/widget_image_share.dart';
 import 'package:smart_meal_management/features/admin/groups/providers/admin_group_provider.dart';
 import 'package:smart_meal_management/features/admin/groups/widgets/group_member_tile.dart';
 import 'package:smart_meal_management/shared/models/group_model.dart';
@@ -334,7 +334,7 @@ class _GroupAppBar extends StatelessWidget {
 
 // ── QR bottom sheet ───────────────────────────────────────────────────────────
 
-class _QrBottomSheet extends StatelessWidget {
+class _QrBottomSheet extends StatefulWidget {
   const _QrBottomSheet({
     required this.group,
     required this.provider,
@@ -344,6 +344,36 @@ class _QrBottomSheet extends StatelessWidget {
   final GroupModel group;
   final AdminGroupProvider provider;
   final String organizationId;
+
+  @override
+  State<_QrBottomSheet> createState() => _QrBottomSheetState();
+}
+
+class _QrBottomSheetState extends State<_QrBottomSheet> {
+  // Keyed RepaintBoundary around the QR card so the COMPLETE card (QR + code)
+  // can be captured and shared as an image (FR-GRP QR share).
+  final GlobalKey _qrCardKey = GlobalKey();
+  bool _sharing = false;
+
+  GroupModel get group => widget.group;
+  AdminGroupProvider get provider => widget.provider;
+
+  Future<void> _shareQrImage(String code) async {
+    if (_sharing) return;
+    setState(() => _sharing = true);
+    try {
+      await WidgetImageShare.shareAsImage(
+        boundaryKey: _qrCardKey,
+        filename: 'mealattend-group-qr-$code.png',
+        text: 'Join "${group.name}" on MealAttend!\n\n'
+            'Use code: $code\n\n'
+            'Open the app → Scan QR or enter code to join.',
+        subject: 'Join ${group.name}',
+      );
+    } finally {
+      if (mounted) setState(() => _sharing = false);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -393,7 +423,9 @@ class _QrBottomSheet extends StatelessWidget {
           const SizedBox(height: 24),
 
           // ── QR visual card ─────────────────────────────────────────────────
-          Container(
+          RepaintBoundary(
+            key: _qrCardKey,
+            child: Container(
             padding: const EdgeInsets.all(20),
             decoration: BoxDecoration(
               color: Colors.white,
@@ -447,6 +479,7 @@ class _QrBottomSheet extends StatelessWidget {
                 ),
               ],
             ),
+            ),
           ),
           const SizedBox(height: 20),
 
@@ -472,16 +505,9 @@ class _QrBottomSheet extends StatelessWidget {
               const SizedBox(width: 10),
               Expanded(
                 child: AppPrimaryButton.outlined(
-                  label: 'Share',
+                  label: _sharing ? 'Sharing…' : 'Share QR',
                   icon: Icons.share_rounded,
-                  onPressed: () {
-                    Share.share(
-                      'Join "${group.name}" on MealAttend!\n\n'
-                      'Use code: $code\n\n'
-                      'Open the app → Scan QR or enter code to join.',
-                      subject: 'Join ${group.name}',
-                    );
-                  },
+                  onPressed: () => _shareQrImage(code),
                 ),
               ),
             ],

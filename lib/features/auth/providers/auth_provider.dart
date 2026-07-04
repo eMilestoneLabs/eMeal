@@ -344,17 +344,25 @@ class AuthProvider extends ChangeNotifier {
 
   // ── Profile update ─────────────────────────────────────────────────────────
 
+  /// Human-readable reason the last [updateProfile] call failed (backend
+  /// message, e.g. the 422 VACATION_REQUIRES_APPROVAL copy). Null after a
+  /// success. Callers that show snackbars read this instead of a bare `false`.
+  String? _lastProfileError;
+  String? get lastProfileError => _lastProfileError;
+
   Future<bool> updateProfile(UserModel updated) async {
     final result = await _repo.updateProfile(user: updated);
     switch (result) {
       case Ok(:final value):
+        _lastProfileError = null;
         if (_session != null) {
           _session = _session!.copyWith(user: value);
           _state = AuthAuthenticated(session: _session!);
           notifyListeners();
         }
         return true;
-      case Err():
+      case Err(:final failure):
+        _lastProfileError = failure.message;
         return false;
     }
   }

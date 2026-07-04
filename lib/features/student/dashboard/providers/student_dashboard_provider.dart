@@ -368,6 +368,9 @@ class StudentDashboardProvider extends ChangeNotifier {
     if (results[0] case Ok(:final value)) {
       _todayMeals = (value as List<MealModel>)
         ..sort(MealModel.compareChronological);
+      // Server-clock window gating baseline — LIVE payloads only (cached
+      // paints never carry orgClockMinutes, so this stamp is inert for them).
+      _mealsFetchedAt = DateTime.now();
     }
 
     // Today attendance
@@ -547,7 +550,11 @@ class StudentDashboardProvider extends ChangeNotifier {
         user.groupId ?? (user.groupIds.isNotEmpty ? user.groupIds.first : null);
     if (groupId == null) return false;
 
-    final today = DateTime.now();
+    final now = DateTime.now();
+    // Mark with the SERVER's org-timezone business date when known (rides on
+    // live /meals/today payloads) — a wrong phone calendar date used to 400
+    // with "Attendance can only be marked for today".
+    final today = _parseOrgDate(meal.orgDate) ?? now;
     final existingIdx = _todayAttendance.indexWhere(
       (r) =>
           r.mealId == meal.id &&
@@ -560,17 +567,17 @@ class StudentDashboardProvider extends ChangeNotifier {
         ? _todayAttendance[existingIdx].copyWith(
             status: status,
             preference: preference,
-            markedAt: today,
+            markedAt: now,
             selections: selections)
         : AttendanceModel(
-            id: 'temp_${meal.id}_${today.millisecondsSinceEpoch}',
+            id: 'temp_${meal.id}_${now.millisecondsSinceEpoch}',
             mealId: meal.id,
             userId: user.id,
             groupId: groupId,
             organizationId: user.organizationId,
             status: status,
             date: today,
-            markedAt: today,
+            markedAt: now,
             preference: preference,
             selections: selections,
           );
@@ -632,22 +639,77 @@ class StudentDashboardProvider extends ChangeNotifier {
   }
 
   // ── Time helpers ──────────────────────────────────────────────────────────
+  //
+  // GOLDEN FIX (live-device "sometimes can't mark Present"): window gating
+  // previously trusted the PHONE clock while the server enforces the ORG-
+  // timezone server clock with close-EXCLUSIVE + grace semantics
+  // (FR-TIME-002/005/008). A skewed/wrong-timezone device enabled buttons the
+  // server 423'd — or disabled marking the server would accept (grace!).
+  // Live /meals/today payloads now carry the server's org clock
+  // ([MealModel.orgClockMinutes] + [graceMinutes], captured at fetch); gating
+  // advances that clock by device-side ELAPSED time (immune to the absolute
+  // wall clock being wrong) and mirrors the server's exact semantics.
+  // Cached payloads never carry the fields → legacy phone-clock fallback,
+  // replaced within ~1s by the SWR silent refresh.
 
+  /// Device timestamp of the most recent LIVE /meals/today payload — the
+  /// baseline that [_orgNowMinutes] advances from.
+  DateTime? _mealsFetchedAt;
+
+  /// "YYYY-MM-DD" → local-midnight DateTime for that calendar date; null on
+  /// missing/unparsable input (callers fall back to the device date).
+  static DateTime? _parseOrgDate(String? s) {
+    if (s == null || s.length < 10) return null;
+    final y = int.tryParse(s.substring(0, 4));
+    final m = int.tryParse(s.substring(5, 7));
+    final d = int.tryParse(s.substring(8, 10));
+    if (y == null || m == null || d == null) return null;
+    return DateTime(y, m, d);
+  }
+
+  /// Server org-clock "now" (minutes since org midnight), advanced by elapsed
+  /// device time since fetch. Null → caller falls back to the phone clock.
+  int? _orgNowMinutes(MealModel meal) {
+    final base = meal.orgClockMinutes;
+    final at = _mealsFetchedAt;
+    if (base == null || at == null) return null;
+    final elapsed = DateTime.now().difference(at).inMinutes;
+    // Monotonicity guard: clock jumped backwards or payload is ancient
+    // (screen resumed after >12h) — fall back rather than extrapolate.
+    if (elapsed < 0 || elapsed > 12 * 60) return null;
+    return (base + elapsed) % (24 * 60);
+  }
+
+  static int _minutesOf(TimeOfDay t) => t.hour * 60 + t.minute;
+
+  /// True while the server accepts a mark for [meal]: open ≤ now < close+grace
+  /// (grace marks are accepted server-side — FR-TIME-005). The all-day
+  /// 00:00–23:59 window (client shape of "no window") is always open.
   bool isWindowOpen(MealModel meal) {
-    final now = TimeOfDay.now();
-    final open = _parseTime(meal.attendanceWindow.openTime);
-    final close = _parseTime(meal.attendanceWindow.closeTime);
-    final nowMinutes = now.hour * 60 + now.minute;
-    final openMinutes = open.hour * 60 + open.minute;
-    final closeMinutes = close.hour * 60 + close.minute;
+    final w = meal.attendanceWindow;
+    if (w.openTime == '00:00' && w.closeTime == '23:59') return true;
+    final openMinutes = _minutesOf(_parseTime(w.openTime));
+    final closeMinutes = _minutesOf(_parseTime(w.closeTime));
+    final orgNow = _orgNowMinutes(meal);
+    if (orgNow != null) {
+      final grace = meal.graceMinutes ?? 0;
+      return orgNow >= openMinutes && orgNow < closeMinutes + grace;
+    }
+    // Legacy fallback (cached payloads / pre-fix servers): phone clock.
+    final nowMinutes = _minutesOf(TimeOfDay.now());
     return nowMinutes >= openMinutes && nowMinutes <= closeMinutes;
   }
 
   bool isWindowPast(MealModel meal) {
-    final now = TimeOfDay.now();
-    final close = _parseTime(meal.attendanceWindow.closeTime);
-    final nowMinutes = now.hour * 60 + now.minute;
-    final closeMinutes = close.hour * 60 + close.minute;
+    final w = meal.attendanceWindow;
+    if (w.openTime == '00:00' && w.closeTime == '23:59') return false;
+    final closeMinutes = _minutesOf(_parseTime(w.closeTime));
+    final orgNow = _orgNowMinutes(meal);
+    if (orgNow != null) {
+      final grace = meal.graceMinutes ?? 0;
+      return orgNow >= closeMinutes + grace;
+    }
+    final nowMinutes = _minutesOf(TimeOfDay.now());
     return nowMinutes > closeMinutes;
   }
 

@@ -513,6 +513,63 @@ class _MealSummaryCard extends StatelessWidget {
               }).toList(),
             ),
           ],
+          // Module 36 (FR-PG-050): multi-preference-group selections of
+          // present members — one row per configured group (labels are the
+          // immutable snapshots captured at mark time).
+          if ((summary?.preferenceGroupBreakdown.isNotEmpty ?? false))
+            ...summary!.preferenceGroupBreakdown.entries.map((group) {
+              final options = group.value.entries.toList()
+                ..sort((a, b) => b.value.compareTo(a.value));
+              return Padding(
+                padding: const EdgeInsets.only(top: 10),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        const Icon(Icons.tune_rounded,
+                            size: 13, color: AppColors.primary),
+                        const SizedBox(width: 5),
+                        Expanded(
+                          child: Text(
+                            group.key,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: AppTypography.labelSmall
+                                .copyWith(fontWeight: FontWeight.w700),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 6,
+                      runSpacing: 6,
+                      children: options.map((e) {
+                        return Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 10, vertical: 6),
+                          decoration: BoxDecoration(
+                            color: AppColors.primary.withValues(alpha: 0.08),
+                            borderRadius: BorderRadius.circular(20),
+                            border: Border.all(
+                                color:
+                                    AppColors.primary.withValues(alpha: 0.2)),
+                          ),
+                          child: Text(
+                            '${e.key} · ${e.value}',
+                            style: AppTypography.labelSmall.copyWith(
+                              fontWeight: FontWeight.w600,
+                              color: AppColors.primary,
+                            ),
+                          ),
+                        );
+                      }).toList(),
+                    ),
+                  ],
+                ),
+              );
+            }),
           // Module 22 (FR-HG-061): guest plates by preference — the kitchen
           // cooks these ON TOP of the member preference counts above.
           if ((summary?.guestPreferenceBreakdown.isNotEmpty ?? false)) ...[

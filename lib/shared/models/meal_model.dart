@@ -31,6 +31,10 @@ class MealModel {
     this.price,
     this.createdAt,
     this.isGeneralAttendance = false,
+    this.windowState,
+    this.orgClockMinutes,
+    this.graceMinutes,
+    this.orgDate,
   });
 
   final String id;
@@ -63,6 +67,26 @@ class MealModel {
   /// #9/#10: true for the implicit per-group general-attendance slot returned by
   /// /meals/today for attendance-only groups (render a day-level Mark card).
   final bool isGeneralAttendance;
+
+  /// FR-TIME-008/011 — canonical SERVER-computed window state at fetch time
+  /// ('upcoming' | 'open' | 'grace' | 'closed'). Only present on live
+  /// /meals/today payloads (never round-tripped through the local cache), so
+  /// non-null means "fresh from the server this session".
+  final String? windowState;
+
+  /// Minutes since org-timezone midnight on the SERVER at fetch time.
+  /// Window gating advances this by device-side elapsed time instead of
+  /// trusting the phone's wall clock (wrong timezone / skewed clock proof).
+  final int? orgClockMinutes;
+
+  /// Per-group grace minutes past close during which the server still accepts
+  /// marks (FR-TIME-005). Rides per-meal so gating matches the server exactly.
+  final int? graceMinutes;
+
+  /// Org-timezone business date (YYYY-MM-DD) on the server at fetch time.
+  /// Marks are submitted with THIS date (never the phone's calendar) so a
+  /// wrong device date can no longer 400 with "can only mark for today".
+  final String? orgDate;
 
   /// True if at least one local image has been attached.
   bool get hasImages => imageBytes.isNotEmpty;
@@ -236,6 +260,14 @@ class MealModel {
         createdAt:
             j['createdAt'] != null ? DateTime.parse(j['createdAt']) : null,
         isGeneralAttendance: j['isGeneralAttendance'] == true,
+        windowState: j['windowState'] as String?,
+        orgClockMinutes: j['orgClockMinutes'] is int
+            ? j['orgClockMinutes'] as int
+            : int.tryParse(j['orgClockMinutes']?.toString() ?? ''),
+        graceMinutes: j['graceMinutes'] is int
+            ? j['graceMinutes'] as int
+            : int.tryParse(j['graceMinutes']?.toString() ?? ''),
+        orgDate: j['orgDate'] as String?,
       );
 
   Map<String, dynamic> toJson() => {
@@ -293,5 +325,9 @@ class MealModel {
         price: price ?? this.price,
         createdAt: createdAt,
         isGeneralAttendance: isGeneralAttendance ?? this.isGeneralAttendance,
+        windowState: windowState,
+        orgClockMinutes: orgClockMinutes,
+        graceMinutes: graceMinutes,
+        orgDate: orgDate,
       );
 }

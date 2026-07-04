@@ -27,6 +27,7 @@ class MealAttendanceSummary {
     this.attendingTotal,
     this.guestPreferenceBreakdown = const {},
     this.expectedParticipants,
+    this.preferenceGroupBreakdown = const {},
   });
 
   final String mealId;
@@ -65,6 +66,12 @@ class MealAttendanceSummary {
   /// pre-Pass-15 app builds (falls back to [totalMembers] where shown).
   final int? expectedParticipants;
 
+  /// Module 36 (FR-PG-050): multi-preference-group selections of PRESENT
+  /// members, keyed by snapshotted labels:
+  /// {"Roti/Rice": {"Roti": 4, "Rice": 2}}. Empty for groups using only the
+  /// legacy flat preference and on cached pre-fix payloads (additive).
+  final Map<String, Map<String, int>> preferenceGroupBreakdown;
+
   /// Total plates to cook: present members + confirmed guests.
   int get effectiveAttendingTotal => attendingTotal ?? (presentCount + guestCount);
 
@@ -73,6 +80,15 @@ class MealAttendanceSummary {
     ((raw as Map?) ?? const {}).forEach((k, v) {
       final n = v is int ? v : int.tryParse(v.toString()) ?? 0;
       if (n > 0) out[k.toString()] = n;
+    });
+    return out;
+  }
+
+  static Map<String, Map<String, int>> _nestedBreakdown(dynamic raw) {
+    final out = <String, Map<String, int>>{};
+    ((raw as Map?) ?? const {}).forEach((k, v) {
+      final inner = _breakdown(v);
+      if (inner.isNotEmpty) out[k.toString()] = inner;
     });
     return out;
   }
@@ -111,6 +127,7 @@ class MealAttendanceSummary {
       expectedParticipants: j['expectedParticipants'] is int
           ? j['expectedParticipants'] as int
           : int.tryParse(j['expectedParticipants']?.toString() ?? ''),
+      preferenceGroupBreakdown: _nestedBreakdown(j['preferenceGroupBreakdown']),
     );
   }
 
@@ -133,5 +150,6 @@ class MealAttendanceSummary {
         'attendingTotal': attendingTotal,
         'guestPreferenceBreakdown': guestPreferenceBreakdown,
         'expectedParticipants': expectedParticipants,
+        'preferenceGroupBreakdown': preferenceGroupBreakdown,
       };
 }

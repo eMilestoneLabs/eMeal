@@ -63,7 +63,14 @@ class _StudentSettingsScreenState extends State<StudentSettingsScreen> {
   Future<void> _turnOffVacation() async {
     final provider = _provider;
     if (provider == null) return;
-    await provider.setVacationMode(false);
+    final error = await provider.setVacationMode(false);
+    // Live-device fix: a failed turn-off used to snap the toggle back with no
+    // explanation — surface the backend's reason so the workflow is visible.
+    if (error != null && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(error)),
+      );
+    }
   }
 
   Future<void> _logout() async {

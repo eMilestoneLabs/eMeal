@@ -15,6 +15,7 @@ import 'package:smart_meal_management/features/auth/providers/auth_provider.dart
 import 'package:smart_meal_management/features/auth/widgets/email_verification_badge.dart';
 import 'package:smart_meal_management/features/auth/widgets/login_preference_selector.dart';
 import 'package:smart_meal_management/shared/models/result.dart';
+import 'package:smart_meal_management/shared/enums/user_role.dart';
 import 'package:smart_meal_management/shared/models/user_model.dart';
 import 'package:smart_meal_management/shared/widgets/delete_account_section.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -35,6 +36,10 @@ class _AdminProfileScreenState extends State<AdminProfileScreen> {
 
   // #2: human-readable default-group name (never the raw org/group ID).
   String? _defaultGroupName;
+  // Per-group functional role for the default group (FR: the role chosen at
+  // group creation must show everywhere, including profile). Falls back to
+  // the account-level role when the membership has no functional role.
+  UserRole? _defaultGroupRole;
   bool _loadedGroup = false;
 
   @override
@@ -65,7 +70,10 @@ class _AdminProfileScreenState extends State<AdminProfileScreen> {
           orElse: () => value.first,
         );
         if (!mounted) return;
-        setState(() => _defaultGroupName = group.name);
+        setState(() {
+          _defaultGroupName = group.name;
+          _defaultGroupRole = group.functionalRole;
+        });
       case Err():
         break;
     }
@@ -260,6 +268,7 @@ class _AdminProfileScreenState extends State<AdminProfileScreen> {
               isDark: isDark,
               isUploading: _uploadingAvatar,
               onPickImage: _pickProfileImage,
+              groupRoleLabel: _defaultGroupRole?.label,
             ),
             const SizedBox(height: AppConstants.space16),
 
@@ -267,7 +276,7 @@ class _AdminProfileScreenState extends State<AdminProfileScreen> {
             _InfoTile(
               icon: Icons.manage_accounts_rounded,
               label: 'Role',
-              value: user?.role.label ?? 'Admin',
+              value: _defaultGroupRole?.label ?? user?.role.label ?? 'Admin',
               isDark: isDark,
             ),
             _InfoTile(
@@ -397,6 +406,7 @@ class _AvatarCard extends StatelessWidget {
     required this.isDark,
     required this.isUploading,
     required this.onPickImage,
+    this.groupRoleLabel,
   });
 
   final UserModel? user;
@@ -404,6 +414,9 @@ class _AvatarCard extends StatelessWidget {
   final bool isDark;
   final bool isUploading;
   final VoidCallback onPickImage;
+
+  /// Per-group functional role label; overrides the account role when set.
+  final String? groupRoleLabel;
 
   @override
   Widget build(BuildContext context) {
@@ -549,7 +562,7 @@ class _AvatarCard extends StatelessWidget {
                 ),
                 const SizedBox(width: 5),
                 Text(
-                  user?.role.displayName ?? 'Admin',
+                  groupRoleLabel ?? user?.role.displayName ?? 'Admin',
                   style: AppTypography.labelSmall.copyWith(
                     color: AppColors.primary,
                     fontWeight: FontWeight.w600,
