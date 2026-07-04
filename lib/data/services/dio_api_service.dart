@@ -335,7 +335,9 @@ class DioApiService {
       final session =
           await AuthStorageService.instance.loadSession(allowExpired: true);
       if (session == null || session.refreshToken.isEmpty) {
-        await AuthStorageService.instance.clearSession();
+        // No restorable session — but do NOT clearSession here: a transient
+        // storage failure must never destroy a recoverable refresh token.
+        // Only a server-confirmed 401/403 below ends the session for real.
         return null;
       }
 

@@ -28,10 +28,17 @@
     <uses-permission android:name="android.permission.CAMERA"/>
     <uses-feature android:name="android.hardware.camera" android:required="false"/>
 
+    <!-- allowBackup=false (2026-07-04 logout fix): Google Auto-Backup restores
+         SharedPreferences but Android Keystore keys NEVER back up, so a
+         backup restore produced a half-consistent auth state (encrypted
+         tokens that can no longer be decrypted) that forced re-login. Fresh
+         installs now start clean; in-place APK updates keep data as before. -->
     <application
         android:label="MealAttend"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher"
+        android:allowBackup="false"
+        android:fullBackupContent="false"
         android:enableOnBackInvokedCallback="true">
         <activity
             android:name=".MainActivity"
