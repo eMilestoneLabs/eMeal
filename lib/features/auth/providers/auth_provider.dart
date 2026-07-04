@@ -300,6 +300,22 @@ class AuthProvider extends ChangeNotifier {
     clearSession();
   }
 
+  /// Pass 14 (FR-DEL-011): permanently delete the signed-in account.
+  /// Returns `null` on success (session is fully cleared, caller navigates
+  /// away) or a user-facing error message when the server refused.
+  Future<String?> deleteAccount({String? password}) async {
+    final result = await _repo.deleteAccount(password: password);
+    switch (result) {
+      case Ok():
+        clearSession();
+        return null;
+      case Err(:final failure):
+        return failure.message.isNotEmpty
+            ? failure.message
+            : 'Could not delete the account. Please try again.';
+    }
+  }
+
   void clearSession() {
     // B10: close realtime socket on logout (no-op in mock).
     RealtimeService.instance.disconnect();

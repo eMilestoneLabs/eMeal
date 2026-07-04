@@ -80,6 +80,12 @@ abstract interface class IAuthRepository {
   /// Exchange a refresh token for a new [AuthSession].
   Future<Result<AuthSession>> refreshToken({required String token});
 
+  /// Pass 14 (FR-DEL-011): permanently delete the signed-in account.
+  /// The backend revokes every session, soft-removes memberships and
+  /// anonymizes PII; attendance/billing history is retained per policy.
+  /// [password] is required for accounts that have one.
+  Future<Result<Unit>> deleteAccount({String? password});
+
   // ── Profile ────────────────────────────────────────────────────────────────
 
   /// Load the full profile for [userId].

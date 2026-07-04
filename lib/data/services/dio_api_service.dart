@@ -168,14 +168,17 @@ class DioApiService {
         requiresAuth: requiresAuth,
       );
 
-  /// Issues a `DELETE` request to [path].
+  /// Issues a `DELETE` request to [path] with an optional JSON [body]
+  /// (Pass 14: DELETE /users/me carries a confirm phrase + password).
   Future<Result<T>> delete<T>(
     String path, {
+    Object? body,
     bool requiresAuth = true,
   }) =>
       _request<T>(
         path: path,
         method: 'DELETE',
+        body: body,
         requiresAuth: requiresAuth,
       );
 

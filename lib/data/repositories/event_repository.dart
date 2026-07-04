@@ -1,3 +1,6 @@
+import 'dart:math';
+
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:smart_meal_management/core/errors/failure.dart';
 import 'package:smart_meal_management/data/contracts/i_event_repository.dart';
 import 'package:smart_meal_management/data/services/dio_api_service.dart';
@@ -34,6 +37,33 @@ class EventRepository implements IEventRepository {
   static const _kPartyNotIndexed = NetworkFailure(
     message: 'Guest party not loaded yet. Pull to refresh and try again.',
   );
+
+  // ── Device key (Pass 14 · FR-EVTX-002) ─────────────────────────────────────
+
+  static const _kDeviceKeyPref = 'event_guest_device_key';
+
+  /// Stable, per-install random key sent with every join so the backend can
+  /// RESUME this device's existing party instead of creating a duplicate
+  /// (survives app restarts; a reinstall gets a fresh key by design).
+  /// Best-effort: join works without it if SharedPreferences fails.
+  static Future<String?> _deviceKey() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      var key = prefs.getString(_kDeviceKeyPref);
+      if (key == null || key.isEmpty) {
+        final rand = Random.secure();
+        final suffix = List.generate(
+          20,
+          (_) => rand.nextInt(36).toRadixString(36),
+        ).join();
+        key = 'dk_${DateTime.now().millisecondsSinceEpoch}_$suffix';
+        await prefs.setString(_kDeviceKeyPref, key);
+      }
+      return key;
+    } catch (_) {
+      return null;
+    }
+  }
 
   // ── Event CRUD ─────────────────────────────────────────────────────────────
 
@@ -217,6 +247,10 @@ class EventRepository implements IEventRepository {
         message: 'Event join code not available. Scan the QR code again.',
       ));
     }
+    // Pass 14 (FR-EVTX-002): the stable device key lets the backend resume
+    // this device's existing party (response carries `resumed: true`) instead
+    // of duplicating it on re-join — even after the event closed to NEW joins.
+    final deviceKey = await _deviceKey();
     final result = await DioApiService.instance.post<Map<String, dynamic>>(
       '/events/join',
       body: {
@@ -224,6 +258,7 @@ class EventRepository implements IEventRepository {
         'primaryName': party.primaryName,
         'adultsCount': party.adultsCount,
         'childrenCount': party.childrenCount,
+        if (deviceKey != null) 'deviceKey': deviceKey,
       },
       requiresAuth: false,
     );

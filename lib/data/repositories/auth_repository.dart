@@ -251,6 +251,31 @@ class AuthRepository implements IAuthRepository {
     return const Ok(Unit.instance);
   }
 
+  @override
+  Future<Result<Unit>> deleteAccount({String? password}) async {
+    // Pass 14 (FR-DEL-011): DELETE /users/me — the server revokes every
+    // session on every device, soft-removes memberships and anonymizes PII
+    // in place (attendance/billing history is retained per policy). Unlike
+    // logout this is NOT best-effort: the account must actually be deleted
+    // server-side before we clear locally, so failures surface to the user.
+    final result = await DioApiService.instance.delete<Map<String, dynamic>>(
+      '/users/me',
+      body: {
+        'confirm': 'DELETE',
+        if (password != null && password.isNotEmpty) 'password': password,
+      },
+    );
+    switch (result) {
+      case Err(:final failure):
+        return Err(failure);
+      case Ok():
+        _session = null;
+        _profileCache.clear();
+        await _storage.clearSession();
+        return const Ok(Unit.instance);
+    }
+  }
+
   // ── Token refresh ──────────────────────────────────────────────────────────
 
   @override

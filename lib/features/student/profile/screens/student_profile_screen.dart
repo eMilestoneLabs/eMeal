@@ -16,6 +16,7 @@ import 'package:smart_meal_management/features/auth/widgets/email_verification_b
 import 'package:smart_meal_management/features/auth/widgets/login_preference_selector.dart';
 import 'package:smart_meal_management/features/student/profile/providers/student_profile_provider.dart';
 import 'package:smart_meal_management/shared/widgets/cached_photo.dart';
+import 'package:smart_meal_management/shared/widgets/delete_account_section.dart';
 
 /// Student profile screen — premium gradient header, stats, account info.
 ///
@@ -236,6 +237,10 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
 
                       // ── Logout button ──────────────────────────────
                       _LogoutButton(onLogout: _logout),
+                      const SizedBox(height: AppConstants.space12),
+
+                      // ── Delete account (Pass 14 · FR-DEL-011) ──────
+                      const DeleteAccountSection(),
                       const SizedBox(height: AppConstants.space40),
                     ],
                   ),

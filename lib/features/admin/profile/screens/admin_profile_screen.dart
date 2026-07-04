@@ -16,6 +16,7 @@ import 'package:smart_meal_management/features/auth/widgets/email_verification_b
 import 'package:smart_meal_management/features/auth/widgets/login_preference_selector.dart';
 import 'package:smart_meal_management/shared/models/result.dart';
 import 'package:smart_meal_management/shared/models/user_model.dart';
+import 'package:smart_meal_management/shared/widgets/delete_account_section.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 /// Admin profile screen.
@@ -375,6 +376,10 @@ class _AdminProfileScreenState extends State<AdminProfileScreen> {
                 ),
               ),
             ),
+            const SizedBox(height: AppConstants.space12),
+
+            // ── Delete account (Pass 14 · FR-DEL-011) ────────────────────────
+            const DeleteAccountSection(),
             const SizedBox(height: AppConstants.space40),
           ],
         ),

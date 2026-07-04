@@ -3,6 +3,7 @@ import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:smart_meal_management/core/errors/failure.dart';
 import 'package:smart_meal_management/data/contracts/i_event_repository.dart';
 import 'package:smart_meal_management/data/repositories/event_repository.dart';
 import 'package:smart_meal_management/features/events/models/event_guest_party.dart';
@@ -126,17 +127,57 @@ class EventGuestProvider extends ChangeNotifier {
     _error = null;
     notifyListeners();
 
-    await Future.delayed(const Duration(milliseconds: 400));
-
-    final partyId = 'party_${DateTime.now().millisecondsSinceEpoch}';
-    _myParty = EventGuestParty(
-      id: partyId,
+    // Pass 14 (FR-EVTX-002 / LOOP-072): the join is SERVER-authoritative —
+    // POST /events/join either creates the party or, when this device already
+    // joined (stable deviceKey), resumes the EXISTING party so re-opens never
+    // duplicate. A closed event rejects NEW joins with the server's message.
+    final result = await _repo.joinEvent(EventGuestParty(
+      id: '',
       eventId: _event!.id,
       primaryName: primaryName.trim(),
       adultsCount: adultsCount,
       childrenCount: childrenCount,
+      persons: const [],
       joinedAt: DateTime.now(),
-    );
+    ));
+
+    switch (result) {
+      case Ok(:final value):
+        // Server party carries real ids (and existing names on resume).
+        _myParty = value.persons.isEmpty
+            ? EventGuestParty(
+                id: value.id,
+                eventId: value.eventId.isEmpty ? _event!.id : value.eventId,
+                primaryName: value.primaryName,
+                adultsCount: value.adultsCount,
+                childrenCount: value.childrenCount,
+                joinedAt: value.joinedAt,
+              )
+            : value;
+      case Err(:final failure):
+        final offline =
+            failure is NetworkFailure && failure.statusCode == null;
+        if (!offline) {
+          // The server actively refused (closed event, validation, …).
+          _error = failure.message.isNotEmpty
+              ? failure.message
+              : 'Could not join the event. Please try again.';
+          _isJoining = false;
+          notifyListeners();
+          return false;
+        }
+        // Pure connectivity failure — keep the pre-Pass-14 local fallback so
+        // a guest standing at the venue with flaky data can still proceed;
+        // the next join attempt with the same deviceKey reconciles server-side.
+        _myParty = EventGuestParty(
+          id: 'party_${DateTime.now().millisecondsSinceEpoch}',
+          eventId: _event!.id,
+          primaryName: primaryName.trim(),
+          adultsCount: adultsCount,
+          childrenCount: childrenCount,
+          joinedAt: DateTime.now(),
+        );
+    }
 
     _isJoining = false;
     notifyListeners();
