@@ -22,6 +22,7 @@ import 'package:smart_meal_management/features/student/meals/screens/meal_detail
 import 'package:smart_meal_management/shared/models/user_model.dart';
 import 'package:smart_meal_management/shared/models/vacation_request_model.dart';
 import 'package:smart_meal_management/shared/widgets/app_glass_card.dart';
+import 'package:smart_meal_management/shared/widgets/app_screen_states.dart';
 
 /// Formats an approved vacation as "22 Jun → 30 Jun" for the dashboard badge.
 /// Returns null when there is no active vacation.
@@ -294,13 +295,28 @@ class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
                     child: Padding(
                       padding: const EdgeInsets.symmetric(
                           horizontal: AppConstants.space12),
-                      child: Align(
-                        alignment: Alignment.centerRight,
-                        child: NoticeBell(
-                          organizationId: currentUser.organizationId,
-                          groupId: _activeGroupId ?? currentUser.groupId,
-                          isAdmin: false,
-                        ),
+                      child: Row(
+                        children: [
+                          // Pass 13 (FR-OFF-006): "Updated X ago" while the
+                          // screen is painting stale cache; disappears the
+                          // moment the silent refresh lands.
+                          Expanded(
+                            child: Align(
+                              alignment: Alignment.centerLeft,
+                              child: Padding(
+                                padding: const EdgeInsets.only(
+                                    left: AppConstants.space8),
+                                child: FreshnessBadge(
+                                    lastUpdated: provider.lastUpdated),
+                              ),
+                            ),
+                          ),
+                          NoticeBell(
+                            organizationId: currentUser.organizationId,
+                            groupId: _activeGroupId ?? currentUser.groupId,
+                            isAdmin: false,
+                          ),
+                        ],
                       ),
                     ),
                   ),
@@ -382,6 +398,25 @@ class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
                       ),
                     )
                   else ...[
+                    // ── Partial-failure banner (Pass 13, FR-OFF-012) ─────
+                    // Some sections failed while others loaded: render the
+                    // parts we have and give a scoped retry — never a blank
+                    // screen over data we already hold.
+                    if (provider.sectionError != null) ...[
+                      SliverToBoxAdapter(
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: AppConstants.space20),
+                          child: AppSectionError(
+                            label: provider.sectionError!,
+                            onRetry: _onRefresh,
+                          ),
+                        ),
+                      ),
+                      const SliverToBoxAdapter(
+                          child: SizedBox(height: AppConstants.space16)),
+                    ],
+
                     // ── Open Now carousel (Feature 3) ────────────────────
                     // Multi-card pager: auto-scrolls when all open meals are
                     // marked, otherwise parks on the first pending meal to force

@@ -8,9 +8,11 @@ import 'package:smart_meal_management/features/auth/providers/auth_provider.dart
 import 'package:smart_meal_management/features/student/attendance/screens/my_corrections_screen.dart';
 import 'package:smart_meal_management/features/student/attendance/widgets/attendance_action_card.dart';
 import 'package:smart_meal_management/features/student/attendance/widgets/correction_request_sheet.dart';
+import 'package:smart_meal_management/features/student/attendance/widgets/guest_sheet.dart';
 import 'package:smart_meal_management/features/student/dashboard/providers/student_dashboard_provider.dart';
 import 'package:smart_meal_management/features/student/providers/group_config_provider.dart';
 import 'package:smart_meal_management/shared/models/attendance_model.dart';
+import 'package:smart_meal_management/shared/models/group_model.dart';
 import 'package:smart_meal_management/shared/models/meal_model.dart';
 import 'package:smart_meal_management/shared/models/preference_group_model.dart';
 
@@ -97,6 +99,38 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
     if (created.isApproved) {
       final user = AuthProviderScope.of(context).currentUser;
       if (user != null) dashProvider?.load(user: user);
+    }
+  }
+
+  /// Module 22 (Pass 9): hosted-guest sheet for a Present-marked meal.
+  /// FR-HG-031/033/034 — add with per-guest preference + live cost preview,
+  /// edit and cancel; FR-HG-062 — confirm/decline admin-proposed guests.
+  Future<void> _openGuestSheet(MealModel meal) async {
+    final dashProvider = StudentDashboardScope.maybeOf(context);
+    final user = AuthProviderScope.of(context).currentUser;
+    final config = dashProvider?.groupConfig ?? const GroupMealConfig();
+    final now = DateTime.now();
+    final dateStr = '${now.year.toString().padLeft(4, '0')}-'
+        '${now.month.toString().padLeft(2, '0')}-'
+        '${now.day.toString().padLeft(2, '0')}';
+    final record = dashProvider?.recordForMeal(meal.id);
+    final enabledPrefs = meal.enabledPreferences.isNotEmpty
+        ? meal.enabledPreferences
+        : config.enabledPreferences.map((e) => e.name).toList();
+    final changed = await showGuestSheet(
+      context,
+      mealId: meal.id,
+      mealName: meal.name,
+      dateStr: dateStr,
+      config: config.guestConfig,
+      pricingEnabled: config.mealPricingEnabled,
+      enabledPreferences: enabledPrefs,
+      mealPrice: record?.price ?? meal.price,
+      currentUserId: user?.id,
+    );
+    // Guests changed the host's counters/billing — refresh silently.
+    if (changed == true && mounted && user != null) {
+      dashProvider?.load(user: user);
     }
   }
 
@@ -293,6 +327,14 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
                                 onRequestCorrection: isVacation
                                     ? null
                                     : () => _openCorrectionSheet(meal),
+                                // Module 22 (Pass 9): hosted guests — only in
+                                // guest-enabled Meal Mode groups, never during
+                                // vacation (FR-HG-043).
+                                onManageGuests: (dashProvider
+                                            .groupConfig.guestsEnabled &&
+                                        !isVacation)
+                                    ? () => _openGuestSheet(meal)
+                                    : null,
                               );
                             },
                           ),

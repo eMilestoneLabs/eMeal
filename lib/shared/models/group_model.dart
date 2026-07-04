@@ -152,6 +152,162 @@ enum MealPreferenceOption {
   }
 }
 
+// ── GroupGuestConfig ───────────────────────────────────────────────────────────
+
+/// Module 22 (FR-HG-020, Pass 9): per-group hosted-guest configuration.
+///
+/// Mirrors the backend's nested `mealConfig.guestConfig` payload
+/// (GroupSerializer.guestConfig — additive key, server defaults resolved).
+class GroupGuestConfig extends Equatable {
+  const GroupGuestConfig({
+    this.guestAttendanceEnabled = false,
+    this.maxGuestsPerMemberPerMeal = 5,
+    this.maxGuestsPerMemberPerDay,
+    this.guestPricingMode = 'sameAsMember',
+    this.guestAdultPrice,
+    this.guestChildPrice,
+    this.guestSurcharge,
+    this.guestRequiresApproval = false,
+    this.guestCutoffMinutesBeforeClose = 0,
+    this.guestAdvanceBookingDays = 0,
+    this.guestPreferenceRequired = false,
+    this.allowGuestWithoutHost = false,
+    this.billNoShowGuests = true,
+  });
+
+  final bool guestAttendanceEnabled;
+  final int maxGuestsPerMemberPerMeal;
+  final int? maxGuestsPerMemberPerDay;
+
+  /// sameAsMember | perGuestPrice | flatSurcharge (FR-HG-051).
+  final String guestPricingMode;
+  final int? guestAdultPrice;
+  final int? guestChildPrice;
+  final int? guestSurcharge;
+  final bool guestRequiresApproval;
+  final int guestCutoffMinutesBeforeClose;
+  final int guestAdvanceBookingDays;
+  final bool guestPreferenceRequired;
+  final bool allowGuestWithoutHost;
+  final bool billNoShowGuests;
+
+  static int? _asIntOrNull(dynamic v) =>
+      v == null ? null : (v is int ? v : int.tryParse(v.toString()));
+
+  /// FR-HG-034: client-side price estimate for the cost preview — mirrors the
+  /// backend's resolveGuestPrice exactly. Null = headcount-only (pricing off).
+  int? estimatePrice({
+    required int? mealPrice,
+    required bool isAdult,
+    required bool pricingEnabled,
+  }) {
+    if (!pricingEnabled) return null;
+    switch (guestPricingMode) {
+      case 'perGuestPrice':
+        return isAdult
+            ? (guestAdultPrice ?? mealPrice)
+            : (guestChildPrice ?? guestAdultPrice ?? mealPrice);
+      case 'flatSurcharge':
+        return (mealPrice ?? 0) + (guestSurcharge ?? 0);
+      default: // sameAsMember
+        return mealPrice;
+    }
+  }
+
+  factory GroupGuestConfig.fromJson(Map<String, dynamic> j) =>
+      GroupGuestConfig(
+        guestAttendanceEnabled: j['guestAttendanceEnabled'] ?? false,
+        maxGuestsPerMemberPerMeal:
+            _asIntOrNull(j['maxGuestsPerMemberPerMeal']) ?? 5,
+        maxGuestsPerMemberPerDay: _asIntOrNull(j['maxGuestsPerMemberPerDay']),
+        guestPricingMode:
+            j['guestPricingMode']?.toString() ?? 'sameAsMember',
+        guestAdultPrice: _asIntOrNull(j['guestAdultPrice']),
+        guestChildPrice: _asIntOrNull(j['guestChildPrice']),
+        guestSurcharge: _asIntOrNull(j['guestSurcharge']),
+        guestRequiresApproval: j['guestRequiresApproval'] ?? false,
+        guestCutoffMinutesBeforeClose:
+            _asIntOrNull(j['guestCutoffMinutesBeforeClose']) ?? 0,
+        guestAdvanceBookingDays:
+            _asIntOrNull(j['guestAdvanceBookingDays']) ?? 0,
+        guestPreferenceRequired: j['guestPreferenceRequired'] ?? false,
+        allowGuestWithoutHost: j['allowGuestWithoutHost'] ?? false,
+        billNoShowGuests: j['billNoShowGuests'] ?? true,
+      );
+
+  Map<String, dynamic> toJson() => {
+        'guestAttendanceEnabled': guestAttendanceEnabled,
+        'maxGuestsPerMemberPerMeal': maxGuestsPerMemberPerMeal,
+        'maxGuestsPerMemberPerDay': maxGuestsPerMemberPerDay,
+        'guestPricingMode': guestPricingMode,
+        'guestAdultPrice': guestAdultPrice,
+        'guestChildPrice': guestChildPrice,
+        'guestSurcharge': guestSurcharge,
+        'guestRequiresApproval': guestRequiresApproval,
+        'guestCutoffMinutesBeforeClose': guestCutoffMinutesBeforeClose,
+        'guestAdvanceBookingDays': guestAdvanceBookingDays,
+        'guestPreferenceRequired': guestPreferenceRequired,
+        'allowGuestWithoutHost': allowGuestWithoutHost,
+        'billNoShowGuests': billNoShowGuests,
+      };
+
+  GroupGuestConfig copyWith({
+    bool? guestAttendanceEnabled,
+    int? maxGuestsPerMemberPerMeal,
+    int? maxGuestsPerMemberPerDay,
+    String? guestPricingMode,
+    int? guestAdultPrice,
+    int? guestChildPrice,
+    int? guestSurcharge,
+    bool? guestRequiresApproval,
+    int? guestCutoffMinutesBeforeClose,
+    int? guestAdvanceBookingDays,
+    bool? guestPreferenceRequired,
+    bool? allowGuestWithoutHost,
+    bool? billNoShowGuests,
+  }) =>
+      GroupGuestConfig(
+        guestAttendanceEnabled:
+            guestAttendanceEnabled ?? this.guestAttendanceEnabled,
+        maxGuestsPerMemberPerMeal:
+            maxGuestsPerMemberPerMeal ?? this.maxGuestsPerMemberPerMeal,
+        maxGuestsPerMemberPerDay:
+            maxGuestsPerMemberPerDay ?? this.maxGuestsPerMemberPerDay,
+        guestPricingMode: guestPricingMode ?? this.guestPricingMode,
+        guestAdultPrice: guestAdultPrice ?? this.guestAdultPrice,
+        guestChildPrice: guestChildPrice ?? this.guestChildPrice,
+        guestSurcharge: guestSurcharge ?? this.guestSurcharge,
+        guestRequiresApproval:
+            guestRequiresApproval ?? this.guestRequiresApproval,
+        guestCutoffMinutesBeforeClose: guestCutoffMinutesBeforeClose ??
+            this.guestCutoffMinutesBeforeClose,
+        guestAdvanceBookingDays:
+            guestAdvanceBookingDays ?? this.guestAdvanceBookingDays,
+        guestPreferenceRequired:
+            guestPreferenceRequired ?? this.guestPreferenceRequired,
+        allowGuestWithoutHost:
+            allowGuestWithoutHost ?? this.allowGuestWithoutHost,
+        billNoShowGuests: billNoShowGuests ?? this.billNoShowGuests,
+      );
+
+  @override
+  List<Object?> get props => [
+        guestAttendanceEnabled,
+        maxGuestsPerMemberPerMeal,
+        maxGuestsPerMemberPerDay,
+        guestPricingMode,
+        guestAdultPrice,
+        guestChildPrice,
+        guestSurcharge,
+        guestRequiresApproval,
+        guestCutoffMinutesBeforeClose,
+        guestAdvanceBookingDays,
+        guestPreferenceRequired,
+        allowGuestWithoutHost,
+        billNoShowGuests,
+      ];
+}
+
 // ── GroupMealConfig ────────────────────────────────────────────────────────────
 
 /// Meal system configuration for a group.
@@ -168,8 +324,11 @@ class GroupMealConfig extends Equatable {
     this.preferencesEnabled = false,
     this.enabledPreferences = const [],
     this.vacationModeEnabled = false,
+    this.vacationRequiresApproval = false,
+    this.billingCycleStartDay,
     this.mealPricingEnabled = false,
     this.attendanceDefault = 'absent',
+    this.guestConfig = const GroupGuestConfig(),
   });
 
   final bool mealsEnabled;
@@ -186,6 +345,14 @@ class GroupMealConfig extends Equatable {
   final List<MealPreferenceOption> enabledPreferences;
   final bool vacationModeEnabled;
 
+  /// Pass 11 (FR-VACX-001): when true, members must use a dated vacation
+  /// request (admin-approved) — the instant self-service toggle is disabled.
+  final bool vacationRequiresApproval;
+
+  /// Pass 12 (FR-BILLX-020): day-of-month (1–28) the billing cycle starts.
+  /// Null = calendar month. Period math happens server-side in org time.
+  final int? billingCycleStartDay;
+
   /// Additive: when true, meals carry a ₹ price shown to students and used for
   /// billing/exports. When false, no price UI appears anywhere.
   final bool mealPricingEnabled;
@@ -195,7 +362,15 @@ class GroupMealConfig extends Equatable {
   /// members are auto-marked Present at window close, reversibly).
   final String attendanceDefault;
 
+  /// Module 22 (FR-HG-020, Pass 9): hosted-guest settings — nested additive
+  /// key from the backend; a missing payload degrades to guests-disabled.
+  final GroupGuestConfig guestConfig;
+
   bool get isOptOut => attendanceDefault == 'present';
+
+  /// Hosted guests are usable only in Meal Mode with the feature flag on.
+  bool get guestsEnabled =>
+      mealsEnabled && guestConfig.guestAttendanceEnabled;
 
   factory GroupMealConfig.fromJson(Map<String, dynamic> j) => GroupMealConfig(
         // FR-MODE-005: a partial payload missing the mode flag = unresolved
@@ -210,8 +385,16 @@ class GroupMealConfig extends Equatable {
               .toList(),
         ),
         vacationModeEnabled: j['vacationModeEnabled'] ?? false,
+        vacationRequiresApproval: j['vacationRequiresApproval'] ?? false,
+        billingCycleStartDay: (j['billingCycleStartDay'] is num)
+            ? (j['billingCycleStartDay'] as num).toInt()
+            : null,
         mealPricingEnabled: j['mealPricingEnabled'] ?? false,
         attendanceDefault: j['attendanceDefault']?.toString() ?? 'absent',
+        guestConfig: j['guestConfig'] is Map
+            ? GroupGuestConfig.fromJson(
+                (j['guestConfig'] as Map).cast<String, dynamic>())
+            : const GroupGuestConfig(),
       );
 
   Map<String, dynamic> toJson() => {
@@ -221,8 +404,15 @@ class GroupMealConfig extends Equatable {
         'preferencesEnabled': preferencesEnabled,
         'enabledPreferences': enabledPreferences.map((e) => e.name).toList(),
         'vacationModeEnabled': vacationModeEnabled,
+        'vacationRequiresApproval': vacationRequiresApproval,
+        // OMITTED when null — an explicit null would CLEAR the configured
+        // cycle day on every unrelated toggle (FR-HG-021 bug class). Day 1 is
+        // semantically identical to calendar month, so "clear" is never needed.
+        if (billingCycleStartDay != null)
+          'billingCycleStartDay': billingCycleStartDay,
         'mealPricingEnabled': mealPricingEnabled,
         'attendanceDefault': attendanceDefault,
+        'guestConfig': guestConfig.toJson(),
       };
 
   GroupMealConfig copyWith({
@@ -232,8 +422,12 @@ class GroupMealConfig extends Equatable {
     bool? preferencesEnabled,
     List<MealPreferenceOption>? enabledPreferences,
     bool? vacationModeEnabled,
+    bool? vacationRequiresApproval,
+    int? billingCycleStartDay,
+    bool clearBillingCycleStartDay = false,
     bool? mealPricingEnabled,
     String? attendanceDefault,
+    GroupGuestConfig? guestConfig,
   }) =>
       GroupMealConfig(
         mealsEnabled: mealsEnabled ?? this.mealsEnabled,
@@ -242,8 +436,14 @@ class GroupMealConfig extends Equatable {
         preferencesEnabled: preferencesEnabled ?? this.preferencesEnabled,
         enabledPreferences: enabledPreferences ?? this.enabledPreferences,
         vacationModeEnabled: vacationModeEnabled ?? this.vacationModeEnabled,
+        vacationRequiresApproval:
+            vacationRequiresApproval ?? this.vacationRequiresApproval,
+        billingCycleStartDay: clearBillingCycleStartDay
+            ? null
+            : (billingCycleStartDay ?? this.billingCycleStartDay),
         mealPricingEnabled: mealPricingEnabled ?? this.mealPricingEnabled,
         attendanceDefault: attendanceDefault ?? this.attendanceDefault,
+        guestConfig: guestConfig ?? this.guestConfig,
       );
 
   @override
@@ -254,8 +454,11 @@ class GroupMealConfig extends Equatable {
         preferencesEnabled,
         enabledPreferences,
         vacationModeEnabled,
+        vacationRequiresApproval,
+        billingCycleStartDay,
         mealPricingEnabled,
         attendanceDefault,
+        guestConfig,
       ];
 }
 

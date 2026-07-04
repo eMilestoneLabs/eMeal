@@ -11,6 +11,7 @@ import 'package:smart_meal_management/features/student/meals/widgets/weekly_menu
 import 'package:smart_meal_management/shared/models/meal_model.dart';
 import 'package:smart_meal_management/shared/models/meal_schedule_model.dart';
 import 'package:smart_meal_management/shared/widgets/app_empty_state.dart';
+import 'package:smart_meal_management/shared/widgets/app_screen_states.dart';
 import 'package:smart_meal_management/shared/widgets/app_loading_indicator.dart';
 import 'package:smart_meal_management/shared/widgets/cached_photo.dart';
 
@@ -126,9 +127,10 @@ class _WeeklyMenuScreenState extends State<WeeklyMenuScreen> {
     }
 
     if (!provider.hasSchedule) {
+      // ES-002 (Pass 13): canonical empty copy for the missing weekly menu.
       return const AppEmptyState(
         icon: Icons.calendar_today_rounded,
-        title: 'Menu not published yet',
+        title: EmptyCopy.noWeeklyMenu,
         subtitle: "Your admin hasn't published the weekly menu for this week.\n"
             'Check back soon — menus are usually updated before the week begins.',
       );

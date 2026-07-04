@@ -28,6 +28,12 @@ class StudentSettingsProvider extends ChangeNotifier {
 
   bool get isVacationMode => _user?.isVacationMode ?? false;
   bool get isDefaultAttendance => _user?.isDefaultAttendance ?? false;
+  // Pass 11 (FR-VACX-003): group context for the meal-granular vacation chips.
+  String? get organizationId => _user?.organizationId;
+  String? get activeGroupId {
+    final ids = _user?.effectiveGroupIds ?? const <String>[];
+    return ids.isNotEmpty ? ids.first : null;
+  }
   bool get remindersEnabled => _remindersEnabled;
   ThemeMode get themeMode => _theme.themeMode;
 

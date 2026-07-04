@@ -37,7 +37,19 @@ class AttendanceActionCard extends StatefulWidget {
     this.markedAt,
     this.onRequestCorrection,
     this.onMarkWithSelections,
+    this.onManageGuests,
+    this.guestCount = 0,
   });
+
+  /// Module 22 (FR-HG-031, Pass 9): opens the hosted-guest sheet for this
+  /// meal. Only provided when the group has guest hosting enabled AND the
+  /// student is marked Present (guests ride the host's attendance). Null
+  /// hides the affordance entirely — zero UI change for non-guest groups.
+  final VoidCallback? onManageGuests;
+
+  /// Confirmed guests already booked on this meal (host's own) — shown on
+  /// the manage button so the card reflects state without opening the sheet.
+  final int guestCount;
 
   /// Module 36 (FR-PG-030/032): used INSTEAD of [onMark] for Present when the
   /// meal carries explicit preference groups — sends the full selection set.
@@ -299,6 +311,25 @@ class _AttendanceActionCardState extends State<AttendanceActionCard> {
                       isDark: isDark,
                     ),
                   ],
+                  // Module 22 (Pass 9): hosted guests — Present hosts can add
+                  // "+N" guests billed to them (FR-HG-001/031).
+                  if (widget.onManageGuests != null &&
+                      widget.status == AttendanceStatus.present)
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: TextButton.icon(
+                        onPressed: widget.onManageGuests,
+                        icon: const Icon(Icons.group_add_rounded, size: 15),
+                        label: Text(widget.guestCount > 0
+                            ? 'Guests (${widget.guestCount})'
+                            : 'Add guests'),
+                        style: TextButton.styleFrom(
+                          foregroundColor: AppColors.primary,
+                          padding: const EdgeInsets.symmetric(horizontal: 4),
+                          visualDensity: VisualDensity.compact,
+                        ),
+                      ),
+                    ),
                   // Once the window has closed, the student can no longer change
                   // attendance — show that clearly instead of a silent state.
                   if (widget.isWindowClosed) ...[

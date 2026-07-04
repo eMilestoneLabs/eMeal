@@ -18,10 +18,15 @@ class BillingMemberRow {
     required this.presentCount,
     required this.skippedCount,
     required this.absentCount,
+    this.guestCount = 0,
+    this.guestAmount = 0,
+    this.vacationDays = 0,
+    this.adjustmentsTotal = 0,
+    int? netBill,
     this.email,
     this.phone,
     this.lastActivity,
-  });
+  }) : netBill = netBill ?? totalBill;
 
   final String userId;
   final String userName;
@@ -30,6 +35,19 @@ class BillingMemberRow {
   final int presentCount;
   final int skippedCount;
   final int absentCount;
+
+  /// Module 22 (FR-HG-050/053, Pass 9): hosted-guest charges itemised
+  /// separately — already INCLUDED in [totalBill], never double-counted.
+  final int guestCount;
+  final int guestAmount;
+
+  /// Pass 12 (FR-BILLX-012): vacation days — reported separately, never billed.
+  final int vacationDays;
+
+  /// Pass 12 (FR-BILLX-030/031): signed append-only ledger total for the
+  /// range (debit +, credit/refund −) and the resulting net bill.
+  final int adjustmentsTotal;
+  final int netBill;
 
   /// Additive: included so admins can search members by email / phone.
   final String? email;
@@ -47,6 +65,11 @@ class BillingMemberRow {
         presentCount: _asInt(j['presentCount']),
         skippedCount: _asInt(j['skippedCount']),
         absentCount: _asInt(j['absentCount']),
+        guestCount: _asInt(j['guestCount']),
+        guestAmount: _asInt(j['guestAmount']),
+        vacationDays: _asInt(j['vacationDays']),
+        adjustmentsTotal: _asInt(j['adjustmentsTotal']),
+        netBill: j['netBill'] != null ? _asInt(j['netBill']) : null,
         email: j['email']?.toString(),
         phone: j['phone']?.toString(),
         lastActivity: j['lastActivity'] != null
@@ -78,6 +101,27 @@ class BillingMealBreakdown {
       );
 }
 
+/// Pass 12 (FR-BILLX-021): per-slot rollup row.
+@immutable
+class BillingSlotBreakdown {
+  const BillingSlotBreakdown({
+    required this.slotKey,
+    required this.presentCount,
+    required this.revenue,
+  });
+
+  final String slotKey;
+  final int presentCount;
+  final int revenue;
+
+  factory BillingSlotBreakdown.fromJson(Map<String, dynamic> j) =>
+      BillingSlotBreakdown(
+        slotKey: j['slotKey']?.toString() ?? 'general',
+        presentCount: _asInt(j['presentCount']),
+        revenue: _asInt(j['revenue']),
+      );
+}
+
 @immutable
 class BillingSummaryV2 {
   const BillingSummaryV2({
@@ -89,7 +133,15 @@ class BillingSummaryV2 {
     required this.averageBill,
     required this.mealBreakdown,
     required this.members,
-  });
+    this.guestRevenue = 0,
+    this.adjustmentsTotal = 0,
+    int? netRevenue,
+    this.vacationDays = 0,
+    this.slotBreakdown = const [],
+    this.periodFrom,
+    this.periodTo,
+    this.cycleStartDay,
+  }) : netRevenue = netRevenue ?? revenue;
 
   final int revenue;
   final int memberCount;
@@ -97,6 +149,21 @@ class BillingSummaryV2 {
   final int skippedMeals;
   final int absentMeals;
   final int averageBill;
+
+  /// Module 22 (FR-HG-050, Pass 9): hosted-guest revenue — a slice of
+  /// [revenue] (already included), itemised for the summary card.
+  final int guestRevenue;
+
+  /// Pass 12 (FR-BILLX-030/012/021): ledger + vacation transparency and the
+  /// per-slot rollup; period echoes what range the backend actually used
+  /// (billing-cycle default when no explicit range was sent).
+  final int adjustmentsTotal;
+  final int netRevenue;
+  final int vacationDays;
+  final List<BillingSlotBreakdown> slotBreakdown;
+  final String? periodFrom; // YYYY-MM-DD
+  final String? periodTo; // YYYY-MM-DD
+  final int? cycleStartDay;
   final List<BillingMealBreakdown> mealBreakdown;
   final List<BillingMemberRow> members;
 
@@ -120,6 +187,19 @@ class BillingSummaryV2 {
       skippedMeals: _asInt(s['skippedMeals']),
       absentMeals: _asInt(s['absentMeals']),
       averageBill: _asInt(s['averageBill']),
+      guestRevenue: _asInt(s['guestRevenue']),
+      adjustmentsTotal: _asInt(s['adjustmentsTotal']),
+      netRevenue: s['netRevenue'] != null ? _asInt(s['netRevenue']) : null,
+      vacationDays: _asInt(s['vacationDays']),
+      slotBreakdown: ((j['slotBreakdown'] as List?) ?? const [])
+          .whereType<Map>()
+          .map((e) => BillingSlotBreakdown.fromJson(e.cast<String, dynamic>()))
+          .toList(),
+      periodFrom: (j['period'] as Map?)?['fromDate']?.toString(),
+      periodTo: (j['period'] as Map?)?['toDate']?.toString(),
+      cycleStartDay: (j['period'] as Map?)?['cycleStartDay'] is num
+          ? ((j['period'] as Map)['cycleStartDay'] as num).toInt()
+          : null,
       mealBreakdown: ((j['mealBreakdown'] as List?) ?? const [])
           .whereType<Map>()
           .map((e) => BillingMealBreakdown.fromJson(e.cast<String, dynamic>()))

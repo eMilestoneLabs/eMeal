@@ -21,6 +21,9 @@ class VacationRepository {
     required DateTime endDate,
     String? reason,
     String? groupId,
+    // Pass 11 (FR-VACX-003): meal-granular boundaries (null = whole day).
+    String? startSlotKey,
+    String? endSlotKey,
   }) async {
     final result = await DioApiService.instance.post<Map<String, dynamic>>(
       '/vacation-requests',
@@ -29,6 +32,10 @@ class VacationRepository {
         'endDate': _d(endDate),
         if (reason != null && reason.isNotEmpty) 'reason': reason,
         if (groupId != null) 'groupId': groupId,
+        if (startSlotKey != null && startSlotKey.isNotEmpty)
+          'startSlotKey': startSlotKey,
+        if (endSlotKey != null && endSlotKey.isNotEmpty)
+          'endSlotKey': endSlotKey,
       },
     );
     return switch (result) {

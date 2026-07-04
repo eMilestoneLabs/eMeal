@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:smart_meal_management/core/constants/app_constants.dart';
 import 'package:smart_meal_management/core/theme/app_colors.dart';
 import 'package:smart_meal_management/core/theme/app_typography.dart';
+import 'package:smart_meal_management/data/repositories/meal_repository.dart';
 import 'package:smart_meal_management/data/repositories/vacation_repository.dart';
+import 'package:smart_meal_management/shared/models/meal_model.dart';
 import 'package:smart_meal_management/shared/models/result.dart';
 import 'package:smart_meal_management/shared/models/vacation_request_model.dart';
 
@@ -11,8 +13,21 @@ import 'package:smart_meal_management/shared/models/vacation_request_model.dart'
 /// A member submits a date-range vacation request that an admin approves or
 /// rejects. Additive: the existing self-service Vacation Mode toggle still
 /// works independently; this adds the approval workflow on top.
+///
+/// Pass 11 (FR-VACX-003): optional meal-granular boundaries — "leaving after
+/// lunch" / "back before dinner". Slot chips appear only when the group's
+/// meals load (best-effort); otherwise requests cover whole days, exactly the
+/// previous behaviour.
 class StudentVacationRequestScreen extends StatefulWidget {
-  const StudentVacationRequestScreen({super.key});
+  const StudentVacationRequestScreen({
+    super.key,
+    this.organizationId,
+    this.groupId,
+  });
+
+  /// Optional group context used to load meal slots for boundary chips.
+  final String? organizationId;
+  final String? groupId;
 
   @override
   State<StudentVacationRequestScreen> createState() =>
@@ -31,10 +46,36 @@ class _StudentVacationRequestScreenState
   String? _error;
   List<VacationRequestModel> _mine = [];
 
+  // Pass 11 (FR-VACX-003): meal-granular boundary slots. Best-effort — the
+  // chips only render when the group's meals load; null = whole day.
+  List<MealModel> _slotMeals = [];
+  String? _startSlot;
+  String? _endSlot;
+
   @override
   void initState() {
     super.initState();
     _loadMine();
+    _loadSlots();
+  }
+
+  Future<void> _loadSlots() async {
+    final orgId = widget.organizationId;
+    final groupId = widget.groupId;
+    if (orgId == null || orgId.isEmpty || groupId == null || groupId.isEmpty) {
+      return;
+    }
+    final res = await MealRepository()
+        .getGroupMeals(organizationId: orgId, groupId: groupId);
+    if (!mounted) return;
+    if (res case Ok(:final value)) {
+      final meals = value.where((m) => m.isActive).toList()
+        ..sort((a, b) => a.order.compareTo(b.order));
+      // Boundary chips only make sense with 2+ distinct slots.
+      final seen = <String>{};
+      final distinct = meals.where((m) => seen.add(m.slotKey)).toList();
+      if (distinct.length >= 2) setState(() => _slotMeals = distinct);
+    }
   }
 
   @override
@@ -104,6 +145,9 @@ class _StudentVacationRequestScreenState
       startDate: _start!,
       endDate: _end!,
       reason: _reasonCtrl.text.trim(),
+      // FR-VACX-003: boundary slots (null = whole day).
+      startSlotKey: _startSlot,
+      endSlotKey: _endSlot,
     );
     if (!mounted) return;
     setState(() => _submitting = false);
@@ -113,6 +157,8 @@ class _StudentVacationRequestScreenState
         setState(() {
           _start = null;
           _end = null;
+          _startSlot = null;
+          _endSlot = null;
         });
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Vacation request submitted.')),
@@ -143,6 +189,25 @@ class _StudentVacationRequestScreenState
               Expanded(child: _dateField('End', _end, () => _pick(false), isDark)),
             ],
           ),
+          // FR-VACX-003: optional meal-granular boundaries.
+          if (_slotMeals.isNotEmpty) ...[
+            const SizedBox(height: 16),
+            _slotPicker(
+              'First covered meal on the start day',
+              'e.g. leaving after lunch → pick Dinner',
+              _startSlot,
+              (v) => setState(() => _startSlot = v),
+              isDark,
+            ),
+            const SizedBox(height: 12),
+            _slotPicker(
+              'Last covered meal on the end day',
+              'e.g. back before dinner → pick Lunch',
+              _endSlot,
+              (v) => setState(() => _endSlot = v),
+              isDark,
+            ),
+          ],
           const SizedBox(height: 16),
           Text('Reason (optional)',
               style: AppTypography.labelMedium
@@ -198,6 +263,47 @@ class _StudentVacationRequestScreenState
             ..._mine.map((r) => _requestTile(r, isDark)),
         ],
       ),
+    );
+  }
+
+  /// FR-VACX-003: "Whole day" + one chip per group meal slot.
+  Widget _slotPicker(
+    String title,
+    String hint,
+    String? selected,
+    ValueChanged<String?> onChanged,
+    bool isDark,
+  ) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(title,
+            style:
+                AppTypography.labelMedium.copyWith(fontWeight: FontWeight.w700)),
+        const SizedBox(height: 2),
+        Text(hint,
+            style: AppTypography.labelSmall
+                .copyWith(color: AppColors.textSecondary)),
+        const SizedBox(height: 8),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            ChoiceChip(
+              label: const Text('Whole day'),
+              selected: selected == null,
+              onSelected: (_) => onChanged(null),
+            ),
+            ..._slotMeals.map(
+              (m) => ChoiceChip(
+                label: Text(m.name),
+                selected: selected == m.slotKey,
+                onSelected: (_) => onChanged(m.slotKey),
+              ),
+            ),
+          ],
+        ),
+      ],
     );
   }
 
@@ -265,7 +371,10 @@ class _StudentVacationRequestScreenState
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('${_fmt(r.startDate)}  →  ${_fmt(r.endDate)}',
+                Text(
+                    '${_fmt(r.startDate)}${r.startSlotKey != null ? ' (${r.startSlotKey}+)' : ''}'
+                    '  →  '
+                    '${_fmt(r.endDate)}${r.endSlotKey != null ? ' (till ${r.endSlotKey})' : ''}',
                     style: AppTypography.bodyMedium
                         .copyWith(fontWeight: FontWeight.w600)),
                 if (r.reason != null && r.reason!.isNotEmpty) ...[

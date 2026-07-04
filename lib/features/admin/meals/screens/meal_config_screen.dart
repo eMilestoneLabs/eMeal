@@ -3,9 +3,11 @@ import 'package:smart_meal_management/shared/models/attendance_model.dart';
 import 'package:go_router/go_router.dart';
 import 'package:smart_meal_management/app/router/route_names.dart';
 import 'package:smart_meal_management/core/theme/app_colors.dart';
+import 'package:smart_meal_management/core/theme/app_typography.dart';
 import 'package:smart_meal_management/core/utils/time_format.dart';
 import 'package:smart_meal_management/features/admin/meals/providers/meal_config_provider.dart';
 import 'package:smart_meal_management/features/admin/meals/screens/preference_groups_screen.dart';
+import 'package:smart_meal_management/features/admin/meals/widgets/guest_config_sheet.dart';
 import 'package:smart_meal_management/features/admin/meals/widgets/meal_config_form.dart';
 import 'package:smart_meal_management/shared/models/meal_model.dart';
 import 'package:smart_meal_management/shared/widgets/app_empty_state.dart';
@@ -51,6 +53,34 @@ class _MealConfigScreenState extends State<MealConfigScreen> {
 
   void _rebuild() {
     if (mounted) setState(() {});
+  }
+
+  /// Module 22 (FR-HG-021, Pass 9): caps / pricing / approval settings for
+  /// hosted guests. The backend 422s (GUEST_PRICE_REQUIRED etc.) surface
+  /// through the provider error, shown as a snackbar here.
+  Future<void> _openGuestSettings() async {
+    final group = _provider.selectedGroup;
+    if (group == null) return;
+    final edited = await showGuestConfigSheet(
+      context,
+      config: _provider.guestConfig,
+      pricingEnabled: _provider.mealPricingEnabled,
+    );
+    if (edited == null || !mounted) return;
+    final ok = await _provider.updateGuestConfig(
+      organizationId: _orgId,
+      groupId: group.id,
+      config: edited,
+    );
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(ok
+            ? 'Guest settings saved.'
+            : (_provider.error ?? 'Could not save guest settings')),
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
   }
 
   @override
@@ -255,7 +285,79 @@ class _MealConfigScreenState extends State<MealConfigScreen> {
                                 optOut: v,
                               ),
                     ),
-                    const SizedBox(height: 24),
+                    const SizedBox(height: 12),
+
+                    // ── Hosted guests (Module 22, Pass 9) ──────────────────
+                    _ToggleTile(
+                      icon: Icons.group_add_rounded,
+                      title: 'Hosted Guests (+N)',
+                      subtitle: _provider.guestConfig.guestAttendanceEnabled
+                          ? 'Members can bring guests — billed to the host. '
+                              'Tap "Guest settings" below for caps & pricing.'
+                          : 'Members cannot add guests to their meals',
+                      value: _provider.guestConfig.guestAttendanceEnabled,
+                      onChanged: _provider.isSaving
+                          ? null
+                          : (v) => _provider.updateGuestConfig(
+                                organizationId: _orgId,
+                                groupId: _provider.selectedGroup!.id,
+                                config: _provider.guestConfig
+                                    .copyWith(guestAttendanceEnabled: v),
+                              ),
+                    ),
+                    if (_provider.guestConfig.guestAttendanceEnabled) ...[
+                      const SizedBox(height: 8),
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: TextButton.icon(
+                          onPressed: _provider.isSaving
+                              ? null
+                              : _openGuestSettings,
+                          icon: const Icon(Icons.tune_rounded, size: 16),
+                          label: const Text('Guest settings'),
+                        ),
+                      ),
+                    ],
+                    const SizedBox(height: 12),
+
+                    // ── Vacation approval (Pass 11, FR-VACX-001) ───────────
+                    _ToggleTile(
+                      icon: Icons.beach_access_rounded,
+                      title: 'Vacation Needs Approval',
+                      subtitle: (_provider.selectedGroup?.mealConfig
+                                  .vacationRequiresApproval ??
+                              false)
+                          ? 'Members submit a dated request you approve — the '
+                              'instant self-service toggle is disabled'
+                          : 'Members may also use the instant vacation toggle',
+                      value: _provider.selectedGroup?.mealConfig
+                              .vacationRequiresApproval ??
+                          false,
+                      onChanged: _provider.isSaving
+                          ? null
+                          : (v) => _provider.setVacationRequiresApproval(
+                                organizationId: _orgId,
+                                groupId: _provider.selectedGroup!.id,
+                                enabled: v,
+                              ),
+                    ),
+                    const SizedBox(height: 12),
+
+                    // ── Billing cycle (Pass 12, FR-BILLX-020) ──────────────
+                    if (_provider.mealPricingEnabled) ...[
+                      _BillingCycleTile(
+                        day: _provider.selectedGroup?.mealConfig
+                            .billingCycleStartDay,
+                        saving: _provider.isSaving,
+                        onChanged: (d) => _provider.setBillingCycleStartDay(
+                          organizationId: _orgId,
+                          groupId: _provider.selectedGroup!.id,
+                          day: d,
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                    ],
+                    const SizedBox(height: 12),
 
                     // ── Meal list ──────────────────────────────────────────
                     AppSectionTitle(
@@ -512,6 +614,83 @@ class _MealConfigScreenState extends State<MealConfigScreen> {
         );
       }
     }
+  }
+}
+
+// ── Billing cycle start day (Pass 12, FR-BILLX-020) ──────────────────────────
+
+class _BillingCycleTile extends StatelessWidget {
+  const _BillingCycleTile({
+    required this.day,
+    required this.saving,
+    required this.onChanged,
+  });
+
+  final int? day;
+  final bool saving;
+  final ValueChanged<int> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final effective = day ?? 1;
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: isDark ? AppColors.surfaceDark : AppColors.surface,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: (isDark ? AppColors.borderDark : AppColors.border)
+              .withValues(alpha: 0.5),
+        ),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.calendar_month_rounded,
+              color: AppColors.primary, size: 22),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Billing Cycle Start Day',
+                    style: AppTypography.bodyMedium
+                        .copyWith(fontWeight: FontWeight.w700)),
+                const SizedBox(height: 2),
+                Text(
+                  effective <= 1
+                      ? 'Calendar month (1st → month end)'
+                      : 'Runs the $effective${_ord(effective)} → ${effective - 1}${_ord(effective - 1)} of the next month',
+                  style: AppTypography.labelSmall
+                      .copyWith(color: AppColors.textSecondary),
+                ),
+              ],
+            ),
+          ),
+          DropdownButton<int>(
+            value: effective.clamp(1, 28),
+            underline: const SizedBox.shrink(),
+            items: [
+              for (var d = 1; d <= 28; d++)
+                DropdownMenuItem(
+                  value: d,
+                  child: Text(d == 1 ? '1st (month)' : '$d${_ord(d)}'),
+                ),
+            ],
+            onChanged: saving
+                ? null
+                : (v) {
+                    if (v != null && v != effective) onChanged(v);
+                  },
+          ),
+        ],
+      ),
+    );
+  }
+
+  static String _ord(int d) {
+    if (d >= 11 && d <= 13) return 'th';
+    return switch (d % 10) { 1 => 'st', 2 => 'nd', 3 => 'rd', _ => 'th' };
   }
 }
 

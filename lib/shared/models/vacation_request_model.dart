@@ -19,6 +19,9 @@ class VacationRequestModel {
     this.reviewNote,
     this.createdAt,
     this.updatedAt,
+    this.startSlotKey,
+    this.endSlotKey,
+    this.conflicts = const [],
   });
 
   final String id;
@@ -35,6 +38,17 @@ class VacationRequestModel {
   final String? reviewNote;
   final DateTime? createdAt;
   final DateTime? updatedAt;
+
+  /// Pass 11 (FR-VACX-003): optional meal-granular boundaries — on the start
+  /// date coverage begins at this slot; on the end date it ends at this slot.
+  /// Null = whole boundary day covered.
+  final String? startSlotKey;
+  final String? endSlotKey;
+
+  /// Pass 11 (FR-VACX-004 / LOOP-046): present only on the APPROVE response —
+  /// days the member explicitly marked Present inside the approved range.
+  /// Those marks are KEPT (and billed); each item: {date, mealId, mealName}.
+  final List<VacationConflict> conflicts;
 
   bool get isPending => status == 'pending';
   bool get isApproved => status == 'approved';
@@ -70,6 +84,34 @@ class VacationRequestModel {
       reviewNote: j['reviewNote']?.toString(),
       createdAt: _parseNullable(j['createdAt']),
       updatedAt: _parseNullable(j['updatedAt']),
+      startSlotKey: j['startSlotKey']?.toString(),
+      endSlotKey: j['endSlotKey']?.toString(),
+      conflicts: (j['conflicts'] is List)
+          ? (j['conflicts'] as List)
+              .whereType<Map<String, dynamic>>()
+              .map(VacationConflict.fromJson)
+              .toList()
+          : const [],
     );
   }
+}
+
+/// A kept-Present conflict surfaced when approving an overlapping vacation.
+class VacationConflict {
+  const VacationConflict({
+    required this.date,
+    required this.mealName,
+    this.mealId,
+  });
+
+  final String date; // YYYY-MM-DD
+  final String? mealId;
+  final String mealName;
+
+  factory VacationConflict.fromJson(Map<String, dynamic> j) =>
+      VacationConflict(
+        date: (j['date'] ?? '').toString(),
+        mealId: j['mealId']?.toString(),
+        mealName: (j['mealName'] ?? 'Meal').toString(),
+      );
 }

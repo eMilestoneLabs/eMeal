@@ -21,6 +21,11 @@ class MealAttendanceSummary {
     required this.skippedCount,
     required this.preferenceBreakdown,
     this.snapshotPrice,
+    this.guestCount = 0,
+    this.guestAdults = 0,
+    this.guestChildren = 0,
+    this.attendingTotal,
+    this.guestPreferenceBreakdown = const {},
   });
 
   final String mealId;
@@ -41,13 +46,33 @@ class MealAttendanceSummary {
   /// tag -> count for THIS meal only (e.g. {"veg":12,"chicken":8}).
   final Map<String, int> preferenceBreakdown;
 
-  factory MealAttendanceSummary.fromJson(Map<String, dynamic> j) {
-    final raw = (j['preferenceBreakdown'] as Map?) ?? const {};
-    final breakdown = <String, int>{};
-    raw.forEach((k, v) {
+  /// Module 22 (FR-HG-060/061, Pass 9): hosted-guest plates for this meal —
+  /// booked + approved guests only, itemised separately from members.
+  final int guestCount;
+  final int guestAdults;
+  final int guestChildren;
+
+  /// present members + confirmed guests — the kitchen's real plate count.
+  /// Null on cached payloads from pre-guest app builds.
+  final int? attendingTotal;
+
+  /// tag -> count for GUEST plates only (e.g. {"veg":2,"unspecified":1}).
+  final Map<String, int> guestPreferenceBreakdown;
+
+  /// Total plates to cook: present members + confirmed guests.
+  int get effectiveAttendingTotal => attendingTotal ?? (presentCount + guestCount);
+
+  static Map<String, int> _breakdown(dynamic raw) {
+    final out = <String, int>{};
+    ((raw as Map?) ?? const {}).forEach((k, v) {
       final n = v is int ? v : int.tryParse(v.toString()) ?? 0;
-      if (n > 0) breakdown[k.toString()] = n;
+      if (n > 0) out[k.toString()] = n;
     });
+    return out;
+  }
+
+  factory MealAttendanceSummary.fromJson(Map<String, dynamic> j) {
+    final breakdown = _breakdown(j['preferenceBreakdown']);
     return MealAttendanceSummary(
       mealId: (j['mealId'] ?? '').toString(),
       slotKey: (j['slotKey'] ?? '').toString(),
@@ -64,6 +89,19 @@ class MealAttendanceSummary {
               ? null
               : int.tryParse(j['snapshotPrice'].toString())),
       preferenceBreakdown: breakdown,
+      guestCount: j['guestCount'] is int
+          ? j['guestCount'] as int
+          : int.tryParse(j['guestCount']?.toString() ?? '') ?? 0,
+      guestAdults: j['guestAdults'] is int
+          ? j['guestAdults'] as int
+          : int.tryParse(j['guestAdults']?.toString() ?? '') ?? 0,
+      guestChildren: j['guestChildren'] is int
+          ? j['guestChildren'] as int
+          : int.tryParse(j['guestChildren']?.toString() ?? '') ?? 0,
+      attendingTotal: j['attendingTotal'] is int
+          ? j['attendingTotal'] as int
+          : int.tryParse(j['attendingTotal']?.toString() ?? ''),
+      guestPreferenceBreakdown: _breakdown(j['guestPreferenceBreakdown']),
     );
   }
 
@@ -80,5 +118,10 @@ class MealAttendanceSummary {
         'skippedDays': skippedCount,
         'snapshotPrice': snapshotPrice,
         'preferenceBreakdown': preferenceBreakdown,
+        'guestCount': guestCount,
+        'guestAdults': guestAdults,
+        'guestChildren': guestChildren,
+        'attendingTotal': attendingTotal,
+        'guestPreferenceBreakdown': guestPreferenceBreakdown,
       };
 }

@@ -54,6 +54,23 @@ class ResponseCacheService {
     }
   }
 
+  /// Pass 13 (FR-OFF-006): when the entry under [key] was written, or null.
+  /// Screens use this to show a "last updated" freshness badge while painting
+  /// stale-while-revalidate data.
+  Future<DateTime?> readTimestamp(String key) async {
+    try {
+      final raw = (await _store).getString('$_prefix$key');
+      if (raw == null) return null;
+      final decoded = jsonDecode(raw);
+      if (decoded is Map && decoded['__ts'] is int) {
+        return DateTime.fromMillisecondsSinceEpoch(decoded['__ts'] as int);
+      }
+      return null;
+    } catch (_) {
+      return null;
+    }
+  }
+
   /// Persists [jsonEncodable] under [key] with a timestamp. Best-effort.
   Future<void> write(String key, Object? jsonEncodable) async {
     try {

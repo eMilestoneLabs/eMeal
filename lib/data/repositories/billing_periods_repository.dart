@@ -65,4 +65,60 @@ class BillingPeriodsRepository {
       body: const {},
     );
   }
+
+  // ── Pass 12 (FR-BILLX-030/031, LOOP-010) — append-only adjustments ─────────
+
+  /// POST /billing/adjustments — immutable ledger entry. `type` is
+  /// credit | refund (decrease, free) or debit (increase — server demands an
+  /// APPROVED correction-request id as consent proof, FR-FAIR-001).
+  Future<Result<Map<String, dynamic>>> createAdjustment({
+    required String groupId,
+    required String userId,
+    required String type,
+    required int amountPaise,
+    required String reason,
+    String? refRequestId,
+    String? refRecordId,
+  }) {
+    return DioApiService.instance.post<Map<String, dynamic>>(
+      '/billing/adjustments',
+      body: {
+        'groupId': groupId,
+        'userId': userId,
+        'type': type,
+        'amount': amountPaise,
+        'reason': reason,
+        if (refRequestId != null && refRequestId.isNotEmpty)
+          'refRequestId': refRequestId,
+        if (refRecordId != null && refRecordId.isNotEmpty)
+          'refRecordId': refRecordId,
+      },
+    );
+  }
+
+  /// GET /billing/adjustments — newest first, optional member filter.
+  Future<Result<List<Map<String, dynamic>>>> listAdjustments({
+    required String groupId,
+    String? userId,
+    int page = 1,
+    int limit = 50,
+  }) async {
+    final result = await DioApiService.instance.get<Map<String, dynamic>>(
+      '/billing/adjustments',
+      queryParameters: {
+        'groupId': groupId,
+        if (userId != null) 'userId': userId,
+        'page': '$page',
+        'limit': '$limit',
+      },
+    );
+    return switch (result) {
+      Err(:final failure) => Err(failure),
+      Ok(:final value) => Ok(
+          (value['data'] as List? ?? const [])
+              .whereType<Map<String, dynamic>>()
+              .toList(),
+        ),
+    };
+  }
 }

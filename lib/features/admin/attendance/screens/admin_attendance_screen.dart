@@ -10,6 +10,7 @@ import 'package:smart_meal_management/shared/models/meal_model.dart';
 import 'package:smart_meal_management/features/admin/attendance/providers/admin_attendance_provider.dart';
 import 'package:smart_meal_management/features/admin/attendance/screens/correction_requests_screen.dart';
 import 'package:smart_meal_management/features/admin/attendance/screens/vacation_requests_screen.dart';
+import 'package:smart_meal_management/features/admin/attendance/widgets/admin_guests_sheet.dart';
 import 'package:smart_meal_management/features/admin/attendance/widgets/attendance_filter_bar.dart';
 import 'package:smart_meal_management/features/admin/attendance/widgets/member_attendance_row.dart';
 import 'package:smart_meal_management/shared/models/attendance_model.dart';
@@ -174,6 +175,23 @@ class _AdminAttendanceScreenState extends State<AdminAttendanceScreen> {
     );
   }
 
+  /// Module 22 (Pass 9): hosted-guest management for the selected group+date —
+  /// approvals queue, cancellations, and governed add-on-behalf (FR-HG-042/062).
+  Future<void> _openGuests() async {
+    final user = AuthProviderScope.of(context).currentUser;
+    final group = _groups.where((g) => g.id == _selectedGroupId).firstOrNull;
+    if (user == null || group == null) return;
+    await showAdminGuestsSheet(
+      context,
+      group: group,
+      date: _provider.selectedDate,
+      organizationId: user.organizationId,
+    );
+    if (!mounted) return;
+    // Guest changes touch host counters — refresh the attendance list.
+    await _loadAttendance(user.organizationId);
+  }
+
   /// Issue 5: opens a sheet where the admin marks their OWN attendance for
   /// today's meals (via the admin override path, which works regardless of the
   /// window and snapshots the effective price). Refreshes the list afterwards.
@@ -236,6 +254,19 @@ class _AdminAttendanceScreenState extends State<AdminAttendanceScreen> {
             ),
             icon: const Icon(Icons.rule_rounded, size: 20),
           ),
+          // Module 22 (Pass 9): hosted-guest queue — only when the selected
+          // group has guest hosting enabled (zero UI change otherwise).
+          if (_groups
+                  .where((g) => g.id == _selectedGroupId)
+                  .firstOrNull
+                  ?.mealConfig
+                  .guestsEnabled ??
+              false)
+            IconButton(
+              tooltip: 'Hosted guests',
+              onPressed: _openGuests,
+              icon: const Icon(Icons.group_add_rounded, size: 20),
+            ),
           // Issue 5: an admin / manager can mark THEIR OWN attendance for today.
           if (_selectedGroupId != null)
             IconButton(

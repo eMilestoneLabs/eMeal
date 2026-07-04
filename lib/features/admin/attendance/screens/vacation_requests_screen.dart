@@ -67,10 +67,35 @@ class _VacationRequestsScreenState extends State<VacationRequestsScreen> {
     if (!mounted) return;
     setState(() => _busyId = null);
     switch (res) {
-      case Ok():
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(successLabel)),
-        );
+      case Ok(:final value):
+        // Pass 11 (FR-VACX-004 / LOOP-046): explicit Present marks inside the
+        // approved range are KEPT and billed — never silently discarded. Tell
+        // the admin exactly which days, so nothing surprises anyone at billing.
+        if (value.conflicts.isNotEmpty) {
+          await showDialog<void>(
+            context: context,
+            builder: (ctx) => AlertDialog(
+              title: const Text('Approved — with kept Present marks'),
+              content: Text(
+                'The member already marked Present on '
+                '${value.conflicts.length} meal(s) inside this range. Those '
+                'marks are kept and billed as marked (the member was told):\n\n'
+                '${value.conflicts.map((c) => '• ${c.date} — ${c.mealName}').join('\n')}',
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(ctx),
+                  child: const Text('Got it'),
+                ),
+              ],
+            ),
+          );
+          if (!mounted) return;
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(successLabel)),
+          );
+        }
         _load();
       case Err(:final failure):
         ScaffoldMessenger.of(context).showSnackBar(
@@ -227,10 +252,14 @@ class _VacationRequestsScreenState extends State<VacationRequestsScreen> {
               const Icon(Icons.event_rounded,
                   size: 15, color: AppColors.textTertiary),
               const SizedBox(width: 6),
-              Text(
-                '${_fmt(r.startDate)}  →  ${_fmt(r.endDate)}',
-                style: AppTypography.bodySmall
-                    .copyWith(color: AppColors.textSecondary),
+              Expanded(
+                child: Text(
+                  '${_fmt(r.startDate)}${r.startSlotKey != null ? ' (from ${r.startSlotKey})' : ''}'
+                  '  →  '
+                  '${_fmt(r.endDate)}${r.endSlotKey != null ? ' (till ${r.endSlotKey})' : ''}',
+                  style: AppTypography.bodySmall
+                      .copyWith(color: AppColors.textSecondary),
+                ),
               ),
             ],
           ),

@@ -94,6 +94,9 @@ class AdminDashboardProvider extends ChangeNotifier {
     RealtimeEvents.scheduleUpdated,
     RealtimeEvents.groupMemberUpdated,
     RealtimeEvents.memberBlocked,
+    // Module 22 (FR-HG-064, Pass 9): guest mutations change kitchen counts
+    // (meal summaries) live — booked/cancelled/approved/auto-cancelled.
+    RealtimeEvents.mealGuestUpdated,
   };
 
   // ── Getters ────────────────────────────────────────────────────────────────

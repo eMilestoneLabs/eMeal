@@ -163,7 +163,12 @@ class _StudentSettingsScreenState extends State<StudentSettingsScreen> {
                         'Submit a date range for your admin to approve.',
                     onTap: () => Navigator.of(context).push(
                       MaterialPageRoute(
-                        builder: (_) => const StudentVacationRequestScreen(),
+                        // Pass 11 (FR-VACX-003): group context enables the
+                        // optional meal-granular boundary chips.
+                        builder: (_) => StudentVacationRequestScreen(
+                          organizationId: provider.organizationId,
+                          groupId: provider.activeGroupId,
+                        ),
                       ),
                     ),
                     isDark: isDark,

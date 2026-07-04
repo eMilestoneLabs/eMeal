@@ -76,6 +76,11 @@ class MealConfigProvider extends ChangeNotifier {
   /// the selected group so it always reflects the last server state.
   bool get optOutAttendance => _selectedGroup?.mealConfig.isOptOut ?? false;
 
+  /// Module 22 (FR-HG-020, Pass 9): the selected group's hosted-guest
+  /// settings — read off the group so it always reflects server state.
+  GroupGuestConfig get guestConfig =>
+      _selectedGroup?.mealConfig.guestConfig ?? const GroupGuestConfig();
+
   // ── Load ──────────────────────────────────────────────────────────────────
 
   Future<void> loadGroups({required String organizationId}) async {
@@ -645,6 +650,111 @@ class MealConfigProvider extends ChangeNotifier {
       case Ok(:final value):
         _selectedGroup = value;
         _mealPricingEnabled = enabled;
+        _isSaving = false;
+        notifyListeners();
+        return true;
+      case Err(:final failure):
+        _error = failure.message;
+        _isSaving = false;
+        notifyListeners();
+        return false;
+    }
+  }
+
+  /// Pass 11 (FR-VACX-001): approval-gated vacation — when ON, members must
+  /// submit a dated request; the instant toggle is refused server-side.
+  Future<bool> setVacationRequiresApproval({
+    required String organizationId,
+    required String groupId,
+    required bool enabled,
+  }) async {
+    if (_selectedGroup == null) return false;
+    _isSaving = true;
+    notifyListeners();
+
+    final updatedConfig = _selectedGroup!.mealConfig.copyWith(
+      vacationRequiresApproval: enabled,
+    );
+
+    final result = await _groupRepo.updateGroup(
+      organizationId: organizationId,
+      groupId: groupId,
+      mealConfig: updatedConfig,
+    );
+
+    switch (result) {
+      case Ok(:final value):
+        _selectedGroup = value;
+        _isSaving = false;
+        notifyListeners();
+        return true;
+      case Err(:final failure):
+        _error = failure.message;
+        _isSaving = false;
+        notifyListeners();
+        return false;
+    }
+  }
+
+  /// Pass 12 (FR-BILLX-020): billing cycle start day (1–28; day 1 = calendar
+  /// month). Audited server-side like every other policy flip (LOOP-033).
+  Future<bool> setBillingCycleStartDay({
+    required String organizationId,
+    required String groupId,
+    required int day,
+  }) async {
+    if (_selectedGroup == null) return false;
+    _isSaving = true;
+    notifyListeners();
+
+    final updatedConfig =
+        _selectedGroup!.mealConfig.copyWith(billingCycleStartDay: day);
+
+    final result = await _groupRepo.updateGroup(
+      organizationId: organizationId,
+      groupId: groupId,
+      mealConfig: updatedConfig,
+    );
+
+    switch (result) {
+      case Ok(:final value):
+        _selectedGroup = value;
+        _isSaving = false;
+        notifyListeners();
+        return true;
+      case Err(:final failure):
+        _error = failure.message;
+        _isSaving = false;
+        notifyListeners();
+        return false;
+    }
+  }
+
+  /// Module 22 (FR-HG-020/021, Pass 9): persist the hosted-guest settings.
+  /// Rides the same mealConfig PATCH as every other group toggle; the backend
+  /// validates cross-field rules against the FINAL effective state
+  /// (GUESTS_REQUIRE_MEALS / GUEST_PRICE_REQUIRED / GUEST_SURCHARGE_REQUIRED).
+  Future<bool> updateGuestConfig({
+    required String organizationId,
+    required String groupId,
+    required GroupGuestConfig config,
+  }) async {
+    if (_selectedGroup == null) return false;
+    _isSaving = true;
+    notifyListeners();
+
+    final updatedConfig =
+        _selectedGroup!.mealConfig.copyWith(guestConfig: config);
+
+    final result = await _groupRepo.updateGroup(
+      organizationId: organizationId,
+      groupId: groupId,
+      mealConfig: updatedConfig,
+    );
+
+    switch (result) {
+      case Ok(:final value):
+        _selectedGroup = value;
         _isSaving = false;
         notifyListeners();
         return true;

@@ -57,6 +57,12 @@ class StudentDashboardProvider extends ChangeNotifier {
 
   bool _isLoading = false;
   String? _error;
+  // Pass 13 (FR-OFF-006): when the data on screen was produced — cache write
+  // time while painting stale-while-revalidate data, "now" after a live load.
+  DateTime? _lastUpdated;
+  // Pass 13 (FR-OFF-012): set when SOME of the parallel loads failed — the
+  // screen keeps rendering whatever loaded and shows a scoped retry banner.
+  String? _sectionError;
   // Issue 2: a failed quick-action (mark/skip) must NOT blank the whole
   // dashboard — it surfaces here for a snackbar, separate from load _error.
   String? _actionError;
@@ -95,12 +101,19 @@ class StudentDashboardProvider extends ChangeNotifier {
     // SRS FR-MODE-012: mode flip mid-session → refresh so meal widgets
     // disappear/appear cleanly without stale actions.
     RealtimeEvents.groupConfigUpdated,
+    // Module 22 (FR-HG-063, Pass 9): guest booked/cancelled/approved etc. —
+    // host counters and billing preview change, refresh silently.
+    RealtimeEvents.mealGuestUpdated,
   };
 
   // ── Getters ────────────────────────────────────────────────────────────────
 
   bool get isLoading => _isLoading;
   String? get error => _error;
+  // FR-OFF-006: consumed by the FreshnessBadge on the dashboard header.
+  DateTime? get lastUpdated => _lastUpdated;
+  // FR-OFF-012: scoped partial-failure banner (null = all sections loaded).
+  String? get sectionError => _sectionError;
   String? get actionError => _actionError;
   List<MealModel> get todayMeals => _todayMeals;
   List<AttendanceModel> get todayAttendance => _todayAttendance;
@@ -218,6 +231,7 @@ class StudentDashboardProvider extends ChangeNotifier {
     _isFetching = true;
     _isLoading = true;
     _error = null;
+    _sectionError = null;
 
     // Immediately reflect vacation mode and reminders preference from the
     // user model so the UI updates before the async fetch completes.
@@ -252,6 +266,16 @@ class StudentDashboardProvider extends ChangeNotifier {
       final cached = await ResponseCacheService.instance
           .read(dashCacheKey, maxAge: const Duration(hours: 12));
       if (cached is Map) {
+        // Pass 13 (FR-OFF-006): remember how old the painted cache is so the
+        // UI can show a freshness badge until the live refresh lands.
+        ResponseCacheService.instance
+            .readTimestamp(dashCacheKey)
+            .then((ts) {
+          if (ts != null && _lastUpdated == null) {
+            _lastUpdated = ts;
+            notifyListeners();
+          }
+        });
         try {
           final meals = (cached['meals'] as List)
               .whereType<Map<String, dynamic>>()
@@ -327,6 +351,18 @@ class StudentDashboardProvider extends ChangeNotifier {
     ]);
 
     // ── Unpack results ─────────────────────────────────────────────────────
+
+    // Pass 13 (FR-OFF-012): partial-failure accounting. Whatever loaded is
+    // rendered; failures are counted so the screen can show a full error only
+    // when NOTHING loaded, or a scoped retry banner when SOME sections failed.
+    var failedSections = 0;
+    String? firstFailureMessage;
+    for (final r in results) {
+      if (r case Err(:final failure)) {
+        failedSections++;
+        firstFailureMessage ??= failure.message;
+      }
+    }
 
     // Meals
     if (results[0] case Ok(:final value)) {
@@ -439,6 +475,23 @@ class StudentDashboardProvider extends ChangeNotifier {
         if (_summary != null) 'summary': _summary!.toJson(),
         'groupConfig': _groupConfig.toJson(),
       });
+    }
+
+    // Pass 13 (ES-001 / FR-OFF-012): classify the outcome. Everything failed
+    // with nothing to show → full error state (retry re-runs this load with
+    // the same group). Partial failure → keep the screen, flag the gap.
+    if (failedSections == results.length &&
+        _todayMeals.isEmpty &&
+        _summary == null) {
+      _error = firstFailureMessage ?? 'Could not load your dashboard.';
+    } else if (failedSections > 0) {
+      _sectionError =
+          'Some sections could not refresh — showing last known data.';
+    }
+
+    // Pass 13 (FR-OFF-006): only stamp freshness when live data landed.
+    if (failedSections < results.length) {
+      _lastUpdated = DateTime.now();
     }
 
     _isLoading = false;

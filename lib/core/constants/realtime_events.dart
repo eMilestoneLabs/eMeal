@@ -74,6 +74,11 @@ abstract final class RealtimeEvents {
   /// Guest party / person updated. Room: `organization:{organizationId}`.
   static const String guestUpdated = 'guest.updated.v1';
 
+  /// Module 22 (FR-HG-063/064, Pass 9): hosted-guest booked / updated /
+  /// cancelled / approved / confirmed / rejected / declined / auto-cancelled.
+  /// Rooms: `group:{groupId}` + `user:{hostUserId}` + `admin:{orgId}`.
+  static const String mealGuestUpdated = 'meal.guest.updated.v1';
+
   /// New notice posted (Phase B notice board). Room: group / org / admin.
   static const String noticeCreated = 'notice.created.v1';
 
@@ -99,6 +104,7 @@ abstract final class RealtimeEvents {
     eventStatsUpdated,
     guestJoined,
     guestUpdated,
+    mealGuestUpdated,
     noticeCreated,
   ];
 

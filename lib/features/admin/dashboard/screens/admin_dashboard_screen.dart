@@ -395,6 +395,34 @@ class _MealSummaryCard extends StatelessWidget {
                   label: 'Skipped', value: skipped, color: AppColors.skipped),
             ],
           ),
+          // Module 22 (FR-HG-060/061, Pass 9): hosted-guest plates — extra
+          // food the kitchen must cook, itemised apart from members.
+          if ((summary?.guestCount ?? 0) > 0) ...[
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                _CountPill(
+                    label: 'Guests',
+                    value: summary!.guestCount,
+                    color: AppColors.secondary),
+                const SizedBox(width: 8),
+                _CountPill(
+                    label: 'Total plates',
+                    value: summary!.effectiveAttendingTotal,
+                    color: AppColors.primary),
+              ],
+            ),
+            const SizedBox(height: 6),
+            Text(
+              '${summary!.guestAdults} adult · ${summary!.guestChildren} child '
+              'guest plates, hosted by members',
+              style: AppTypography.labelSmall.copyWith(
+                color: isDark
+                    ? AppColors.textSecondaryDark
+                    : AppColors.textSecondary,
+              ),
+            ),
+          ],
           // Per-meal preference breakdown
           if (sortedPrefs.isNotEmpty) ...[
             const SizedBox(height: 12),
@@ -454,6 +482,51 @@ class _MealSummaryCard extends StatelessWidget {
                         ),
                       ),
                     ],
+                  ),
+                );
+              }).toList(),
+            ),
+          ],
+          // Module 22 (FR-HG-061): guest plates by preference — the kitchen
+          // cooks these ON TOP of the member preference counts above.
+          if ((summary?.guestPreferenceBreakdown.isNotEmpty ?? false)) ...[
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                const Icon(Icons.group_add_rounded,
+                    size: 13, color: AppColors.secondary),
+                const SizedBox(width: 5),
+                Text(
+                  'Guest preferences',
+                  style: AppTypography.labelSmall
+                      .copyWith(fontWeight: FontWeight.w700),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 6,
+              runSpacing: 6,
+              children: summary!.guestPreferenceBreakdown.entries.map((e) {
+                final disp = MealPreferenceOption.display(e.key);
+                final label = disp.emoji.isEmpty
+                    ? disp.label
+                    : '${disp.emoji} ${disp.label}';
+                return Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: AppColors.secondary.withValues(alpha: 0.08),
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(
+                        color: AppColors.secondary.withValues(alpha: 0.2)),
+                  ),
+                  child: Text(
+                    '$label · ${e.value}',
+                    style: AppTypography.labelSmall.copyWith(
+                      fontWeight: FontWeight.w600,
+                      color: AppColors.secondary,
+                    ),
                   ),
                 );
               }).toList(),

@@ -8,6 +8,7 @@ import 'package:smart_meal_management/features/auth/providers/auth_provider.dart
 import 'package:smart_meal_management/shared/models/attendance_model.dart';
 import 'package:smart_meal_management/shared/models/paginated_response.dart';
 import 'package:smart_meal_management/shared/models/result.dart';
+import 'package:smart_meal_management/shared/widgets/app_screen_states.dart';
 
 /// Student attendance history — premium timeline with monthly summary + streak.
 ///
@@ -950,7 +951,8 @@ class _EmptyView extends StatelessWidget {
             ),
             const SizedBox(height: AppConstants.space8),
             Text(
-              'No attendance records in the\nselected date range.',
+              // ES-002 (Pass 13): canonical empty copy + range hint.
+              '${EmptyCopy.noAttendance}\nTry a different date range.',
               style: AppTypography.bodySmall.copyWith(
                 color: isDark
                     ? AppColors.textSecondaryDark

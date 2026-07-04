@@ -4,7 +4,9 @@ import 'package:smart_meal_management/core/theme/app_colors.dart';
 import 'package:smart_meal_management/core/theme/app_typography.dart';
 import 'package:smart_meal_management/features/admin/billing/providers/member_billing_provider.dart';
 import 'package:smart_meal_management/features/admin/billing/screens/member_billing_detail_screen.dart';
+import 'package:smart_meal_management/features/admin/billing/widgets/billing_adjustments_sheet.dart';
 import 'package:smart_meal_management/features/admin/billing/widgets/billing_periods_sheet.dart';
+import 'package:smart_meal_management/shared/widgets/app_screen_states.dart';
 import 'package:smart_meal_management/features/auth/providers/auth_provider.dart';
 import 'package:smart_meal_management/shared/models/billing_summary.dart';
 import 'package:smart_meal_management/shared/models/group_model.dart';
@@ -80,6 +82,22 @@ class _BillingScreenState extends State<BillingScreen> {
         backgroundColor: cs.surface,
         surfaceTintColor: Colors.transparent,
         actions: [
+          // Pass 12 (FR-BILLX-030/031): append-only credit/debit/refund ledger.
+          ListenableBuilder(
+            listenable: _provider,
+            builder: (context, _) => IconButton(
+              tooltip: 'Billing adjustments (credits / refunds)',
+              icon: const Icon(Icons.receipt_long_rounded),
+              onPressed: _provider.groupId == null
+                  ? null
+                  : () => BillingAdjustmentsSheet.show(
+                        context,
+                        groupId: _provider.groupId!,
+                        members: _provider.summary.members,
+                        onChanged: _provider.compute,
+                      ),
+            ),
+          ),
           // SRS FR-DISP-010 (Pass 7): finalize / reopen billing periods.
           ListenableBuilder(
             listenable: _provider,
@@ -129,7 +147,10 @@ class _BillingScreenState extends State<BillingScreen> {
                         : _provider.setPeriod(p),
                   ),
                   const SizedBox(height: 6),
-                  Text('${_fmt(_provider.from)} – ${_fmt(_provider.to)}',
+                  Text(
+                      '${_fmt(_provider.from)} – ${_fmt(_provider.to)}'
+                      // Pass 12 (FR-BILLX-020): show the configured cycle.
+                      '${(_provider.summary.cycleStartDay ?? 1) > 1 ? ' · cycle starts day ${_provider.summary.cycleStartDay}' : ''}',
                       style: AppTypography.bodySmall
                           .copyWith(color: AppColors.textTertiary)),
                   const SizedBox(height: 14),
@@ -156,24 +177,25 @@ class _BillingScreenState extends State<BillingScreen> {
                   _controlsRow(cs),
                   const SizedBox(height: 12),
                   if (_provider.loading)
+                    // ES-004 (Pass 13): layout-stable skeleton — same card
+                    // heights as the member list, so nothing jumps.
                     const Padding(
-                      padding: EdgeInsets.symmetric(vertical: 32),
-                      child: Center(child: CircularProgressIndicator()),
+                      padding: EdgeInsets.symmetric(vertical: 8),
+                      child: AppSkeletonList(rows: 4, rowHeight: 88),
                     )
                   else if (_provider.error != null)
-                    Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 24),
-                      child: Center(
-                        child: Text(_provider.error!,
-                            style: AppTypography.bodySmall
-                                .copyWith(color: AppColors.error)),
-                      ),
+                    // ES-003 (Pass 13): retry re-runs compute() with the
+                    // CURRENT group/period/sort/search — nothing is reset.
+                    AppErrorState(
+                      compact: true,
+                      message: _provider.error,
+                      onRetry: _provider.compute,
                     )
                   else if (_provider.visibleMembers.isEmpty)
                     Padding(
                       padding: const EdgeInsets.symmetric(vertical: 24),
                       child: Center(
-                        child: Text('No members in this range.',
+                        child: Text(EmptyCopy.noBillingData,
                             style: AppTypography.bodyMedium
                                 .copyWith(color: AppColors.textTertiary)),
                       ),
@@ -200,8 +222,14 @@ class _BillingScreenState extends State<BillingScreen> {
     final s = _provider.summary;
     final cards = <Widget>[
       _SummaryCard(
-        label: 'Revenue',
-        value: cur(s.revenue),
+        // Module 22 (FR-HG-050): guest revenue is itemised inside the total.
+        // Pass 12 (FR-BILLX-030): ledger adjustments surface as NET revenue.
+        label: s.adjustmentsTotal != 0
+            ? 'Net Revenue (adj ${s.adjustmentsTotal > 0 ? '+' : '−'}${cur(s.adjustmentsTotal.abs())})'
+            : (s.guestRevenue > 0
+                ? 'Revenue (incl. ${cur(s.guestRevenue)} guests)'
+                : 'Revenue'),
+        value: cur(s.adjustmentsTotal != 0 ? s.netRevenue : s.revenue),
         icon: Icons.payments_rounded,
         accent: AppColors.present,
       ),
@@ -800,6 +828,34 @@ class _MemberCard extends StatelessWidget {
                       style: AppTypography.bodySmall
                           .copyWith(color: AppColors.textSecondary),
                     ),
+                    // Module 22 (FR-HG-053, Pass 9): hosted-guest charges are
+                    // itemised so the member's bill is explainable at a glance.
+                    if (member.guestCount > 0)
+                      Text(
+                        'Guests ${member.guestCount}'
+                        '${pricingEnabled ? ' · ${cur(member.guestAmount)} of bill' : ''}',
+                        style: AppTypography.labelSmall
+                            .copyWith(color: AppColors.secondary),
+                      ),
+                    // Pass 12 (FR-BILLX-012/030): vacation days + signed
+                    // ledger adjustments — the bill is explainable at a glance.
+                    if (member.vacationDays > 0)
+                      Text(
+                        'On vacation ${member.vacationDays} meal(s) — not billed',
+                        style: AppTypography.labelSmall
+                            .copyWith(color: AppColors.vacation),
+                      ),
+                    if (pricingEnabled && member.adjustmentsTotal != 0)
+                      Text(
+                        'Adjustments ${member.adjustmentsTotal > 0 ? '+' : '−'}'
+                        '${cur(member.adjustmentsTotal.abs())} → net ${cur(member.netBill)}',
+                        style: AppTypography.labelSmall.copyWith(
+                          color: member.adjustmentsTotal > 0
+                              ? AppColors.warning
+                              : AppColors.present,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
                     Text('Last activity: ${_fmtDate(member.lastActivity)}',
                         style: AppTypography.labelSmall
                             .copyWith(color: AppColors.textTertiary)),
