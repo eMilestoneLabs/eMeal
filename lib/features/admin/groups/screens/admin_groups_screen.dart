@@ -6,6 +6,7 @@ import 'package:smart_meal_management/core/theme/app_typography.dart';
 import 'package:smart_meal_management/features/admin/groups/providers/admin_group_provider.dart';
 import 'package:smart_meal_management/features/admin/groups/widgets/group_card.dart';
 import 'package:smart_meal_management/shared/models/group_model.dart';
+import 'package:smart_meal_management/shared/enums/user_role.dart';
 import 'package:smart_meal_management/shared/widgets/app_empty_state.dart';
 import 'package:smart_meal_management/shared/widgets/app_loading_indicator.dart';
 import 'package:smart_meal_management/features/auth/providers/auth_provider.dart';
@@ -181,6 +182,44 @@ class _CreateGroupSheetState extends State<_CreateGroupSheet> {
   bool _mealsEnabled = true;
   bool _saving = false;
 
+  // #1: the admin's per-group functional role/title (display-only). Seeded from
+  // the group type until the admin explicitly overrides it. Sent to the backend
+  // which stores it on GroupMember.functionalRole and shows it everywhere.
+  UserRole _functionalRole = UserRole.hostelAdmin;
+  bool _roleManuallySet = false;
+
+  // Admin-level titles only — member roles (student/member/guest) belong to the
+  // JOIN flow, never to the group creator.
+  static const List<UserRole> _roleOptions = [
+    UserRole.hostelAdmin,
+    UserRole.hostelManager,
+    UserRole.messManager,
+    UserRole.organizationManager,
+    UserRole.eventAdmin,
+  ];
+
+  UserRole _defaultRoleForType(GroupType t) {
+    switch (t) {
+      case GroupType.mess:
+      case GroupType.cafeteria:
+        return UserRole.messManager;
+      case GroupType.hostel:
+      case GroupType.pg:
+        return UserRole.hostelAdmin;
+      case GroupType.event:
+        return UserRole.eventAdmin;
+      default:
+        return UserRole.organizationManager;
+    }
+  }
+
+  void _onTypeChanged(GroupType t) {
+    setState(() {
+      _type = t;
+      if (!_roleManuallySet) _functionalRole = _defaultRoleForType(t);
+    });
+  }
+
   @override
   void dispose() {
     _nameCtrl.dispose();
@@ -197,6 +236,7 @@ class _CreateGroupSheetState extends State<_CreateGroupSheet> {
       organizationId: widget.organizationId,
       name: name,
       type: _type,
+      functionalRole: _functionalRole,
       mealConfig: GroupMealConfig(mealsEnabled: _mealsEnabled),
     );
 
@@ -284,7 +324,74 @@ class _CreateGroupSheetState extends State<_CreateGroupSheet> {
           const SizedBox(height: 8),
           _TypeGrid(
             selected: _type,
-            onSelected: (t) => setState(() => _type = t),
+            onSelected: _onTypeChanged,
+          ),
+          const SizedBox(height: 16),
+
+          // ── #1: Your role in this group (per-group display title) ──────
+          Text(
+            'Your Role in this Group',
+            style: AppTypography.labelMedium
+                .copyWith(fontWeight: FontWeight.w600),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            'Shown everywhere for this group. You can hold a different role '
+            'in each group. Display only — it never changes your permissions.',
+            style: AppTypography.bodySmall
+                .copyWith(color: colorScheme.onSurfaceVariant),
+          ),
+          const SizedBox(height: 10),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: _roleOptions.map((r) {
+              final selected = _functionalRole == r;
+              return GestureDetector(
+                onTap: () => setState(() {
+                  _functionalRole = r;
+                  _roleManuallySet = true;
+                }),
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 160),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 14,
+                    vertical: 9,
+                  ),
+                  decoration: BoxDecoration(
+                    color: selected
+                        ? AppColors.primary.withValues(alpha: 0.12)
+                        : colorScheme.surfaceContainerLowest,
+                    borderRadius: BorderRadius.circular(24),
+                    border: Border.all(
+                      color: selected
+                          ? AppColors.primary
+                          : colorScheme.outlineVariant.withValues(alpha: 0.4),
+                      width: selected ? 1.5 : 1,
+                    ),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (selected) ...[
+                        const Icon(Icons.check_rounded,
+                            size: 16, color: AppColors.primary),
+                        const SizedBox(width: 6),
+                      ],
+                      Text(
+                        r.label,
+                        style: AppTypography.labelMedium.copyWith(
+                          fontWeight: FontWeight.w600,
+                          color: selected
+                              ? AppColors.primary
+                              : colorScheme.onSurface,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            }).toList(),
           ),
           const SizedBox(height: 16),
 

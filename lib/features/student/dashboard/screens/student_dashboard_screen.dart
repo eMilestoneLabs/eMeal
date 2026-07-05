@@ -7,6 +7,7 @@ import 'package:smart_meal_management/core/theme/app_typography.dart';
 import 'package:smart_meal_management/data/services/notification_service.dart';
 import 'package:smart_meal_management/features/auth/providers/auth_provider.dart';
 import 'package:smart_meal_management/features/notices/widgets/notice_bell.dart';
+import 'package:smart_meal_management/features/groups/screens/group_detail_screen.dart';
 import 'package:smart_meal_management/features/student/dashboard/providers/student_dashboard_provider.dart';
 import 'package:smart_meal_management/features/student/dashboard/screens/no_group_screen.dart';
 import 'package:smart_meal_management/features/student/dashboard/widgets/meal_timeline_card.dart';
@@ -96,6 +97,18 @@ class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
   UserModel _userWithActiveGroup(UserModel user) {
     if (_activeGroupId == null) return user;
     return user.copyWith(groupId: _activeGroupId);
+  }
+
+  /// ISSUE 2: open the read-only group details page for the active group.
+  void _openGroupDetails(String groupId, String organizationId) {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => GroupDetailScreen(
+          groupId: groupId,
+          organizationId: organizationId,
+        ),
+      ),
+    );
   }
 
   /// Switches the active group and reloads dashboard data.
@@ -310,6 +323,17 @@ class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
                                   lastUpdated: provider.lastUpdated),
                             ),
                           ),
+                          // ISSUE 2: always-visible entry point to the read-only
+                          // group details page (info, admin, role, QR, Leave).
+                          if ((_activeGroupId ?? currentUser.groupId) != null)
+                            IconButton(
+                              tooltip: 'Group details',
+                              icon: const Icon(Icons.info_outline_rounded),
+                              onPressed: () => _openGroupDetails(
+                                _activeGroupId ?? currentUser.groupId!,
+                                currentUser.organizationId,
+                              ),
+                            ),
                           NoticeBell(
                             organizationId: currentUser.organizationId,
                             groupId: _activeGroupId ?? currentUser.groupId,
@@ -358,6 +382,8 @@ class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
                             currentUser.groupId ??
                             currentUser.effectiveGroupIds.first,
                         onSwitch: _switchGroup,
+                        onJoinAnother: () =>
+                            context.push(RouteNames.groupJoin),
                         isDark: Theme.of(context).brightness == Brightness.dark,
                       ),
                     ),
@@ -1142,12 +1168,15 @@ class _GroupSwitcherRow extends StatelessWidget {
     required this.groupIds,
     required this.activeGroupId,
     required this.onSwitch,
+    required this.onJoinAnother,
     required this.isDark,
   });
 
   final List<String> groupIds;
   final String activeGroupId;
   final ValueChanged<String> onSwitch;
+  // ISSUE 3: navigate to the join flow to add another group.
+  final VoidCallback onJoinAnother;
   final bool isDark;
 
   @override
@@ -1159,10 +1188,28 @@ class _GroupSwitcherRow extends StatelessWidget {
         // #9: align the group chips to the same 20px margin as the hero.
         padding:
             const EdgeInsets.symmetric(horizontal: AppConstants.space20),
-        itemCount: groupIds.length,
+        // +1 trailing "Join another" action chip (ISSUE 3).
+        itemCount: groupIds.length + 1,
         separatorBuilder: (_, _) =>
             const SizedBox(width: AppConstants.space8),
         itemBuilder: (context, i) {
+          if (i == groupIds.length) {
+            return ActionChip(
+              avatar: const Icon(Icons.add_rounded, size: 18),
+              label: const Text('Join'),
+              onPressed: onJoinAnother,
+              labelStyle: const TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+              ),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(AppConstants.chipRadius),
+                side: BorderSide(
+                  color: AppColors.primary.withValues(alpha: 0.5),
+                ),
+              ),
+            );
+          }
           final id = groupIds[i];
           final selected = id == activeGroupId;
           return ChoiceChip(

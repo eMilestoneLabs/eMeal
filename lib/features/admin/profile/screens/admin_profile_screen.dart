@@ -366,6 +366,15 @@ class _AdminProfileScreenState extends State<AdminProfileScreen> {
               child: FilledButton.icon(
                 onPressed: () async {
                   final router = GoRouter.of(context);
+                  // ISSUE 4: premium confirmation before signing out (parity
+                  // with the student app; previously signed out instantly).
+                  final confirmed = await showModalBottomSheet<bool>(
+                    context: context,
+                    isScrollControlled: true,
+                    backgroundColor: Colors.transparent,
+                    builder: (_) => const _LogoutConfirmSheet(),
+                  );
+                  if (confirmed != true) return;
                   await auth.logout();
                   if (mounted) router.go(RouteNames.roleSelect);
                 },
@@ -642,6 +651,109 @@ class _InfoTile extends StatelessWidget {
                   ),
                 ],
               ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ── ISSUE 4: premium sign-out confirmation sheet ────────────────────────────
+
+class _LogoutConfirmSheet extends StatelessWidget {
+  const _LogoutConfirmSheet();
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final textColor =
+        isDark ? AppColors.textPrimaryDark : AppColors.textPrimary;
+    final subColor =
+        isDark ? AppColors.textSecondaryDark : AppColors.textSecondary;
+
+    return SafeArea(
+      top: false,
+      child: Container(
+        decoration: BoxDecoration(
+          color: isDark ? AppColors.surfaceDark : AppColors.surface,
+          borderRadius:
+              const BorderRadius.vertical(top: Radius.circular(28)),
+        ),
+        padding: const EdgeInsets.fromLTRB(24, 12, 24, 24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(
+                color: subColor.withValues(alpha: 0.4),
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            const SizedBox(height: 20),
+            Container(
+              width: 60,
+              height: 60,
+              decoration: BoxDecoration(
+                color: AppColors.error.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(18),
+              ),
+              child: const Icon(Icons.logout_rounded,
+                  color: AppColors.error, size: 28),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              'Sign out?',
+              style: AppTypography.titleMedium
+                  .copyWith(color: textColor, fontWeight: FontWeight.w800),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'You will be returned to the role selection screen. Your data '
+              'stays safe and you can sign back in anytime.',
+              textAlign: TextAlign.center,
+              style: AppTypography.bodySmall.copyWith(color: subColor),
+            ),
+            const SizedBox(height: 24),
+            Row(
+              children: [
+                Expanded(
+                  child: SizedBox(
+                    height: 50,
+                    child: OutlinedButton(
+                      onPressed: () => Navigator.of(context).pop(false),
+                      style: OutlinedButton.styleFrom(
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(
+                              AppConstants.buttonRadius),
+                        ),
+                      ),
+                      child: const Text('Cancel'),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: SizedBox(
+                    height: 50,
+                    child: FilledButton.icon(
+                      onPressed: () => Navigator.of(context).pop(true),
+                      icon: const Icon(Icons.logout_rounded, size: 18),
+                      label: const Text('Sign Out'),
+                      style: FilledButton.styleFrom(
+                        backgroundColor: AppColors.error,
+                        foregroundColor: Colors.white,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(
+                              AppConstants.buttonRadius),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
             ),
           ],
         ),

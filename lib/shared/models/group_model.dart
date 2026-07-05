@@ -480,6 +480,8 @@ class GroupModel extends Equatable {
     this.joinCode,
     this.createdAt,
     this.functionalRole,
+    this.adminName,
+    this.organizationName,
   });
 
   final String id;
@@ -506,6 +508,11 @@ class GroupModel extends Equatable {
   /// in one group, messManager in another. null -> use the global user role.
   final UserRole? functionalRole;
 
+  /// ISSUE 2 (additive): read-only detail context, populated only by
+  /// GET /groups/:id. null on list responses / when unavailable.
+  final String? adminName;
+  final String? organizationName;
+
   int get memberCount => memberIds.length;
 
   factory GroupModel.fromJson(Map<String, dynamic> j) => GroupModel(
@@ -529,6 +536,8 @@ class GroupModel extends Equatable {
         createdAt:
             j['createdAt'] != null ? DateTime.parse(j['createdAt']) : null,
         functionalRole: UserRole.fromName(j['functionalRole'] as String?),
+        adminName: j['adminName'] as String?,
+        organizationName: j['organizationName'] as String?,
       );
 
   Map<String, dynamic> toJson() => {
@@ -546,6 +555,8 @@ class GroupModel extends Equatable {
         'joinCode': joinCode,
         'createdAt': createdAt?.toIso8601String(),
         'functionalRole': functionalRole?.name,
+        'adminName': adminName,
+        'organizationName': organizationName,
       };
 
   GroupModel copyWith({
@@ -559,6 +570,8 @@ class GroupModel extends Equatable {
     bool? isActive,
     String? joinCode,
     UserRole? functionalRole,
+    String? adminName,
+    String? organizationName,
   }) =>
       GroupModel(
         id: id,
@@ -575,6 +588,8 @@ class GroupModel extends Equatable {
         joinCode: joinCode ?? this.joinCode,
         createdAt: createdAt,
         functionalRole: functionalRole ?? this.functionalRole,
+        adminName: adminName ?? this.adminName,
+        organizationName: organizationName ?? this.organizationName,
       );
 
   @override

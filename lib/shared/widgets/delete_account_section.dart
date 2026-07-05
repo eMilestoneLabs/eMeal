@@ -22,14 +22,63 @@ class DeleteAccountSection extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Center(
-      child: TextButton.icon(
-        onPressed: () => _confirmAndDelete(context),
-        icon: const Icon(Icons.delete_forever_outlined, size: 18),
-        label: const Text('Delete Account'),
-        style: TextButton.styleFrom(
-          foregroundColor: AppColors.error.withValues(alpha: 0.8),
-          textStyle: AppTypography.labelMedium,
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final subColor =
+        isDark ? AppColors.textSecondaryDark : AppColors.textSecondary;
+
+    // Premium danger card — distinct destructive styling (tinted surface +
+    // error border), clearly separated from the neutral actions above it.
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(AppConstants.cardRadius),
+        onTap: () => _confirmAndDelete(context),
+        child: Container(
+          padding: const EdgeInsets.all(AppConstants.space16),
+          decoration: BoxDecoration(
+            color: AppColors.error.withValues(alpha: isDark ? 0.10 : 0.05),
+            borderRadius: BorderRadius.circular(AppConstants.cardRadius),
+            border: Border.all(
+              color: AppColors.error.withValues(alpha: 0.35),
+            ),
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(
+                  color: AppColors.error.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: const Icon(Icons.delete_forever_rounded,
+                    color: AppColors.error, size: 22),
+              ),
+              const SizedBox(width: AppConstants.space12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Delete Account',
+                      style: AppTypography.labelLarge.copyWith(
+                        color: AppColors.error,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      'Permanently remove your account and personal data.',
+                      style:
+                          AppTypography.bodySmall.copyWith(color: subColor),
+                    ),
+                  ],
+                ),
+              ),
+              Icon(Icons.chevron_right_rounded,
+                  color: AppColors.error.withValues(alpha: 0.7), size: 22),
+            ],
+          ),
         ),
       ),
     );
@@ -68,6 +117,13 @@ class _DeleteAccountDialogState extends State<_DeleteAccountDialog> {
   bool _deleting = false;
   bool _obscure = true;
   String? _error;
+
+  static const List<String> _consequences = [
+    'You are signed out of every device immediately.',
+    'Your name, email, phone and photo are erased.',
+    'Attendance & billing history required for group records is kept '
+        'per policy — without your personal details.',
+  ];
 
   bool get _confirmed => _confirmController.text.trim() == 'DELETE';
 
@@ -130,12 +186,43 @@ class _DeleteAccountDialogState extends State<_DeleteAccountDialog> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
-              'This permanently deletes your account and signs you out of '
-              'every device. Your name, email, phone and photo are erased. '
-              'Attendance and billing history required for your group\'s '
-              'records is retained per policy, without your personal details.',
-              style: AppTypography.bodySmall.copyWith(color: subColor),
+            // Distinct destructive banner.
+            Container(
+              padding: const EdgeInsets.all(AppConstants.space12),
+              decoration: BoxDecoration(
+                color: AppColors.error.withValues(alpha: isDark ? 0.12 : 0.06),
+                borderRadius: BorderRadius.circular(12),
+                border:
+                    Border.all(color: AppColors.error.withValues(alpha: 0.3)),
+              ),
+              child: Text(
+                'This action is permanent and cannot be undone.',
+                style: AppTypography.labelMedium.copyWith(
+                  color: AppColors.error,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+            const SizedBox(height: AppConstants.space12),
+            ..._consequences.map(
+              (c) => Padding(
+                padding: const EdgeInsets.only(bottom: 6),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Icon(Icons.remove_circle_outline_rounded,
+                        size: 15, color: subColor),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        c,
+                        style:
+                            AppTypography.bodySmall.copyWith(color: subColor),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             ),
             const SizedBox(height: AppConstants.space16),
             TextField(

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:smart_meal_management/core/theme/app_colors.dart';
 import 'package:smart_meal_management/features/groups/providers/group_provider.dart';
+import 'package:smart_meal_management/features/groups/screens/group_join_screen.dart';
 import 'package:smart_meal_management/features/groups/widgets/qr_display_card.dart';
 import 'package:smart_meal_management/shared/models/group_model.dart';
 import 'package:smart_meal_management/shared/widgets/app_empty_state.dart';
@@ -124,6 +125,8 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
           const SizedBox(height: 20),
           _StatsRow(group: group),
           const SizedBox(height: 20),
+          _AboutCard(group: group),
+          const SizedBox(height: 20),
           _MealConfigCard(config: group.mealConfig),
           const SizedBox(height: 20),
           if (group.joinCode != null) ...[
@@ -134,6 +137,26 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
             ),
             const SizedBox(height: 20),
           ],
+          // ISSUE 3: any member can join additional groups from here.
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              onPressed: () => Navigator.of(context).push(
+                MaterialPageRoute<void>(
+                  builder: (_) => const GroupJoinScreen(),
+                ),
+              ),
+              icon: const Icon(Icons.group_add_rounded, size: 18),
+              label: const Text('Join another group'),
+              style: OutlinedButton.styleFrom(
+                padding: const EdgeInsets.symmetric(vertical: 14),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
           _LeaveButton(
             onLeave: () => _confirmLeave(context, group),
           ),
@@ -399,6 +422,122 @@ class _StatCard extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+// ── About card (ISSUE 2: read-only group information for members) ───────────────
+
+class _AboutCard extends StatelessWidget {
+  const _AboutCard({required this.group});
+  final GroupModel group;
+
+  String _formatDate(DateTime d) {
+    const months = [
+      'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+    ];
+    final local = d.toLocal();
+    return '${local.day} ${months[local.month - 1]} ${local.year}';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final textTheme = Theme.of(context).textTheme;
+
+    final rows = <Widget>[
+      if ((group.organizationName ?? '').isNotEmpty)
+        _InfoRow(
+          icon: Icons.corporate_fare_rounded,
+          label: 'Organization',
+          value: group.organizationName!,
+        ),
+      if ((group.adminName ?? '').isNotEmpty)
+        _InfoRow(
+          icon: Icons.admin_panel_settings_rounded,
+          label: 'Managed by',
+          value: group.adminName!,
+        ),
+      if (group.functionalRole != null)
+        _InfoRow(
+          icon: Icons.badge_rounded,
+          label: 'Your role',
+          value: group.functionalRole!.label,
+        ),
+      if (group.createdAt != null)
+        _InfoRow(
+          icon: Icons.event_available_rounded,
+          label: 'Created',
+          value: _formatDate(group.createdAt!),
+        ),
+    ];
+
+    if (rows.isEmpty) return const SizedBox.shrink();
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: colorScheme.surface,
+        borderRadius: BorderRadius.circular(16),
+        border:
+            Border.all(color: colorScheme.outlineVariant.withValues(alpha: 0.4)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'About this group',
+            style: textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700),
+          ),
+          const SizedBox(height: 4),
+          for (var i = 0; i < rows.length; i++) ...[
+            const SizedBox(height: 10),
+            rows[i],
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _InfoRow extends StatelessWidget {
+  const _InfoRow({
+    required this.icon,
+    required this.label,
+    required this.value,
+  });
+
+  final IconData icon;
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Icon(icon, size: 18, color: colorScheme.onSurfaceVariant),
+        const SizedBox(width: 12),
+        SizedBox(
+          width: 96,
+          child: Text(
+            label,
+            style: TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w500,
+              color: colorScheme.onSurfaceVariant,
+            ),
+          ),
+        ),
+        Expanded(
+          child: Text(
+            value,
+            style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
+          ),
+        ),
+      ],
     );
   }
 }
