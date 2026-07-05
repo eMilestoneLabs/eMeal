@@ -8,6 +8,7 @@ import 'package:smart_meal_management/core/theme/app_typography.dart';
 import 'package:smart_meal_management/features/auth/providers/auth_provider.dart';
 import 'package:smart_meal_management/features/auth/services/auth_storage_service.dart';
 import 'package:smart_meal_management/features/auth/widgets/auth_input_field.dart';
+import 'package:smart_meal_management/features/auth/widgets/auth_premium.dart';
 import 'package:smart_meal_management/features/auth/widgets/password_strength_indicator.dart';
 import 'package:smart_meal_management/features/auth/utils/auth_validators.dart';
 import 'package:smart_meal_management/shared/enums/user_role.dart';
@@ -159,7 +160,6 @@ class _AdminSignupScreenState extends State<AdminSignupScreen> {
         backgroundColor: Colors.transparent,
         elevation: 0,
         leading: IconButton(icon: const Icon(Icons.arrow_back_rounded), onPressed: () => context.pop()),
-        title: Text('Admin Account', style: AppTypography.titleMedium.copyWith(fontWeight: FontWeight.w700)),
       ),
       body: SafeArea(
         child: SingleChildScrollView(
@@ -167,6 +167,14 @@ class _AdminSignupScreenState extends State<AdminSignupScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
+              const AuthSignupHero(
+                icon: Icons.admin_panel_settings_rounded,
+                title: 'Create admin account',
+                subtitle: 'Set up your organization and start managing meals',
+                gradient: [Color(0xFF059669), Color(0xFF0EA5E9)],
+              ),
+              const SizedBox(height: 24),
+
               const _SectionLabel('Personal Information'),
               const SizedBox(height: 16),
 
@@ -284,22 +292,11 @@ class _AdminSignupScreenState extends State<AdminSignupScreen> {
               ]),
               const SizedBox(height: 32),
 
-              SizedBox(
-                height: 52,
-                child: FilledButton(
-                  onPressed: (_isLoading || !_isFormValid) ? null : _signup,
-                  style: FilledButton.styleFrom(
-                    backgroundColor: AppColors.secondary,
-                    disabledBackgroundColor:
-                        AppColors.secondary.withValues(alpha: 0.4),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                  ),
-                  child: _isLoading
-                      ? const SizedBox(width: 22, height: 22,
-                          child: CircularProgressIndicator(strokeWidth: 2.5, color: Colors.white))
-                      : Text('Create Admin Account',
-                          style: AppTypography.labelLarge.copyWith(color: Colors.white, fontWeight: FontWeight.w700)),
-                ),
+              AuthGradientButton(
+                label: 'Create Admin Account',
+                isLoading: _isLoading,
+                onPressed: (_isLoading || !_isFormValid) ? null : _signup,
+                gradient: const [Color(0xFF059669), Color(0xFF0EA5E9)],
               ),
               const SizedBox(height: 24),
 
@@ -343,6 +340,14 @@ class _SectionLabel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Row(children: [
+      Container(
+        width: 4,
+        height: 16,
+        decoration: BoxDecoration(
+            color: AppColors.secondary,
+            borderRadius: BorderRadius.circular(2)),
+      ),
+      const SizedBox(width: 8),
       Text(label, style: AppTypography.labelLarge.copyWith(fontWeight: FontWeight.w700)),
       const SizedBox(width: 10),
       Expanded(child: Container(height: 1,

@@ -234,52 +234,78 @@ class _AdminAttendanceScreenState extends State<AdminAttendanceScreen> {
         title: Text('Attendance', style: AppTypography.titleLarge),
         backgroundColor: isDark ? AppColors.surfaceDark : AppColors.surface,
         surfaceTintColor: Colors.transparent,
+        // #10b: the four action icons + full date used to crowd the title down
+        // to "Att…". Compact date + a single overflow menu frees the space so
+        // the title always fits — every action is still reachable.
         actions: [
-          // Issue 3: admin reviews member vacation requests (approve/reject/cancel).
-          IconButton(
-            tooltip: 'Vacation requests',
-            onPressed: () => Navigator.of(context).push(
-              MaterialPageRoute(
-                  builder: (_) => const VacationRequestsScreen()),
-            ),
-            icon: const Icon(Icons.beach_access_rounded, size: 20),
-          ),
-          // Module 33 (ISSUE-17): post-window correction requests queue —
-          // approve applies + bills; reject changes nothing.
-          IconButton(
-            tooltip: 'Correction requests',
-            onPressed: () => Navigator.of(context).push(
-              MaterialPageRoute(
-                  builder: (_) => const CorrectionRequestsScreen()),
-            ),
-            icon: const Icon(Icons.rule_rounded, size: 20),
-          ),
-          // Module 22 (Pass 9): hosted-guest queue — only when the selected
-          // group has guest hosting enabled (zero UI change otherwise).
-          if (_groups
-                  .where((g) => g.id == _selectedGroupId)
-                  .firstOrNull
-                  ?.mealConfig
-                  .guestsEnabled ??
-              false)
-            IconButton(
-              tooltip: 'Hosted guests',
-              onPressed: _openGuests,
-              icon: const Icon(Icons.group_add_rounded, size: 20),
-            ),
-          // Issue 5: an admin / manager can mark THEIR OWN attendance for today.
-          if (_selectedGroupId != null)
-            IconButton(
-              tooltip: 'Mark my attendance',
-              onPressed: _openMyAttendance,
-              icon: const Icon(Icons.how_to_reg_rounded, size: 20),
-            ),
           TextButton.icon(
             onPressed: _pickDate,
             icon: const Icon(Icons.calendar_today_rounded, size: 16),
             label: Text(dateStr, style: AppTypography.labelMedium),
           ),
-          const SizedBox(width: 8),
+          PopupMenuButton<String>(
+            tooltip: 'Review queues',
+            icon: const Icon(Icons.more_vert_rounded, size: 20),
+            onSelected: (v) {
+              switch (v) {
+                case 'vacation':
+                  Navigator.of(context).push(MaterialPageRoute(
+                      builder: (_) => const VacationRequestsScreen()));
+                case 'corrections':
+                  Navigator.of(context).push(MaterialPageRoute(
+                      builder: (_) => const CorrectionRequestsScreen()));
+                case 'guests':
+                  _openGuests();
+                case 'my-attendance':
+                  _openMyAttendance();
+              }
+            },
+            itemBuilder: (context) {
+              final guestsOn = _groups
+                      .where((g) => g.id == _selectedGroupId)
+                      .firstOrNull
+                      ?.mealConfig
+                      .guestsEnabled ??
+                  false;
+              return [
+                const PopupMenuItem(
+                  value: 'vacation',
+                  child: Row(children: [
+                    Icon(Icons.beach_access_rounded, size: 18),
+                    SizedBox(width: 12),
+                    Text('Vacation requests'),
+                  ]),
+                ),
+                const PopupMenuItem(
+                  value: 'corrections',
+                  child: Row(children: [
+                    Icon(Icons.rule_rounded, size: 18),
+                    SizedBox(width: 12),
+                    Text('Correction requests'),
+                  ]),
+                ),
+                if (guestsOn)
+                  const PopupMenuItem(
+                    value: 'guests',
+                    child: Row(children: [
+                      Icon(Icons.group_add_rounded, size: 18),
+                      SizedBox(width: 12),
+                      Text('Hosted guests'),
+                    ]),
+                  ),
+                if (_selectedGroupId != null)
+                  const PopupMenuItem(
+                    value: 'my-attendance',
+                    child: Row(children: [
+                      Icon(Icons.how_to_reg_rounded, size: 18),
+                      SizedBox(width: 12),
+                      Text('Mark my attendance'),
+                    ]),
+                  ),
+              ];
+            },
+          ),
+          const SizedBox(width: 4),
         ],
       ),
       body: Column(

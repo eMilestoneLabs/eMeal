@@ -825,7 +825,7 @@ class _MealsTab extends StatelessWidget {
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    'Go to Meal Config to add meals for this group.',
+                    'Go to Master Meal Template to add meals for this group.',
                     textAlign: TextAlign.center,
                     style: TextStyle(
                       fontSize: 12,
@@ -936,7 +936,7 @@ class _MealsTab extends StatelessWidget {
 
         // ── Action button ──────────────────────────────────────────────────
         AppPrimaryButton(
-          label: 'Manage Meal Configuration',
+          label: 'Manage Master Meal Template',
           icon: Icons.settings_rounded,
           onPressed: () => context.push(RouteNames.adminMealConfig),
         ),

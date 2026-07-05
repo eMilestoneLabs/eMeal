@@ -426,7 +426,7 @@ class _MealConfigCard extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            'Meal Configuration',
+            'Meal Settings',
             style: textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700),
           ),
           const SizedBox(height: 12),

@@ -72,9 +72,27 @@ class _CorrectionRequestSheetState extends State<_CorrectionRequestSheet> {
   void initState() {
     super.initState();
     _meal = widget.initialMeal ?? widget.meals.first;
-    final now = DateTime.now();
-    final d = widget.initialDate ?? now;
-    _date = DateTime(d.year, d.month, d.day);
+    // Default the correction date to the meal's ORG-timezone business date (the
+    // date the backend keyed the meal/attendance under), NOT the device date.
+    // A phone calendar that differs from the org date submitted a date the
+    // backend couldn't match, so the request was rejected — exactly the
+    // "closed attendance → can't request" symptom. Falls back to the device
+    // date only when orgDate is absent (e.g. a cache-painted meal). All of
+    // today's meals share the same org date, so this stays correct if the user
+    // switches meals inside the sheet.
+    final base =
+        widget.initialDate ?? _parseOrgDate(_meal.orgDate) ?? DateTime.now();
+    _date = DateTime(base.year, base.month, base.day);
+  }
+
+  /// "YYYY-MM-DD" → local-midnight DateTime; null on missing/unparsable input.
+  static DateTime? _parseOrgDate(String? s) {
+    if (s == null || s.length < 10) return null;
+    final y = int.tryParse(s.substring(0, 4));
+    final m = int.tryParse(s.substring(5, 7));
+    final d = int.tryParse(s.substring(8, 10));
+    if (y == null || m == null || d == null) return null;
+    return DateTime(y, m, d);
   }
 
   @override

@@ -126,21 +126,23 @@ class _MealChip extends StatelessWidget {
       onTap: onTap,
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 200),
-        width: 90,
+        width: 100,
         padding: const EdgeInsets.all(10),
         decoration: BoxDecoration(
           color: Theme.of(context).colorScheme.surface,
-          borderRadius: BorderRadius.circular(14),
+          borderRadius: BorderRadius.circular(16),
           border: Border.all(color: _borderColor, width: isCurrent ? 2 : 1),
-          boxShadow: isCurrent
-              ? [
-                  BoxShadow(
-                    color: AppColors.primary.withValues(alpha: 0.1),
-                    blurRadius: 8,
-                    offset: const Offset(0, 2),
-                  )
-                ]
-              : null,
+          // #8: subtle elevation on every chip for a premium, consistent feel;
+          // stronger tinted glow on the current meal.
+          boxShadow: [
+            BoxShadow(
+              color: isCurrent
+                  ? AppColors.primary.withValues(alpha: 0.12)
+                  : Colors.black.withValues(alpha: isDark ? 0.16 : 0.03),
+              blurRadius: isCurrent ? 8 : 6,
+              offset: const Offset(0, 2),
+            ),
+          ],
         ),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,

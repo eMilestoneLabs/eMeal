@@ -97,7 +97,7 @@ class _MealConfigScreenState extends State<MealConfigScreen> {
     return Scaffold(
       backgroundColor: colorScheme.surfaceContainerLowest,
       appBar: AppBar(
-        title: const Text('Meal Config'),
+        title: const Text('Master Meal Template'),
         centerTitle: false,
         actions: [
           if (_provider.selectedGroup != null)
@@ -714,17 +714,38 @@ class _ToggleTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
       decoration: BoxDecoration(
         color: colorScheme.surface,
-        borderRadius: BorderRadius.circular(14),
+        borderRadius: BorderRadius.circular(16),
         border:
             Border.all(color: colorScheme.outlineVariant.withValues(alpha: 0.4)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: isDark ? 0.16 : 0.03),
+            blurRadius: 10,
+            offset: const Offset(0, 3),
+          ),
+        ],
       ),
       child: Row(
         children: [
-          Icon(icon, size: 20, color: colorScheme.onSurfaceVariant),
+          // Colour-tinted icon pill that brightens when the toggle is ON.
+          Container(
+            width: 38,
+            height: 38,
+            decoration: BoxDecoration(
+              color: AppColors.primary.withValues(alpha: value ? 0.14 : 0.07),
+              borderRadius: BorderRadius.circular(11),
+            ),
+            child: Icon(
+              icon,
+              size: 19,
+              color: value ? AppColors.primary : colorScheme.onSurfaceVariant,
+            ),
+          ),
           const SizedBox(width: 12),
           Expanded(
             child: Column(
@@ -733,20 +754,23 @@ class _ToggleTile extends StatelessWidget {
                 Text(
                   title,
                   style: const TextStyle(
-                    fontWeight: FontWeight.w600,
+                    fontWeight: FontWeight.w700,
                     fontSize: 14,
                   ),
                 ),
+                const SizedBox(height: 2),
                 Text(
                   subtitle,
                   style: TextStyle(
                     fontSize: 12,
+                    height: 1.3,
                     color: colorScheme.onSurfaceVariant,
                   ),
                 ),
               ],
             ),
           ),
+          const SizedBox(width: 8),
           Switch(
             value: value,
             onChanged: onChanged,
@@ -779,81 +803,105 @@ class _MealTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final bg = MealModel.iconBgColor(meal.order);
+    final fg = MealModel.iconFgColor(meal.order);
 
-    return Container(
-      margin: const EdgeInsets.only(bottom: 10),
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: colorScheme.surface,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(
-          color: colorScheme.outlineVariant.withValues(alpha: 0.4),
+    return Opacity(
+      // Dim a disabled meal so its On/Off state reads at a glance.
+      opacity: meal.isActive ? 1.0 : 0.6,
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 10),
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: colorScheme.surface,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+            color: colorScheme.outlineVariant.withValues(alpha: 0.4),
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: isDark ? 0.18 : 0.03),
+              blurRadius: 10,
+              offset: const Offset(0, 3),
+            ),
+          ],
         ),
-      ),
-      child: Row(
-        children: [
-          // Icon
-          Container(
-            width: 40,
-            height: 40,
-            decoration: BoxDecoration(
-              color: AppColors.primary.withValues(alpha: 0.10),
-              borderRadius: BorderRadius.circular(10),
+        child: Row(
+          children: [
+            // Icon — per-meal colour for a premium, scannable list.
+            Container(
+              width: 44,
+              height: 44,
+              decoration: BoxDecoration(
+                color: bg,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Icon(meal.icon, size: 20, color: fg),
             ),
-            child: Icon(meal.icon, size: 18, color: AppColors.primary),
-          ),
-          const SizedBox(width: 12),
-          // Info
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  meal.name,
-                  style: const TextStyle(
-                    fontWeight: FontWeight.w600,
-                    fontSize: 14,
-                  ),
-                ),
-                const SizedBox(height: 2),
-                Row(
-                  children: [
-                    Text(
-                      TimeFormat.window12(meal.attendanceWindow.openTime, meal.attendanceWindow.closeTime),
-                      style: TextStyle(
-                        fontSize: 11,
-                        fontFamily: 'monospace',
-                        color: colorScheme.onSurfaceVariant,
-                      ),
+            const SizedBox(width: 12),
+            // Info
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    meal.name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w700,
+                      fontSize: 14.5,
                     ),
-                    if (meal.menuItems.isNotEmpty) ...[
-                      const SizedBox(width: 8),
-                      Text(
-                        '${meal.menuItems.length} items',
-                        style: TextStyle(
-                          fontSize: 11,
-                          color: colorScheme.onSurfaceVariant,
+                  ),
+                  const SizedBox(height: 6),
+                  // Each fact is its own chip so nothing merges/overflows (the
+                  // ₹ price used to crowd the time + item count); Wrap makes it
+                  // responsive on narrow screens.
+                  Wrap(
+                    spacing: 6,
+                    runSpacing: 6,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    children: [
+                      _MetaChip(
+                        icon: Icons.schedule_rounded,
+                        label: TimeFormat.window12(
+                          meal.attendanceWindow.openTime,
+                          meal.attendanceWindow.closeTime,
                         ),
+                        isDark: isDark,
                       ),
-                    ],
-                    if (meal.price != null) ...[
-                      const SizedBox(width: 8),
-                      Text(
-                        '₹${meal.price}',
-                        style: const TextStyle(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w700,
-                          color: AppColors.primary,
+                      if (meal.menuItems.isNotEmpty)
+                        _MetaChip(
+                          icon: Icons.restaurant_menu_rounded,
+                          label: '${meal.menuItems.length} items',
+                          isDark: isDark,
                         ),
-                      ),
+                      if (meal.price != null)
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 9, vertical: 3),
+                          decoration: BoxDecoration(
+                            color: AppColors.primary.withValues(alpha: 0.12),
+                            borderRadius: BorderRadius.circular(20),
+                          ),
+                          child: Text(
+                            '₹${meal.price}',
+                            style: const TextStyle(
+                              fontSize: 11.5,
+                              fontWeight: FontWeight.w800,
+                              color: AppColors.primary,
+                            ),
+                          ),
+                        ),
                     ],
-                  ],
-                ),
-              ],
+                  ),
+                ],
+              ),
             ),
-          ),
-          // Status + menu
-          AppStatusChip.label(
+            const SizedBox(width: 8),
+            // Status + menu
+            AppStatusChip.label(
             label: meal.isActive ? 'On' : 'Off',
             color: meal.isActive ? AppColors.present : AppColors.textTertiary,
             compact: true,
@@ -892,6 +940,49 @@ class _MealTile extends StatelessWidget {
                   onDelete();
               }
             },
+          ),
+        ],
+      ),
+      ),
+    );
+  }
+}
+
+/// Premium metadata pill for the meal tile (icon + short label). Keeps each
+/// fact visually separate so the time / item-count / ₹ price never merge.
+class _MetaChip extends StatelessWidget {
+  const _MetaChip({
+    required this.icon,
+    required this.label,
+    required this.isDark,
+  });
+
+  final IconData icon;
+  final String label;
+  final bool isDark;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = isDark ? AppColors.textSecondaryDark : AppColors.textSecondary;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: (isDark ? AppColors.surfaceVariantDark : AppColors.surfaceVariant)
+            .withValues(alpha: 0.6),
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 11, color: c),
+          const SizedBox(width: 4),
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 11,
+              color: c,
+              fontWeight: FontWeight.w600,
+            ),
           ),
         ],
       ),

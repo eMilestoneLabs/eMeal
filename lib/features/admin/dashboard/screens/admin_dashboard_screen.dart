@@ -58,13 +58,29 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   // No dispose of _provider — it is owned by [AdminShell] (AdminDashboardScope)
   // and lives for the whole admin session.
 
-  void _refresh(AuthProvider auth) {
+  // Issue 2: the refresh arrow re-fetches from the server every time (there is
+  // no client cache), but with existing data on screen it never showed a
+  // spinner and — within the backend's short Redis TTL — the numbers can be
+  // identical, so the tap looked dead. This state drives visible feedback.
+  bool _isRefreshing = false;
+
+  Future<void> _refresh(AuthProvider auth) async {
     final user = auth.currentUser;
-    if (user == null) return;
-    _provider.refresh(
+    if (user == null || _isRefreshing) return;
+    setState(() => _isRefreshing = true);
+    await _provider.refresh(
       adminId: user.id,
       organizationId: user.organizationId,
       name: user.name,
+    );
+    if (!mounted) return;
+    setState(() => _isRefreshing = false);
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Dashboard updated'),
+        duration: Duration(seconds: 1),
+        behavior: SnackBarBehavior.floating,
+      ),
     );
   }
 
@@ -108,11 +124,20 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
               groupId: _provider.selectedGroupId,
               isAdmin: true,
             ),
-          IconButton(
-            tooltip: 'Refresh',
-            icon: const Icon(Icons.refresh_rounded),
-            onPressed: () => _refresh(auth),
-          ),
+          _isRefreshing
+              ? const Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 16),
+                  child: SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2.4),
+                  ),
+                )
+              : IconButton(
+                  tooltip: 'Refresh',
+                  icon: const Icon(Icons.refresh_rounded),
+                  onPressed: () => _refresh(auth),
+                ),
         ],
       ),
       body: ListenableBuilder(

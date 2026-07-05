@@ -1014,6 +1014,7 @@ class MealConfigProvider extends ChangeNotifier {
     String? closeTime,
     bool? preferencesEnabled,
     List<String>? enabledPreferences,
+    List<String>? enabledPreferenceGroupIds,
     int? price,
     bool clearPrice = false,
     String? description,
@@ -1049,6 +1050,8 @@ class MealConfigProvider extends ChangeNotifier {
           closeTime: closeTime ?? entry.closeTime,
           preferencesEnabled: preferencesEnabled ?? entry.preferencesEnabled,
           enabledPreferences: enabledPreferences ?? entry.enabledPreferences,
+          enabledPreferenceGroupIds:
+              enabledPreferenceGroupIds ?? entry.enabledPreferenceGroupIds,
           price: clearPrice ? null : (price ?? entry.price),
         );
       }).toList();
@@ -1224,6 +1227,8 @@ class MealConfigProvider extends ChangeNotifier {
               closeTime: e.closeTime,
               preferencesEnabled: e.preferencesEnabled,
               enabledPreferences: e.enabledPreferences,
+              enabledPreferenceGroupIds:
+                  List<String>.from(e.enabledPreferenceGroupIds),
               price: e.price,
             ))
         .toList();

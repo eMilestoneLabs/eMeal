@@ -79,6 +79,7 @@ class DayMealEntry {
     this.closeTime,
     this.preferencesEnabled = false,
     this.enabledPreferences = const [],
+    this.enabledPreferenceGroupIds = const [],
     this.price,
   });
 
@@ -109,6 +110,10 @@ class DayMealEntry {
   /// Per-day meal preference (#6) — independent from every other day.
   final bool preferencesEnabled;
   final List<String> enabledPreferences;
+
+  /// #3: per-day SUBSET of the meal's master preference group ids that apply
+  /// this day. Empty = inherit ALL master groups (unchanged behaviour).
+  final List<String> enabledPreferenceGroupIds;
 
   /// Additive: per-day ₹ price override. Null = inherit master meal price.
   final int? price;
@@ -162,6 +167,8 @@ class DayMealEntry {
         closeTime: j['closeTime'] as String?,
         preferencesEnabled: j['preferencesEnabled'] ?? false,
         enabledPreferences: List<String>.from(j['enabledPreferences'] ?? []),
+        enabledPreferenceGroupIds:
+            List<String>.from(j['enabledPreferenceGroupIds'] ?? []),
         price: j['price'] is int
             ? j['price'] as int
             : (j['price'] != null
@@ -181,6 +188,7 @@ class DayMealEntry {
         if (closeTime != null) 'closeTime': closeTime,
         'preferencesEnabled': preferencesEnabled,
         'enabledPreferences': enabledPreferences,
+        'enabledPreferenceGroupIds': enabledPreferenceGroupIds,
         if (price != null) 'price': price,
       };
 
@@ -194,6 +202,7 @@ class DayMealEntry {
     String? closeTime,
     bool? preferencesEnabled,
     List<String>? enabledPreferences,
+    List<String>? enabledPreferenceGroupIds,
     int? price,
   }) =>
       DayMealEntry(
@@ -209,6 +218,8 @@ class DayMealEntry {
         closeTime: closeTime ?? this.closeTime,
         preferencesEnabled: preferencesEnabled ?? this.preferencesEnabled,
         enabledPreferences: enabledPreferences ?? this.enabledPreferences,
+        enabledPreferenceGroupIds:
+            enabledPreferenceGroupIds ?? this.enabledPreferenceGroupIds,
         price: price ?? this.price,
       );
 }

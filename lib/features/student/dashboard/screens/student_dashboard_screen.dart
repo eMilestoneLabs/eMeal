@@ -293,8 +293,11 @@ class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
                   // ── Notice bell row ──────────────────────────────────────
                   SliverToBoxAdapter(
                     child: Padding(
+                      // #9: align to the same 20px margin as the hero card and
+                      // every other section so the layout reads as one justified
+                      // column (was space12 + an extra inner space8 offset).
                       padding: const EdgeInsets.symmetric(
-                          horizontal: AppConstants.space12),
+                          horizontal: AppConstants.space20),
                       child: Row(
                         children: [
                           // Pass 13 (FR-OFF-006): "Updated X ago" while the
@@ -303,12 +306,8 @@ class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
                           Expanded(
                             child: Align(
                               alignment: Alignment.centerLeft,
-                              child: Padding(
-                                padding: const EdgeInsets.only(
-                                    left: AppConstants.space8),
-                                child: FreshnessBadge(
-                                    lastUpdated: provider.lastUpdated),
-                              ),
+                              child: FreshnessBadge(
+                                  lastUpdated: provider.lastUpdated),
                             ),
                           ),
                           NoticeBell(
@@ -1144,8 +1143,9 @@ class _GroupSwitcherRow extends StatelessWidget {
       height: 40,
       child: ListView.separated(
         scrollDirection: Axis.horizontal,
+        // #9: align the group chips to the same 20px margin as the hero.
         padding:
-            const EdgeInsets.symmetric(horizontal: AppConstants.space16),
+            const EdgeInsets.symmetric(horizontal: AppConstants.space20),
         itemCount: groupIds.length,
         separatorBuilder: (_, _) =>
             const SizedBox(width: AppConstants.space8),

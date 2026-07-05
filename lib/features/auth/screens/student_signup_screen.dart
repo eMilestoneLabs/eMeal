@@ -8,6 +8,7 @@ import 'package:smart_meal_management/core/theme/app_typography.dart';
 import 'package:smart_meal_management/features/auth/providers/auth_provider.dart';
 import 'package:smart_meal_management/features/auth/services/auth_storage_service.dart';
 import 'package:smart_meal_management/features/auth/widgets/auth_input_field.dart';
+import 'package:smart_meal_management/features/auth/widgets/auth_premium.dart';
 import 'package:smart_meal_management/features/auth/widgets/password_strength_indicator.dart';
 import 'package:smart_meal_management/features/auth/utils/auth_validators.dart';
 import 'package:smart_meal_management/shared/enums/user_role.dart';
@@ -153,12 +154,6 @@ class _StudentSignupScreenState extends State<StudentSignupScreen> {
           icon: const Icon(Icons.arrow_back_rounded),
           onPressed: () => context.pop(),
         ),
-        title: Text(
-          'Create Account',
-          style: AppTypography.titleMedium.copyWith(
-            fontWeight: FontWeight.w700,
-          ),
-        ),
       ),
       body: SafeArea(
         child: SingleChildScrollView(
@@ -166,6 +161,14 @@ class _StudentSignupScreenState extends State<StudentSignupScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
+              // Premium gradient hero (#12) — consistent with the login screen.
+              const AuthSignupHero(
+                icon: Icons.school_rounded,
+                title: 'Create your account',
+                subtitle: 'Set up your profile to join your meal group',
+              ),
+              const SizedBox(height: 24),
+
               // Section: Personal info
               const _SectionHeader(label: 'Personal Information'),
               const SizedBox(height: 16),
@@ -336,33 +339,10 @@ class _StudentSignupScreenState extends State<StudentSignupScreen> {
               const SizedBox(height: 32),
 
               // Submit
-              SizedBox(
-                height: 52,
-                child: FilledButton(
-                  onPressed: (_isLoading || !_isFormValid) ? null : _signup,
-                  style: FilledButton.styleFrom(
-                    backgroundColor: AppColors.primary,
-                    disabledBackgroundColor:
-                        AppColors.primary.withValues(alpha: 0.4),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(14),
-                    ),
-                  ),
-                  child: _isLoading
-                      ? const SizedBox(
-                          width: 22,
-                          height: 22,
-                          child: CircularProgressIndicator(
-                              strokeWidth: 2.5, color: Colors.white),
-                        )
-                      : Text(
-                          'Create Account',
-                          style: AppTypography.labelLarge.copyWith(
-                            color: Colors.white,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                ),
+              AuthGradientButton(
+                label: 'Create Account',
+                isLoading: _isLoading,
+                onPressed: (_isLoading || !_isFormValid) ? null : _signup,
               ),
               const SizedBox(height: 16),
 
@@ -406,6 +386,16 @@ class _SectionHeader extends StatelessWidget {
   Widget build(BuildContext context) {
     return Row(
       children: [
+        // Premium accent bar (#12) ties each section to the hero gradient.
+        Container(
+          width: 4,
+          height: 16,
+          decoration: BoxDecoration(
+            color: AppColors.primary,
+            borderRadius: BorderRadius.circular(2),
+          ),
+        ),
+        const SizedBox(width: 8),
         Text(
           label,
           style: AppTypography.labelLarge.copyWith(

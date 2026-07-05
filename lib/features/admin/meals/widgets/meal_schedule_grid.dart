@@ -82,7 +82,7 @@ class _MealScheduleGridState extends State<MealScheduleGrid> {
         padding: EdgeInsets.all(24),
         child: Center(
           child: Text(
-            'No meals configured yet.\nAdd meals in Meal Config.',
+            'No meals configured yet.\nAdd meals in Master Meal Template.',
             textAlign: TextAlign.center,
           ),
         ),

@@ -9,6 +9,7 @@ import 'package:smart_meal_management/core/theme/app_typography.dart';
 import 'package:smart_meal_management/core/utils/time_format.dart';
 import 'package:smart_meal_management/features/admin/meals/providers/meal_config_provider.dart';
 import 'package:smart_meal_management/shared/models/meal_model.dart';
+import 'package:smart_meal_management/shared/models/preference_group_model.dart';
 import 'package:smart_meal_management/shared/models/group_model.dart';
 import 'package:smart_meal_management/shared/models/meal_schedule_model.dart';
 import 'package:smart_meal_management/shared/widgets/app_empty_state.dart';
@@ -344,6 +345,7 @@ class _MealScheduleScreenState extends State<MealScheduleScreen>
         templatePreferenceOptions: template.enabledPreferences.isNotEmpty
             ? template.enabledPreferences
             : const ['veg', 'chicken', 'fish', 'mutton', 'egg', 'jain'],
+        templatePreferenceGroups: template.preferenceGroups,
         pricingEnabled: _provider.mealPricingEnabled,
         templatePrice: template.price,
         onSave: ({
@@ -355,6 +357,7 @@ class _MealScheduleScreenState extends State<MealScheduleScreen>
           String? closeTime,
           required bool preferencesEnabled,
           required List<String> enabledPreferences,
+          required List<String> enabledPreferenceGroupIds,
           int? price,
         }) {
           _provider.updateDayMealEntry(
@@ -369,6 +372,7 @@ class _MealScheduleScreenState extends State<MealScheduleScreen>
             closeTime: closeTime,
             preferencesEnabled: preferencesEnabled,
             enabledPreferences: enabledPreferences,
+            enabledPreferenceGroupIds: enabledPreferenceGroupIds,
             price: price,
             clearPrice: price == null,
           );
@@ -576,7 +580,7 @@ class _MealScheduleScreenState extends State<MealScheduleScreen>
                   icon: Icons.calendar_month_outlined,
                   title: 'No schedule yet',
                   subtitle: widget.dayWiseMode
-                      ? 'Add meals in Meal Config first — they become the daily template for Today and Tomorrow.'
+                      ? 'Add meals in Master Meal Template first — they become the daily template for Today and Tomorrow.'
                       : 'Configure meals first, then build your weekly schedule here.',
                 )
               : Column(
@@ -1216,6 +1220,192 @@ class _MenuItemsPreviewState extends State<_MenuItemsPreview> {
   }
 }
 
+// ── Multi-preference groups (read-only, premium tags) ───────────────────────
+
+/// #3: shows a meal's master-level multi-preference groups inside the weekly
+/// editor as premium, responsive tag chips. Read-only here because groups are
+/// master-level (FR-PG-*) and apply to EVERY day the meal runs — per-day
+/// overrides exist only for the legacy flat single-preference.
+class _MultiPrefGroupsCard extends StatelessWidget {
+  const _MultiPrefGroupsCard({
+    required this.groups,
+    required this.isDark,
+    required this.selectedIds,
+    required this.onToggle,
+    this.enabled = true,
+  });
+
+  final List<PreferenceGroupModel> groups;
+  final bool isDark;
+
+  /// #3: whether preferences are enabled for THIS day. When false the card
+  /// shows an "Off this day" state (the backend also hides the groups).
+  final bool enabled;
+
+  /// #3: the group ids currently active for this day (checkbox state).
+  final Set<String> selectedIds;
+
+  /// #3: toggle a group on/off for this day.
+  final void Function(String groupId, bool selected) onToggle;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: AppColors.primary.withValues(alpha: isDark ? 0.10 : 0.05),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: AppColors.primary.withValues(alpha: 0.22)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.tune_rounded, size: 16, color: AppColors.primary),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'Multi-preference groups',
+                  style: AppTypography.labelMedium.copyWith(
+                    color: isDark
+                        ? AppColors.textPrimaryDark
+                        : AppColors.textPrimary,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                  color: (enabled ? AppColors.primary : AppColors.textTertiary)
+                      .withValues(alpha: 0.14),
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Text(
+                  enabled ? 'Applies every day' : 'Off this day',
+                  style: AppTypography.labelSmall.copyWith(
+                    color:
+                        enabled ? AppColors.primary : AppColors.textTertiary,
+                    fontWeight: FontWeight.w700,
+                    fontSize: 10.5,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Text(
+            enabled
+                ? 'Tick the groups that apply THIS day (defined in Master Meal '
+                    'Template). Unticked groups are hidden for this day only.'
+                : "Preferences are OFF for this day — members won't pick any "
+                    'option. Turn the toggle on to use these groups.',
+            style: AppTypography.bodySmall.copyWith(
+              color: isDark
+                  ? AppColors.textSecondaryDark
+                  : AppColors.textSecondary,
+            ),
+          ),
+          const SizedBox(height: 12),
+          ...groups.map((g) => Padding(
+                padding: const EdgeInsets.only(bottom: 10),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        // #3: include/exclude this group for THIS day only.
+                        SizedBox(
+                          width: 24,
+                          height: 24,
+                          child: Checkbox(
+                            value: selectedIds.contains(g.id),
+                            onChanged: enabled
+                                ? (v) => onToggle(g.id, v ?? false)
+                                : null,
+                            visualDensity: VisualDensity.compact,
+                            materialTapTargetSize:
+                                MaterialTapTargetSize.shrinkWrap,
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        Flexible(
+                          child: Text(
+                            g.label,
+                            style: AppTypography.labelSmall.copyWith(
+                              color: isDark
+                                  ? AppColors.textPrimaryDark
+                                  : AppColors.textPrimary,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 7, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: isDark
+                                ? AppColors.surfaceVariantDark
+                                : AppColors.surfaceVariant,
+                            borderRadius: BorderRadius.circular(20),
+                          ),
+                          child: Text(
+                            g.ruleLabel,
+                            style: AppTypography.labelSmall.copyWith(
+                              color: isDark
+                                  ? AppColors.textSecondaryDark
+                                  : AppColors.textSecondary,
+                              fontSize: 10.5,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 6),
+                    // Responsive: chips wrap to as many rows as needed.
+                    Wrap(
+                      spacing: 6,
+                      runSpacing: 6,
+                      children: g.options.map((o) {
+                        final priceAdd = o.priceDelta > 0
+                            ? ' +₹${(o.priceDelta / 100).toStringAsFixed(o.priceDelta % 100 == 0 ? 0 : 2)}'
+                            : '';
+                        return Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 10, vertical: 6),
+                          decoration: BoxDecoration(
+                            color:
+                                isDark ? AppColors.surfaceDark : AppColors.surface,
+                            borderRadius: BorderRadius.circular(20),
+                            border: Border.all(
+                              color: AppColors.primary.withValues(alpha: 0.30),
+                            ),
+                          ),
+                          child: Text(
+                            '${o.displayLabel}$priceAdd',
+                            style: AppTypography.labelSmall.copyWith(
+                              color: isDark
+                                  ? AppColors.textPrimaryDark
+                                  : AppColors.textPrimary,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        );
+                      }).toList(),
+                    ),
+                  ],
+                ),
+              )),
+        ],
+      ),
+    );
+  }
+}
+
 // ── Per-day meal edit sheet ────────────────────────────────────────────────────
 
 /// Bottom sheet that lets the admin edit a single day's [DayMealEntry].
@@ -1233,6 +1423,7 @@ class _DayMealEditSheet extends StatefulWidget {
     required this.templateOpenTime,
     required this.templateCloseTime,
     required this.templatePreferenceOptions,
+    required this.templatePreferenceGroups,
     required this.pricingEnabled,
     this.templatePrice,
     required this.onSave,
@@ -1249,6 +1440,10 @@ class _DayMealEditSheet extends StatefulWidget {
   final String templateCloseTime;
   final List<String> templatePreferenceOptions;
 
+  /// #3: master-level multi-preference groups (FR-PG-*). When non-empty the
+  /// weekly editor shows them as premium read-only tags (they apply every day).
+  final List<PreferenceGroupModel> templatePreferenceGroups;
+
   /// Additive: when true (group pricing ON), a per-day Price (₹) field shows.
   final bool pricingEnabled;
 
@@ -1264,6 +1459,7 @@ class _DayMealEditSheet extends StatefulWidget {
     String? closeTime,
     required bool preferencesEnabled,
     required List<String> enabledPreferences,
+    required List<String> enabledPreferenceGroupIds,
     int? price,
   }) onSave;
 
@@ -1282,6 +1478,8 @@ class _DayMealEditSheetState extends State<_DayMealEditSheet> {
   bool _useCustomTiming = false;
   bool _prefsEnabled = false;
   late List<String> _selectedPrefs;
+  // #3: per-day subset of master preference group ids that apply this day.
+  late Set<String> _selectedGroupIds;
 
   // Per-day photo (max 1, ≤100 KB) — mirrors the master meal editor.
   late List<Uint8List> _imageBytes;
@@ -1314,6 +1512,11 @@ class _DayMealEditSheetState extends State<_DayMealEditSheet> {
     _menuItems = List<String>.from(widget.entry.menuItems);
     _prefsEnabled = widget.entry.preferencesEnabled;
     _selectedPrefs = List<String>.from(widget.entry.enabledPreferences);
+    // #3: per-day group subset. An empty saved value means "inherit ALL", so
+    // start with every master group checked; the admin unchecks to narrow.
+    _selectedGroupIds = widget.entry.enabledPreferenceGroupIds.isNotEmpty
+        ? widget.entry.enabledPreferenceGroupIds.toSet()
+        : widget.templatePreferenceGroups.map((g) => g.id).toSet();
     _priceCtrl = TextEditingController(
       text: widget.entry.price?.toString() ?? '',
     );
@@ -1468,6 +1671,13 @@ class _DayMealEditSheetState extends State<_DayMealEditSheet> {
       preferencesEnabled: _prefsEnabled,
       enabledPreferences:
           _prefsEnabled ? List<String>.from(_selectedPrefs) : <String>[],
+      // #3: save the per-day group subset. All selected = save empty (inherit
+      // ALL, future-proof if a new master group is added); else the subset.
+      enabledPreferenceGroupIds: !_prefsEnabled
+          ? <String>[]
+          : (_selectedGroupIds.length >= widget.templatePreferenceGroups.length
+              ? <String>[]
+              : _selectedGroupIds.toList()),
       // Issue 2: when locked, never let the current day's price change.
       price: widget.pricingEnabled
           ? (_priceLocked
@@ -1819,6 +2029,49 @@ class _DayMealEditSheetState extends State<_DayMealEditSheet> {
             ],
 
             // ── Per-day meal preference (#6) ─────────────────────────────────
+            // #3: meals configured with MULTI-preference groups (master-level,
+            // FR-PG-*) surface them here as premium read-only tags. The flat
+            // per-day toggle below only applies to legacy single-tag meals.
+            if (widget.templatePreferenceGroups.isNotEmpty) ...[
+              // #3: per-day enable toggle — turning this OFF hides the meal's
+              // multi-preference groups for THIS day (the backend gates it too,
+              // so members pick nothing that day). Master config is untouched.
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      'Meal preferences this day',
+                      style: AppTypography.labelMedium.copyWith(
+                        color: isDark
+                            ? AppColors.textPrimaryDark
+                            : AppColors.textPrimary,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                  Switch(
+                    value: _prefsEnabled,
+                    onChanged: (v) => setState(() => _prefsEnabled = v),
+                    activeThumbColor: Colors.white,
+                    activeTrackColor: AppColors.primary,
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              _MultiPrefGroupsCard(
+                groups: widget.templatePreferenceGroups,
+                isDark: isDark,
+                enabled: _prefsEnabled,
+                selectedIds: _selectedGroupIds,
+                onToggle: (id, sel) => setState(() {
+                  if (sel) {
+                    _selectedGroupIds.add(id);
+                  } else {
+                    _selectedGroupIds.remove(id);
+                  }
+                }),
+              ),
+            ] else ...[
             Row(
               children: [
                 Expanded(
@@ -1898,6 +2151,7 @@ class _DayMealEditSheetState extends State<_DayMealEditSheet> {
                   );
                 }).toList(),
               ),
+            ],
             ],
             const SizedBox(height: 20),
 

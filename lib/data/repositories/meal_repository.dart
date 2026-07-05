@@ -221,6 +221,7 @@ class MealRepository implements IMealRepository {
             },
           'preferencesEnabled': e.preferencesEnabled,
           'enabledPreferences': e.enabledPreferences,
+          'enabledPreferenceGroupIds': e.enabledPreferenceGroupIds,
           // Issue 2: persist per-day menu items so they survive publish and
           // show to students + admin (independent of the master meal menu).
           'menuItems': e.menuItems,
@@ -296,6 +297,7 @@ class MealRepository implements IMealRepository {
               },
             'preferencesEnabled': e.preferencesEnabled,
             'enabledPreferences': e.enabledPreferences,
+          'enabledPreferenceGroupIds': e.enabledPreferenceGroupIds,
             'menuItems': e.menuItems,
             if (e.description != null) 'description': e.description,
             if (e.imageUrl != null) 'imageUrl': e.imageUrl,

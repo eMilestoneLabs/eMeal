@@ -555,13 +555,13 @@ class StudentDashboardProvider extends ChangeNotifier {
     // live /meals/today payloads) — a wrong phone calendar date used to 400
     // with "Attendance can only be marked for today".
     final today = _parseOrgDate(meal.orgDate) ?? now;
-    final existingIdx = _todayAttendance.indexWhere(
-      (r) =>
-          r.mealId == meal.id &&
-          r.date.year == today.year &&
-          r.date.month == today.month &&
-          r.date.day == today.day,
-    );
+    // Match by mealId within today's already-scoped list — NO device-date
+    // comparison. The read side (recordForMeal) does the same, so an optimistic
+    // mark and its server echo can never split into two records across a
+    // timezone / phone-clock / near-midnight boundary (root cause of the mark
+    // reverting to "Mark Attendance").
+    final existingIdx =
+        _todayAttendance.indexWhere((r) => r.mealId == meal.id);
 
     final optimistic = existingIdx != -1
         ? _todayAttendance[existingIdx].copyWith(
@@ -713,62 +713,31 @@ class StudentDashboardProvider extends ChangeNotifier {
     return nowMinutes > closeMinutes;
   }
 
-  AttendanceStatus? statusForMeal(String mealId) {
-    final today = DateTime.now();
-    try {
-      return _todayAttendance
-          .firstWhere(
-            (a) =>
-                a.mealId == mealId &&
-                a.date.year == today.year &&
-                a.date.month == today.month &&
-                a.date.day == today.day,
-          )
-          .status;
-    } catch (_) {
-      return null;
-    }
-  }
+  AttendanceStatus? statusForMeal(String mealId) =>
+      recordForMeal(mealId)?.status;
 
   /// Issue 5: the ₹ price snapshotted onto today's attendance record for [mealId]
   /// (the price the student actually saw when they marked). Null when the meal
   /// is not yet marked or the record carries no price — callers then fall back
   /// to the live meal price. Prevents the displayed price drifting away from the
   /// billed price after an admin edits the meal config.
-  int? snapshotPriceForMeal(String mealId) {
-    final today = DateTime.now();
-    try {
-      return _todayAttendance
-          .firstWhere(
-            (a) =>
-                a.mealId == mealId &&
-                a.date.year == today.year &&
-                a.date.month == today.month &&
-                a.date.day == today.day,
-          )
-          .price;
-    } catch (_) {
-      return null;
-    }
-  }
+  int? snapshotPriceForMeal(String mealId) => recordForMeal(mealId)?.price;
 
   /// Today's attendance record for [mealId], or null when the student has not
   /// acted on it yet. Source of truth for the marked-state UI (status +
   /// preference + submitted time) so the screen always renders from backend
   /// attendance state rather than transient local UI flags.
   AttendanceModel? recordForMeal(String mealId) {
-    final today = DateTime.now();
-    try {
-      return _todayAttendance.firstWhere(
-        (a) =>
-            a.mealId == mealId &&
-            a.date.year == today.year &&
-            a.date.month == today.month &&
-            a.date.day == today.day,
-      );
-    } catch (_) {
-      return null;
+    // Single source of truth for the marked-state UI. Keyed by mealId ONLY:
+    // [_todayAttendance] is already scoped to today by load(), and both the
+    // optimistic write and the reloaded server record store the org-timezone
+    // business date — so a device-date filter here (the old code) dropped the
+    // record whenever the phone date differed from the org date, reverting the
+    // card to "Mark Attendance". Matching by mealId removes that failure mode.
+    for (final a in _todayAttendance) {
+      if (a.mealId == mealId) return a;
     }
+    return null;
   }
 
   // ── Private helpers ────────────────────────────────────────────────────────

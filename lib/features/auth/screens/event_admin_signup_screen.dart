@@ -8,6 +8,7 @@ import 'package:smart_meal_management/core/theme/app_typography.dart';
 import 'package:smart_meal_management/features/auth/providers/auth_provider.dart';
 import 'package:smart_meal_management/features/auth/services/auth_storage_service.dart';
 import 'package:smart_meal_management/features/auth/widgets/auth_input_field.dart';
+import 'package:smart_meal_management/features/auth/widgets/auth_premium.dart';
 import 'package:smart_meal_management/features/auth/widgets/password_strength_indicator.dart';
 import 'package:smart_meal_management/features/auth/utils/auth_validators.dart';
 import 'package:smart_meal_management/features/events/models/event_model.dart';
@@ -176,7 +177,6 @@ class _EventAdminSignupScreenState extends State<EventAdminSignupScreen> {
         backgroundColor: Colors.transparent,
         elevation: 0,
         leading: IconButton(icon: const Icon(Icons.arrow_back_rounded), onPressed: () => context.pop()),
-        title: Text('Create Event Account', style: AppTypography.titleMedium.copyWith(fontWeight: FontWeight.w700)),
       ),
       body: SafeArea(
         child: SingleChildScrollView(
@@ -184,6 +184,14 @@ class _EventAdminSignupScreenState extends State<EventAdminSignupScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
+              const AuthSignupHero(
+                icon: Icons.celebration_rounded,
+                title: 'Create event account',
+                subtitle: 'Host an event and manage guest meals',
+                gradient: [AppColors.vacation, AppColors.gradientPurple],
+              ),
+              const SizedBox(height: 24),
+
               // ── Personal section ─────────────────────────────────────────
               const _SectionLabel('Your Information', color: accentColor),
               const SizedBox(height: 16),
@@ -367,21 +375,11 @@ class _EventAdminSignupScreenState extends State<EventAdminSignupScreen> {
               ),
               const SizedBox(height: 32),
 
-              SizedBox(
-                height: 52,
-                child: FilledButton(
-                  onPressed: (_isLoading || !_isFormValid) ? null : _signup,
-                  style: FilledButton.styleFrom(
-                    backgroundColor: accentColor,
-                    disabledBackgroundColor: accentColor.withValues(alpha: 0.4),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                  ),
-                  child: _isLoading
-                      ? const SizedBox(width: 22, height: 22,
-                          child: CircularProgressIndicator(strokeWidth: 2.5, color: Colors.white))
-                      : Text('Create Event Account',
-                          style: AppTypography.labelLarge.copyWith(color: Colors.white, fontWeight: FontWeight.w700)),
-                ),
+              AuthGradientButton(
+                label: 'Create Event Account',
+                isLoading: _isLoading,
+                onPressed: (_isLoading || !_isFormValid) ? null : _signup,
+                gradient: const [AppColors.vacation, AppColors.gradientPurple],
               ),
               const SizedBox(height: 32),
             ],
@@ -402,6 +400,13 @@ class _SectionLabel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Row(children: [
+      Container(
+        width: 4,
+        height: 16,
+        decoration:
+            BoxDecoration(color: color, borderRadius: BorderRadius.circular(2)),
+      ),
+      const SizedBox(width: 8),
       Text(label, style: AppTypography.labelLarge.copyWith(fontWeight: FontWeight.w700)),
       const SizedBox(width: 10),
       Expanded(child: Container(height: 1,

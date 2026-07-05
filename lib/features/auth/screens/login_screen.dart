@@ -100,7 +100,19 @@ class _LoginScreenState extends State<LoginScreen> with TickerProviderStateMixin
       CurvedAnimation(parent: _blobCtrl, curve: Curves.easeInOut),
     );
 
-    _entryCtrl.forward();
+    _entryCtrl.forward().whenComplete(() {
+      // Issue 1: raise the keyboard reliably. The field's own autofocus fires a
+      // post-frame focus request that lands MID-transition on Android, when the
+      // text input connection isn't ready yet — so the keyboard silently never
+      // opens. Requesting focus once the entry animation settles fixes it
+      // (focus the password when an identifier was remembered/pre-filled).
+      if (!mounted) return;
+      // Don't steal focus if the user already tapped into a field during the
+      // ~860ms entry animation — only auto-focus when nothing is focused yet.
+      if (_identifierFocus.hasFocus || _passwordFocus.hasFocus) return;
+      (_identifierCtrl.text.isEmpty ? _identifierFocus : _passwordFocus)
+          .requestFocus();
+    });
     _restorePreference();
   }
 
