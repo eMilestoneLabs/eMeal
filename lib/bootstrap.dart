@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:smart_meal_management/app/app.dart';
 import 'package:smart_meal_management/app/router/app_router.dart';
+import 'package:smart_meal_management/app/router/notification_route_resolver.dart';
 import 'package:smart_meal_management/core/config/env_config.dart';
 import 'package:smart_meal_management/data/services/dio_api_service.dart';
 import 'package:smart_meal_management/data/services/notification_service.dart';
@@ -47,8 +48,12 @@ Future<void> bootstrap() async {
 
   // Wire the notification tap handler now that the router exists (capture only;
   // no I/O). Routing a tapped notification still works once init completes.
+  // Payload routes are resolved against the registered router paths (legacy
+  // role-agnostic routes like '/billing' map per role) so a tap never 404s.
   NotificationService.setNotificationTapHandler((routePath) {
-    if (routePath != null) router.go(routePath);
+    if (routePath != null) {
+      router.go(resolveNotificationRoute(routePath, authProvider));
+    }
   });
 
   // ── First frame NOW — splash renders instantly regardless of network ───────

@@ -5,6 +5,7 @@ import 'package:smart_meal_management/shared/models/attendance_model.dart';
 import 'package:smart_meal_management/shared/models/billing_series.dart';
 import 'package:smart_meal_management/shared/models/billing_summary.dart';
 import 'package:smart_meal_management/shared/models/meal_attendance_summary.dart';
+import 'package:smart_meal_management/shared/models/my_billing.dart';
 import 'package:smart_meal_management/shared/models/paginated_response.dart';
 import 'package:smart_meal_management/shared/models/result.dart';
 
@@ -296,6 +297,28 @@ class AttendanceRepository implements IAttendanceRepository {
     return switch (result) {
       Err(:final failure) => Err(failure),
       Ok(:final value) => Ok(BillingSummaryV2.fromJson(value)),
+    };
+  }
+
+  /// Issue 5 — the signed-in member's OWN net bill (meal + guest + ledger
+  /// adjustments), from the SAME engine as the admin dashboard so both sides
+  /// show one number. GET /attendance/my-billing.
+  Future<Result<MyBilling>> getMyBilling({
+    required String groupId,
+    required DateTime from,
+    required DateTime to,
+  }) async {
+    final result = await DioApiService.instance.get<Map<String, dynamic>>(
+      '/attendance/my-billing',
+      queryParameters: {
+        'groupId': groupId,
+        'fromDate': _dateOnly(from),
+        'toDate': _dateOnly(to),
+      },
+    );
+    return switch (result) {
+      Err(:final failure) => Err(failure),
+      Ok(:final value) => Ok(MyBilling.fromJson(value)),
     };
   }
 

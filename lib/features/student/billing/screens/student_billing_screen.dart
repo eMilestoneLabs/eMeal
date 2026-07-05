@@ -9,6 +9,7 @@ import 'package:smart_meal_management/data/services/export_service.dart';
 import 'package:smart_meal_management/features/auth/providers/auth_provider.dart';
 import 'package:smart_meal_management/shared/models/attendance_model.dart';
 import 'package:smart_meal_management/shared/models/meal_model.dart';
+import 'package:smart_meal_management/shared/models/my_billing.dart';
 import 'package:smart_meal_management/shared/models/paginated_response.dart';
 import 'package:smart_meal_management/shared/models/result.dart';
 
@@ -48,6 +49,9 @@ class _StudentBillingScreenState extends State<StudentBillingScreen> {
   // Data
   List<BillingRow> _rows = [];
   BillingSummary? _summary;
+  // Issue 5: authoritative net (meal + guest + adjustments) from the same
+  // backend engine as the admin dashboard, so both sides show one number.
+  MyBilling? _serverBilling;
   bool _pricingEnabled = false;
   String _groupName = '';
 
@@ -145,6 +149,22 @@ class _StudentBillingScreenState extends State<StudentBillingScreen> {
     ).where((r) => r.userId == _userId).toList();
     final summaries = BillingService.summarize(rows);
 
+    // Issue 5: pull the authoritative net from the shared billing engine. This
+    // is the ONLY number that includes hosted-guest charges + admin
+    // credits/refunds, so it reconciles exactly with what the admin bills.
+    // Best-effort: if it fails, the screen still shows the client-side meal
+    // subtotal rather than breaking (the per-day history is unaffected).
+    MyBilling? serverBilling;
+    if (_pricingEnabled) {
+      final mbRes = await _attendanceRepo.getMyBilling(
+        groupId: _groupId,
+        from: _from,
+        to: _to,
+      );
+      if (!mounted) return;
+      if (mbRes case Ok(:final value)) serverBilling = value;
+    }
+
     setState(() {
       _records = records;
       _meals = meals;
@@ -152,6 +172,7 @@ class _StudentBillingScreenState extends State<StudentBillingScreen> {
       _vacationUserIds = vacationIds;
       _rows = rows;
       _summary = summaries.isNotEmpty ? summaries.first : null;
+      _serverBilling = serverBilling;
       _loading = false;
     });
   }
@@ -394,9 +415,14 @@ class _StudentBillingScreenState extends State<StudentBillingScreen> {
 
   Widget _summarySection(bool isDark) {
     final s = _summary;
+    final sb = _serverBilling;
     final present = s?.present ?? 0;
-    final bill = s?.totalBill ?? 0;
-    final avg = present > 0 ? (bill / present).round() : 0;
+    // Authoritative net (meal + guest + adjustments) when available; the
+    // client meal subtotal is the graceful fallback. Avg-per-meal always uses
+    // meal charges (guests/adjustments aren't per own-meal).
+    final bill = sb?.netBill ?? s?.totalBill ?? 0;
+    final mealCharges = sb?.mealCharges ?? s?.totalBill ?? 0;
+    final avg = present > 0 ? (mealCharges / present).round() : 0;
     String mostConsumed = '-';
     if (s != null && s.consumedByMeal.isNotEmpty) {
       mostConsumed = s.consumedByMeal.entries
@@ -501,7 +527,10 @@ class _StudentBillingScreenState extends State<StudentBillingScreen> {
               style: AppTypography.labelMedium
                   .copyWith(color: Colors.white.withValues(alpha: 0.85))),
           const SizedBox(height: 4),
-          Text(_pricingEnabled ? _cur(_summary?.totalBill ?? 0) : 'No charges',
+          Text(
+              _pricingEnabled
+                  ? _cur(_serverBilling?.netBill ?? _summary?.totalBill ?? 0)
+                  : 'No charges',
               style: AppTypography.headlineSmall.copyWith(
                   color: Colors.white, fontWeight: FontWeight.w800)),
           const SizedBox(height: 10),
@@ -706,6 +735,8 @@ class _StudentBillingScreenState extends State<StudentBillingScreen> {
   Widget _financialBreakdown(bool isDark) {
     final totals = _mealWiseTotals;
     final grand = totals.values.fold<int>(0, (a, b) => a + b);
+    final sb = _serverBilling;
+    final net = sb?.netBill ?? grand;
     final entries = totals.entries.toList()
       ..sort((a, b) => b.value.compareTo(a.value));
     return Container(
@@ -742,15 +773,28 @@ class _StudentBillingScreenState extends State<StudentBillingScreen> {
                   ],
                 ),
               ),
+          // Issue 5: guest + adjustment components so the student's total
+          // reconciles exactly with what the admin bills. Shown only when set.
+          if (sb != null && sb.guestAmount != 0)
+            _breakdownRow('Hosted guests (${sb.guestCount})',
+                _cur(sb.guestAmount), AppColors.secondary),
+          if (sb != null && sb.adjustmentsTotal != 0)
+            _breakdownRow(
+              sb.adjustmentsTotal > 0
+                  ? 'Adjustments (charges)'
+                  : 'Adjustments (credits / refunds)',
+              '${sb.adjustmentsTotal > 0 ? '+' : '−'}${_cur(sb.adjustmentsTotal.abs())}',
+              sb.adjustmentsTotal > 0 ? AppColors.warning : AppColors.present,
+            ),
           const Divider(height: 22),
           Row(
             children: [
               Expanded(
-                child: Text('Grand Total',
+                child: Text(net != grand ? 'Net Total' : 'Grand Total',
                     style: AppTypography.labelLarge
                         .copyWith(fontWeight: FontWeight.w800)),
               ),
-              Text(_cur(grand),
+              Text(_cur(net),
                   style: AppTypography.titleMedium.copyWith(
                       fontWeight: FontWeight.w800, color: AppColors.primary)),
             ],
@@ -824,6 +868,18 @@ class _StudentBillingScreenState extends State<StudentBillingScreen> {
   // ── Helpers ────────────────────────────────────────────────────────────────
 
   String _cur(int v) => '₹$v';
+
+  Widget _breakdownRow(String label, String value, Color color) => Padding(
+        padding: const EdgeInsets.symmetric(vertical: 5),
+        child: Row(
+          children: [
+            Expanded(child: Text(label, style: AppTypography.bodySmall)),
+            Text(value,
+                style: AppTypography.bodySmall
+                    .copyWith(fontWeight: FontWeight.w700, color: color)),
+          ],
+        ),
+      );
 
   String _cap(String s) =>
       s.isEmpty ? s : s[0].toUpperCase() + s.substring(1);
