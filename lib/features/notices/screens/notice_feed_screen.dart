@@ -8,6 +8,11 @@ import 'package:smart_meal_management/data/repositories/notice_repository.dart';
 import 'package:smart_meal_management/data/repositories/notification_repository.dart';
 import 'package:smart_meal_management/data/services/realtime_service.dart';
 import 'package:smart_meal_management/data/services/response_cache_service.dart';
+import 'package:smart_meal_management/features/admin/attendance/screens/admin_attendance_screen.dart';
+import 'package:smart_meal_management/features/admin/attendance/screens/correction_requests_screen.dart';
+import 'package:smart_meal_management/features/admin/attendance/screens/vacation_requests_screen.dart';
+import 'package:smart_meal_management/features/student/attendance/screens/my_corrections_screen.dart';
+import 'package:smart_meal_management/features/student/settings/screens/student_vacation_request_screen.dart';
 import 'package:smart_meal_management/features/notices/screens/notice_composer_screen.dart';
 import 'package:smart_meal_management/shared/models/notice_model.dart';
 import 'package:smart_meal_management/shared/models/notification_diagnostics_model.dart';
@@ -106,6 +111,8 @@ class _NoticeFeedScreenState extends State<NoticeFeedScreen> {
   }
 
   Future<void> _openNotice(NoticeModel n) async {
+    // Mark read first (idempotent) so the badge clears whether we deep-link or
+    // just show the text — "mark as read after opening" (command_3).
     if (!n.isRead) {
       await _repo.markRead(n.id);
       if (mounted) {
@@ -116,11 +123,112 @@ class _NoticeFeedScreenState extends State<NoticeFeedScreen> {
       }
     }
     if (!mounted) return;
+
+    // Notification Center deep-link: an actionable notice opens the related
+    // workflow directly instead of a text sheet. The backend audience-scopes
+    // each link (admins get review queues; members get their own screens), so
+    // whoever holds the notice is always routed to the right place.
+    final workflow = _workflowFor(n.linkType);
+    if (workflow != null) {
+      await Navigator.of(context).push(MaterialPageRoute(builder: (_) => workflow));
+      if (mounted) await _load(); // a decision may have changed the queue
+      return;
+    }
+
     showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (_) => _NoticeDetailSheet(notice: n, isAdmin: widget.isAdmin),
+    );
+  }
+
+  /// Maps a notice [linkType] to the screen it should open. Admin request
+  /// queues and member decision screens are both covered; null = plain notice.
+  Widget? _workflowFor(String? linkType) {
+    switch (linkType) {
+      case 'vacationRequests': // admin: pending vacation approvals
+        return const VacationRequestsScreen();
+      case 'correctionRequests': // admin: pending correction approvals
+        return const CorrectionRequestsScreen();
+      case 'guestRequests': // admin: hosted-guest review lives on attendance
+        return const AdminAttendanceScreen();
+      case 'myVacations': // member: their vacation requests + decision
+        return const StudentVacationRequestScreen();
+      case 'myCorrections': // member: their correction requests + decision
+        return const MyCorrectionsScreen();
+      default:
+        return null;
+    }
+  }
+
+  /// Swipe-only mark-read (no navigation). A decision notice never disappears —
+  /// swiping just clears its unread dot.
+  Future<void> _markReadOnly(NoticeModel n) async {
+    if (n.isRead) return;
+    await _repo.markRead(n.id);
+    if (!mounted) return;
+    setState(() {
+      final i = _notices.indexWhere((x) => x.id == n.id);
+      if (i != -1) _notices[i] = _notices[i].copyWith(isRead: true);
+    });
+  }
+
+  /// Recency bucket for category grouping (Today / Yesterday / This week / …).
+  String _bucketOf(DateTime t) {
+    final now = DateTime.now();
+    final d = DateTime(now.year, now.month, now.day)
+        .difference(DateTime(t.year, t.month, t.day))
+        .inDays;
+    if (d <= 0) return 'Today';
+    if (d == 1) return 'Yesterday';
+    if (d < 7) return 'This week';
+    return 'Earlier';
+  }
+
+  /// Premium grouped inbox: notices bucketed by recency with day headers, each
+  /// unread card swipe-to-mark-read. Notices arrive pinned-desc / newest-first.
+  Widget _buildFeed() {
+    final items = <(String?, NoticeModel?)>[];
+    String? last;
+    for (final n in _notices) {
+      final b = _bucketOf(n.publishedAt);
+      if (b != last) {
+        items.add((b, null));
+        last = b;
+      }
+      items.add((null, n));
+    }
+    return ListView.builder(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 96),
+      itemCount: items.length,
+      itemBuilder: (ctx, i) {
+        final (header, notice) = items[i];
+        if (header != null) return _DayHeader(label: header);
+        final n = notice!;
+        final card = Padding(
+          padding: const EdgeInsets.only(bottom: 10),
+          child: _NoticeCard(
+            notice: n,
+            isAdmin: widget.isAdmin,
+            onTap: () => _openNotice(n),
+            onDelete: () => _delete(n),
+          ),
+        );
+        if (n.isRead) return card;
+        // Swipe left to mark read without opening (confirmDismiss returns false
+        // so the row snaps back, now read, instead of being removed).
+        return Dismissible(
+          key: ValueKey('sw_${n.id}'),
+          direction: DismissDirection.endToStart,
+          background: const _SwipeMarkReadBackground(),
+          confirmDismiss: (_) async {
+            await _markReadOnly(n);
+            return false;
+          },
+          child: card,
+        );
+      },
     );
   }
 
@@ -227,17 +335,7 @@ class _NoticeFeedScreenState extends State<NoticeFeedScreen> {
                 ? _ErrorState(message: _error!, onRetry: _load)
                 : _notices.isEmpty
                     ? _EmptyState(unavailable: _unavailable)
-                    : ListView.separated(
-                        padding: const EdgeInsets.fromLTRB(16, 16, 16, 96),
-                        itemCount: _notices.length,
-                        separatorBuilder: (_, _) => const SizedBox(height: 10),
-                        itemBuilder: (ctx, i) => _NoticeCard(
-                          notice: _notices[i],
-                          isAdmin: widget.isAdmin,
-                          onTap: () => _openNotice(_notices[i]),
-                          onDelete: () => _delete(_notices[i]),
-                        ),
-                      ),
+                    : _buildFeed(),
       ),
     );
   }
@@ -266,6 +364,64 @@ String _relativeTime(DateTime t) {
   if (d.inHours < 24) return '${d.inHours}h ago';
   if (d.inDays < 7) return '${d.inDays}d ago';
   return '${t.day}/${t.month}/${t.year}';
+}
+
+/// Admin review queues say "Review"; member decision screens say "View".
+bool _isReviewLink(String linkType) =>
+    linkType == 'vacationRequests' ||
+    linkType == 'correctionRequests' ||
+    linkType == 'guestRequests';
+
+// ── Day section header (category grouping) ───────────────────────────────────
+
+class _DayHeader extends StatelessWidget {
+  const _DayHeader({required this.label});
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(2, 8, 0, 8),
+      child: Text(
+        label.toUpperCase(),
+        style: AppTypography.labelSmall.copyWith(
+          color: AppColors.textTertiary,
+          fontWeight: FontWeight.w800,
+          letterSpacing: 0.6,
+        ),
+      ),
+    );
+  }
+}
+
+// ── Swipe-to-mark-read background ────────────────────────────────────────────
+
+class _SwipeMarkReadBackground extends StatelessWidget {
+  const _SwipeMarkReadBackground();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      alignment: Alignment.centerRight,
+      padding: const EdgeInsets.only(right: 20),
+      decoration: BoxDecoration(
+        color: AppColors.present.withValues(alpha: 0.15),
+        borderRadius: BorderRadius.circular(14),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(Icons.done_all_rounded,
+              size: 18, color: AppColors.present),
+          const SizedBox(width: 6),
+          Text('Mark read',
+              style: AppTypography.labelMedium.copyWith(
+                  color: AppColors.present, fontWeight: FontWeight.w700)),
+        ],
+      ),
+    );
+  }
 }
 
 // ── Notice card ──────────────────────────────────────────────────────────────
@@ -360,6 +516,28 @@ class _NoticeCard extends StatelessWidget {
                 Text(_relativeTime(notice.publishedAt),
                     style: AppTypography.labelSmall
                         .copyWith(color: AppColors.textTertiary)),
+                if (notice.linkType != null) ...[
+                  const SizedBox(width: 10),
+                  Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: accent.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(_isReviewLink(notice.linkType!) ? 'Review' : 'View',
+                            style: AppTypography.labelSmall.copyWith(
+                                color: accent, fontWeight: FontWeight.w700)),
+                        const SizedBox(width: 2),
+                        Icon(Icons.arrow_forward_rounded,
+                            size: 12, color: accent),
+                      ],
+                    ),
+                  ),
+                ],
                 const Spacer(),
                 if (isAdmin) ...[
                   Text('${notice.readCount} read',

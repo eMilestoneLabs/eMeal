@@ -223,15 +223,18 @@ class _PreferenceGroupsScreenState extends State<PreferenceGroupsScreen> {
                       onRefresh: _load,
                       child: ListView.separated(
                         padding: const EdgeInsets.fromLTRB(16, 16, 16, 96),
-                        itemCount: _groups.length,
+                        itemCount: _groups.length + 1,
                         separatorBuilder: (_, _) => const SizedBox(height: 12),
-                        itemBuilder: (ctx, i) => _GroupCard(
-                          group: _groups[i],
-                          onAddOption: () => _addOption(_groups[i]),
-                          onRemoveOption: (o) =>
-                              _removeOption(_groups[i], o),
-                          onRemoveGroup: () => _removeGroup(_groups[i]),
-                        ),
+                        itemBuilder: (ctx, i) {
+                          if (i == 0) return const _HelpBanner();
+                          final g = _groups[i - 1];
+                          return _GroupCard(
+                            group: g,
+                            onAddOption: () => _addOption(g),
+                            onRemoveOption: (o) => _removeOption(g, o),
+                            onRemoveGroup: () => _removeGroup(g),
+                          );
+                        },
                       ),
                     ),
     );
@@ -256,37 +259,55 @@ class _GroupCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    const accent = AppColors.primary;
+    // Count caption independent of required-ness — the Required/Optional pill
+    // carries that status separately, so no wording is duplicated.
+    final countCaption = (group.isSingle || group.maxSelect <= 1)
+        ? 'Choose 1'
+        : (group.minSelect == group.maxSelect
+            ? 'Choose ${group.minSelect}'
+            : 'Choose ${group.minSelect}–${group.maxSelect}');
     return Container(
-      padding: const EdgeInsets.all(14),
+      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: isDark ? AppColors.surfaceDark : AppColors.surface,
-        borderRadius: BorderRadius.circular(14),
+        borderRadius: BorderRadius.circular(18),
         border: Border.all(
           color: isDark
               ? AppColors.borderDark.withValues(alpha: 0.5)
               : AppColors.border,
         ),
+        boxShadow: isDark
+            ? null
+            : [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.04),
+                  blurRadius: 10,
+                  offset: const Offset(0, 3),
+                ),
+              ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
+              Container(
+                width: 38,
+                height: 38,
+                decoration: BoxDecoration(
+                  color: accent.withValues(alpha: isDark ? 0.20 : 0.10),
+                  borderRadius: BorderRadius.circular(11),
+                ),
+                child: const Icon(Icons.tune_rounded, size: 19, color: accent),
+              ),
+              const SizedBox(width: 12),
               Expanded(
                 child: Text(group.label,
                     style: AppTypography.titleSmall
-                        .copyWith(fontWeight: FontWeight.w700)),
-              ),
-              Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                decoration: BoxDecoration(
-                  color: AppColors.primary.withValues(alpha: 0.10),
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: Text(group.ruleLabel,
-                    style: AppTypography.labelSmall
-                        .copyWith(color: AppColors.primary)),
+                        .copyWith(fontWeight: FontWeight.w800),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis),
               ),
               PopupMenuButton<String>(
                 icon: const Icon(Icons.more_vert_rounded, size: 18),
@@ -298,48 +319,153 @@ class _GroupCard extends StatelessWidget {
               ),
             ],
           ),
-          if (group.vegOnly || group.quantityEnabled)
-            Padding(
-              padding: const EdgeInsets.only(top: 2, bottom: 4),
-              child: Text(
-                [
-                  if (group.vegOnly) 'Veg-only',
-                  if (group.quantityEnabled) 'Quantities enabled',
-                ].join(' · '),
-                style: AppTypography.labelSmall
-                    .copyWith(color: AppColors.textTertiary),
+          const SizedBox(height: 10),
+          // Selection rule + required/optional + flags — clear, first-time-friendly.
+          Wrap(
+            spacing: 6,
+            runSpacing: 6,
+            children: [
+              _metaPill(countCaption, accent, Icons.checklist_rounded, isDark),
+              _metaPill(
+                group.required ? 'Required' : 'Optional',
+                group.required ? AppColors.present : AppColors.textTertiary,
+                group.required
+                    ? Icons.priority_high_rounded
+                    : Icons.remove_circle_outline_rounded,
+                isDark,
               ),
-            ),
-          const SizedBox(height: 8),
+              if (group.vegOnly)
+                _metaPill('Veg-only', AppColors.present, Icons.eco_rounded,
+                    isDark),
+              if (group.quantityEnabled)
+                _metaPill('Quantities', AppColors.info, Icons.numbers_rounded,
+                    isDark),
+            ],
+          ),
+          const SizedBox(height: 14),
+          Divider(
+              height: 1,
+              color: (isDark ? AppColors.borderDark : AppColors.border)
+                  .withValues(alpha: 0.5)),
+          const SizedBox(height: 14),
           Wrap(
             spacing: 8,
             runSpacing: 8,
             children: [
-              for (final o in group.options)
-                InputChip(
-                  label: Text(
-                    o.priceDelta > 0
-                        ? '${o.displayLabel} +₹${(o.priceDelta / 100).toStringAsFixed(o.priceDelta % 100 == 0 ? 0 : 2)}'
-                        : o.displayLabel,
-                    style: AppTypography.labelSmall,
-                  ),
-                  avatar: o.isVeg
-                      ? null
-                      : const Icon(Icons.circle,
-                          size: 9, color: AppColors.error),
-                  onDeleted: () => onRemoveOption(o),
-                ),
-              ActionChip(
-                avatar: const Icon(Icons.add_rounded,
-                    size: 16, color: AppColors.primary),
-                label: Text('Option',
-                    style: AppTypography.labelSmall
-                        .copyWith(color: AppColors.primary)),
-                onPressed: onAddOption,
-              ),
+              for (final o in group.options) _optionChip(o, isDark),
+              _addOptionChip(),
             ],
           ),
         ],
+      ),
+    );
+  }
+
+  /// Small rounded status/flag pill used in the group header.
+  Widget _metaPill(String label, Color color, IconData icon, bool isDark) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: isDark ? 0.20 : 0.10),
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 13, color: color),
+          const SizedBox(width: 4),
+          Text(label,
+              style: AppTypography.labelSmall
+                  .copyWith(color: color, fontWeight: FontWeight.w700)),
+        ],
+      ),
+    );
+  }
+
+  /// High-contrast option chip: veg/non-veg dot + label + optional +₹ pill +
+  /// remove affordance. Readable in both themes (fixes the washed-out chips).
+  Widget _optionChip(PreferenceOptionModel o, bool isDark) {
+    final hasPrice = o.priceDelta > 0;
+    final priceStr =
+        '+₹${(o.priceDelta / 100).toStringAsFixed(o.priceDelta % 100 == 0 ? 0 : 2)}';
+    return Container(
+      padding: const EdgeInsets.only(left: 10, right: 4, top: 4, bottom: 4),
+      decoration: BoxDecoration(
+        color: isDark ? AppColors.backgroundDark : AppColors.background,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+            color: isDark ? AppColors.borderDark : AppColors.border),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 8,
+            height: 8,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: o.isVeg ? AppColors.present : AppColors.error,
+            ),
+          ),
+          const SizedBox(width: 6),
+          Text(o.displayLabel,
+              style: AppTypography.labelMedium.copyWith(
+                fontWeight: FontWeight.w600,
+                color:
+                    isDark ? AppColors.textPrimaryDark : AppColors.textPrimary,
+              )),
+          if (hasPrice) ...[
+            const SizedBox(width: 6),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+              decoration: BoxDecoration(
+                color: AppColors.primary.withValues(alpha: isDark ? 0.22 : 0.12),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Text(priceStr,
+                  style: AppTypography.labelSmall.copyWith(
+                      color: AppColors.primary, fontWeight: FontWeight.w700)),
+            ),
+          ],
+          InkWell(
+            onTap: () => onRemoveOption(o),
+            borderRadius: BorderRadius.circular(20),
+            child: const Padding(
+              padding: EdgeInsets.all(4),
+              child: Icon(Icons.close_rounded,
+                  size: 15, color: AppColors.textTertiary),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Outlined "+ Option" CTA — clearly distinct from the value chips.
+  Widget _addOptionChip() {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onAddOption,
+        borderRadius: BorderRadius.circular(12),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+                color: AppColors.primary.withValues(alpha: 0.5), width: 1.2),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.add_rounded, size: 16, color: AppColors.primary),
+              const SizedBox(width: 4),
+              Text('Option',
+                  style: AppTypography.labelMedium.copyWith(
+                      color: AppColors.primary, fontWeight: FontWeight.w700)),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -466,8 +592,14 @@ class _GroupEditorSheetState extends State<_GroupEditorSheet> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text('New preference group', style: AppTypography.titleMedium),
-              const SizedBox(height: 12),
+              const _SheetHeader(
+                icon: Icons.tune_rounded,
+                title: 'New preference group',
+                subtitle:
+                    'A group is one choice members make when marking Present — '
+                    'e.g. "Staple" with Ruti / Rice. Add its options below and '
+                    'pick how many they may choose.',
+              ),
               TextField(
                 controller: _label,
                 maxLength: 60,
@@ -632,8 +764,13 @@ class _OptionEditorSheetState extends State<_OptionEditorSheet> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('New option', style: AppTypography.titleMedium),
-            const SizedBox(height: 12),
+            const _SheetHeader(
+              icon: Icons.add_circle_outline_rounded,
+              title: 'New option',
+              subtitle:
+                  'One choice inside this group. Add an optional extra price (₹) — '
+                  'members see it while choosing.',
+            ),
             TextField(
               controller: _label,
               maxLength: 60,
@@ -719,6 +856,100 @@ class _OptionEditorSheetState extends State<_OptionEditorSheet> {
     _price.dispose();
     _emoji.dispose();
     super.dispose();
+  }
+}
+
+// ── Premium sheet header (shared by group + option editors) ──────────────────
+
+class _SheetHeader extends StatelessWidget {
+  const _SheetHeader({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+  });
+
+  final IconData icon;
+  final String title;
+  final String subtitle;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Center(
+          child: Container(
+            width: 40,
+            height: 4,
+            margin: const EdgeInsets.only(bottom: 16),
+            decoration: BoxDecoration(
+              color: AppColors.textTertiary.withValues(alpha: 0.4),
+              borderRadius: BorderRadius.circular(2),
+            ),
+          ),
+        ),
+        Row(
+          children: [
+            Container(
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(
+                color: AppColors.primary.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Icon(icon, color: AppColors.primary, size: 20),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(title,
+                  style: AppTypography.titleMedium
+                      .copyWith(fontWeight: FontWeight.w800)),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        Text(subtitle,
+            style: AppTypography.bodySmall
+                .copyWith(color: AppColors.textSecondary, height: 1.4)),
+        const SizedBox(height: 16),
+      ],
+    );
+  }
+}
+
+// ── First-timer explainer banner ─────────────────────────────────────────────
+
+class _HelpBanner extends StatelessWidget {
+  const _HelpBanner();
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: AppColors.primary.withValues(alpha: isDark ? 0.14 : 0.07),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: AppColors.primary.withValues(alpha: 0.25)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Icon(Icons.lightbulb_outline_rounded,
+              size: 18, color: AppColors.primary),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              'Each group is one choice members make when marking Present. '
+              'A meal can have several — e.g. Staple (Choose 1) + Non-Veg (Optional).',
+              style: AppTypography.bodySmall
+                  .copyWith(color: AppColors.textSecondary, height: 1.4),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }
 

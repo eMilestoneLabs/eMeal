@@ -1,6 +1,5 @@
 import 'package:flutter/foundation.dart';
 import 'package:smart_meal_management/data/repositories/attendance_repository.dart';
-import 'package:smart_meal_management/data/repositories/group_repository.dart';
 import 'package:smart_meal_management/shared/models/attendance_model.dart';
 import 'package:smart_meal_management/shared/models/result.dart';
 import 'package:smart_meal_management/data/services/response_cache_service.dart';
@@ -10,12 +9,10 @@ import 'package:smart_meal_management/data/services/response_cache_service.dart'
 /// Loads group attendance for a selected date, supports status filtering,
 /// and date navigation.
 class AdminAttendanceProvider extends ChangeNotifier {
-  AdminAttendanceProvider({AttendanceRepository? repo, GroupRepository? groupRepo})
-      : _repo = repo ?? AttendanceRepository(),
-        _groupRepo = groupRepo ?? GroupRepository();
+  AdminAttendanceProvider({AttendanceRepository? repo})
+      : _repo = repo ?? AttendanceRepository();
 
   final AttendanceRepository _repo;
-  final GroupRepository _groupRepo;
 
   // ── State ──────────────────────────────────────────────────────────────────
 
@@ -27,6 +24,10 @@ class AdminAttendanceProvider extends ChangeNotifier {
   // Issue 4: members on vacation, tracked separately from present/absent/pending.
   Set<String> _vacationUserIds = {};
   int _vacationCount = 0;
+  // Synthetic onVacation rows (userName snapshot) so the "Vacation" filter can
+  // LIST members, not just count them. Never mixed into _records, so present/
+  // absent/pending counts stay correct.
+  List<AttendanceModel> _vacationRecords = [];
 
   // ── Getters ────────────────────────────────────────────────────────────────
 
@@ -36,6 +37,11 @@ class AdminAttendanceProvider extends ChangeNotifier {
   AttendanceStatus? get filterStatus => _filterStatus;
 
   List<AttendanceModel> get filteredRecords {
+    // The "Vacation" filter lists members on approved vacation for the selected
+    // date. They have NO attendance rows (vacation is a separate state, never a
+    // per-day onVacation record), so surface the server-computed vacation list
+    // here — otherwise the filter would show empty despite Vacation = N.
+    if (_filterStatus == AttendanceStatus.onVacation) return _vacationRecords;
     if (_filterStatus == null) return _records;
     return _records.where((r) => r.status == _filterStatus).toList();
   }
@@ -71,12 +77,15 @@ class AdminAttendanceProvider extends ChangeNotifier {
     _error = null;
     notifyListeners();
 
-    // Issue 4: fetch members IN PARALLEL with attendance instead of after it, so
-    // the spinner waits for one round-trip, not two. The vacation count (derived
-    // from members) lands a moment later and updates in place.
-    final membersFuture = _groupRepo.getGroupMembers(
-      organizationId: organizationId,
+    // Fetch the date-scoped vacation set IN PARALLEL with attendance so the
+    // spinner waits for one round-trip, not two. The "Vacation = N" count lands
+    // a moment later and updates in place. It reflects members on APPROVED
+    // vacation covering the SELECTED DATE (server-computed, slot-aware) — the
+    // global isVacationMode flag was date-agnostic and stayed 0 for future or
+    // past-dated approvals.
+    final vacationFuture = _repo.getGroupVacationMembers(
       groupId: groupId,
+      date: _selectedDate,
     );
 
     final result = await _repo.getGroupAttendance(
@@ -99,14 +108,27 @@ class AdminAttendanceProvider extends ChangeNotifier {
     _isLoading = false;
     notifyListeners();
 
-    // Issue 4: surface a separate "Vacation = X" count. Members on vacation are
-    // tracked apart from present/absent/pending (they are not absentees).
-    final membersResult = await membersFuture;
-    if (membersResult case Ok(:final value)) {
-      final onVacation =
-          value.data.where((u) => u.isVacationMode).map((u) => u.id).toSet();
-      _vacationUserIds = onVacation;
-      _vacationCount = onVacation.length;
+    // Surface a separate "Vacation = X" count. Members on vacation are tracked
+    // apart from present/absent/pending (they are not absentees). On failure the
+    // count is left untouched rather than reset, so a transient error can't blank
+    // a previously-correct number.
+    final vacationResult = await vacationFuture;
+    if (vacationResult case Ok(:final value)) {
+      _vacationUserIds = value.map((m) => m.id).toSet();
+      _vacationCount = value.length;
+      // Build synthetic rows so the "Vacation" filter lists these members.
+      _vacationRecords = value
+          .map((m) => AttendanceModel(
+                id: 'vac_${m.id}',
+                mealId: '',
+                userId: m.id,
+                groupId: groupId,
+                organizationId: organizationId,
+                status: AttendanceStatus.onVacation,
+                date: _selectedDate,
+                userName: m.name,
+              ))
+          .toList();
       notifyListeners();
     }
   }

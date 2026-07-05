@@ -266,7 +266,9 @@ class _StudentVacationRequestScreenState
     );
   }
 
-  /// FR-VACX-003: "Whole day" + one chip per group meal slot.
+  /// FR-VACX-003: "Whole day" + one chip per group meal slot. Premium card +
+  /// high-contrast selectable chips (command_3): the old default ChoiceChips
+  /// were near-invisible in both light and dark mode.
   Widget _slotPicker(
     String title,
     String hint,
@@ -274,36 +276,112 @@ class _StudentVacationRequestScreenState
     ValueChanged<String?> onChanged,
     bool isDark,
   ) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(title,
-            style:
-                AppTypography.labelMedium.copyWith(fontWeight: FontWeight.w700)),
-        const SizedBox(height: 2),
-        Text(hint,
-            style: AppTypography.labelSmall
-                .copyWith(color: AppColors.textSecondary)),
-        const SizedBox(height: 8),
-        Wrap(
-          spacing: 8,
-          runSpacing: 8,
-          children: [
-            ChoiceChip(
-              label: const Text('Whole day'),
-              selected: selected == null,
-              onSelected: (_) => onChanged(null),
-            ),
-            ..._slotMeals.map(
-              (m) => ChoiceChip(
-                label: Text(m.name),
-                selected: selected == m.slotKey,
-                onSelected: (_) => onChanged(m.slotKey),
-              ),
-            ),
-          ],
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: isDark ? AppColors.surfaceDark : AppColors.surface,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: (isDark ? AppColors.borderDark : AppColors.border)
+              .withValues(alpha: 0.6),
         ),
-      ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(title,
+              style: AppTypography.labelMedium
+                  .copyWith(fontWeight: FontWeight.w800)),
+          const SizedBox(height: 3),
+          Text(hint,
+              style: AppTypography.labelSmall
+                  .copyWith(color: AppColors.textSecondary)),
+          const SizedBox(height: 12),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              _slotChip(
+                label: 'Whole day',
+                selected: selected == null,
+                onTap: () => onChanged(null),
+                isDark: isDark,
+              ),
+              ..._slotMeals.map(
+                (m) => _slotChip(
+                  label: m.name,
+                  selected: selected == m.slotKey,
+                  onTap: () => onChanged(m.slotKey),
+                  isDark: isDark,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// High-contrast Material-3 selectable chip. Selected = filled vacation
+  /// accent + white label + check; unselected = surface + visible border +
+  /// primary-text label. Readable in BOTH themes (fixes the reported bug).
+  Widget _slotChip({
+    required String label,
+    required bool selected,
+    required VoidCallback onTap,
+    required bool isDark,
+  }) {
+    const accent = AppColors.vacation;
+    final unselectedBg =
+        (isDark ? AppColors.backgroundDark : AppColors.background);
+    final unselectedFg =
+        isDark ? AppColors.textPrimaryDark : AppColors.textPrimary;
+    final unselectedBorder =
+        (isDark ? AppColors.borderDark : AppColors.border);
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(12),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 160),
+          curve: Curves.easeOut,
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+          decoration: BoxDecoration(
+            color: selected ? accent : unselectedBg,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: selected ? accent : unselectedBorder,
+              width: selected ? 1.5 : 1.2,
+            ),
+            boxShadow: selected
+                ? [
+                    BoxShadow(
+                      color: accent.withValues(alpha: 0.30),
+                      blurRadius: 10,
+                      offset: const Offset(0, 3),
+                    ),
+                  ]
+                : null,
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (selected) ...[
+                const Icon(Icons.check_rounded, size: 16, color: Colors.white),
+                const SizedBox(width: 6),
+              ],
+              Text(
+                label,
+                style: AppTypography.labelMedium.copyWith(
+                  color: selected ? Colors.white : unselectedFg,
+                  fontWeight: selected ? FontWeight.w700 : FontWeight.w600,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 

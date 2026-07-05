@@ -27,6 +27,12 @@ class AttendanceFilterBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final unselectedBg = isDark ? AppColors.surfaceDark : AppColors.surfaceVariant;
+    final unselectedBorder =
+        (isDark ? AppColors.borderDark : AppColors.border).withValues(alpha: 0.5);
+    final unselectedText =
+        isDark ? AppColors.textSecondaryDark : AppColors.textSecondary;
     return SizedBox(
       height: 40,
       child: ListView.separated(
@@ -40,24 +46,22 @@ class AttendanceFilterBar extends StatelessWidget {
           return GestureDetector(
             onTap: () => onSelected(status),
             child: AnimatedContainer(
-              duration: const Duration(milliseconds: 150),
+              duration: const Duration(milliseconds: 160),
+              curve: Curves.easeOut,
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
               decoration: BoxDecoration(
-                color: isSelected
-                    ? color.withValues(alpha: 0.15)
-                    : AppColors.surfaceVariant,
+                color: isSelected ? color.withValues(alpha: 0.15) : unselectedBg,
                 borderRadius: BorderRadius.circular(20),
                 border: Border.all(
-                  color: isSelected ? color : Colors.transparent,
+                  color: isSelected ? color : unselectedBorder,
                   width: 1.5,
                 ),
               ),
               child: Text(
                 label,
                 style: AppTypography.labelMedium.copyWith(
-                  color: isSelected ? color : AppColors.textSecondary,
-                  fontWeight:
-                      isSelected ? FontWeight.w600 : FontWeight.normal,
+                  color: isSelected ? color : unselectedText,
+                  fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
                 ),
               ),
             ),

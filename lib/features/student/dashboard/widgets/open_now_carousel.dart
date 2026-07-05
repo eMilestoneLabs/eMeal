@@ -173,9 +173,12 @@ class _OpenNowCarouselState extends State<OpenNowCarousel> {
                   );
                 },
               ),
+              // Arrows sit flush INSIDE the card column (was -4, which let them
+              // overhang the 20px margin and made the carousel read as wider
+              // than the hero card above). Now nothing bleeds past the column.
               if (showArrows && _page > 0)
                 Positioned(
-                  left: -4,
+                  left: 0,
                   child: _Arrow(
                     icon: Icons.chevron_left_rounded,
                     onTap: () => _go(-1),
@@ -183,7 +186,7 @@ class _OpenNowCarouselState extends State<OpenNowCarousel> {
                 ),
               if (showArrows && _page < meals.length - 1)
                 Positioned(
-                  right: -4,
+                  right: 0,
                   child: _Arrow(
                     icon: Icons.chevron_right_rounded,
                     onTap: () => _go(1),

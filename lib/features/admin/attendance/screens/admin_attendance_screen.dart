@@ -221,6 +221,58 @@ class _AdminAttendanceScreenState extends State<AdminAttendanceScreen> {
     super.dispose();
   }
 
+  /// command_3 (#4/#5): dedicated quick-action toolbar. Frequently-used actions
+  /// stay immediately accessible (Mark mine, Vacation Approval, Corrections,
+  /// Hosted Guests) rather than hidden in an overflow menu.
+  Widget _buildQuickActions(bool isDark) {
+    final guestsOn = _groups
+            .where((g) => g.id == _selectedGroupId)
+            .firstOrNull
+            ?.mealConfig
+            .guestsEnabled ??
+        false;
+    final actions = <Widget>[
+      _QuickActionPill(
+        icon: Icons.how_to_reg_rounded,
+        label: 'Mark mine',
+        color: AppColors.present,
+        onTap: _openMyAttendance,
+      ),
+      _QuickActionPill(
+        icon: Icons.beach_access_rounded,
+        label: 'Vacation approval',
+        color: AppColors.vacation,
+        onTap: () => Navigator.of(context).push(MaterialPageRoute(
+            builder: (_) => const VacationRequestsScreen())),
+      ),
+      _QuickActionPill(
+        icon: Icons.rule_rounded,
+        label: 'Corrections',
+        color: AppColors.info,
+        onTap: () => Navigator.of(context).push(MaterialPageRoute(
+            builder: (_) => const CorrectionRequestsScreen())),
+      ),
+      if (guestsOn)
+        _QuickActionPill(
+          icon: Icons.group_add_rounded,
+          label: 'Hosted guests',
+          color: AppColors.warning,
+          onTap: _openGuests,
+        ),
+    ];
+    return SizedBox(
+      height: 40,
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        padding:
+            const EdgeInsets.symmetric(horizontal: AppConstants.pagePaddingH),
+        itemCount: actions.length,
+        separatorBuilder: (_, _) => const SizedBox(width: 8),
+        itemBuilder: (_, i) => actions[i],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
@@ -234,76 +286,14 @@ class _AdminAttendanceScreenState extends State<AdminAttendanceScreen> {
         title: Text('Attendance', style: AppTypography.titleLarge),
         backgroundColor: isDark ? AppColors.surfaceDark : AppColors.surface,
         surfaceTintColor: Colors.transparent,
-        // #10b: the four action icons + full date used to crowd the title down
-        // to "Att…". Compact date + a single overflow menu frees the space so
-        // the title always fits — every action is still reachable.
+        // command_3 (#4): actions moved OUT of the overflow (⋮) into a dedicated
+        // quick-action toolbar in the body (see _buildQuickActions). The appbar
+        // keeps just the compact date so the title never truncates to "Att…".
         actions: [
           TextButton.icon(
             onPressed: _pickDate,
             icon: const Icon(Icons.calendar_today_rounded, size: 16),
             label: Text(dateStr, style: AppTypography.labelMedium),
-          ),
-          PopupMenuButton<String>(
-            tooltip: 'Review queues',
-            icon: const Icon(Icons.more_vert_rounded, size: 20),
-            onSelected: (v) {
-              switch (v) {
-                case 'vacation':
-                  Navigator.of(context).push(MaterialPageRoute(
-                      builder: (_) => const VacationRequestsScreen()));
-                case 'corrections':
-                  Navigator.of(context).push(MaterialPageRoute(
-                      builder: (_) => const CorrectionRequestsScreen()));
-                case 'guests':
-                  _openGuests();
-                case 'my-attendance':
-                  _openMyAttendance();
-              }
-            },
-            itemBuilder: (context) {
-              final guestsOn = _groups
-                      .where((g) => g.id == _selectedGroupId)
-                      .firstOrNull
-                      ?.mealConfig
-                      .guestsEnabled ??
-                  false;
-              return [
-                const PopupMenuItem(
-                  value: 'vacation',
-                  child: Row(children: [
-                    Icon(Icons.beach_access_rounded, size: 18),
-                    SizedBox(width: 12),
-                    Text('Vacation requests'),
-                  ]),
-                ),
-                const PopupMenuItem(
-                  value: 'corrections',
-                  child: Row(children: [
-                    Icon(Icons.rule_rounded, size: 18),
-                    SizedBox(width: 12),
-                    Text('Correction requests'),
-                  ]),
-                ),
-                if (guestsOn)
-                  const PopupMenuItem(
-                    value: 'guests',
-                    child: Row(children: [
-                      Icon(Icons.group_add_rounded, size: 18),
-                      SizedBox(width: 12),
-                      Text('Hosted guests'),
-                    ]),
-                  ),
-                if (_selectedGroupId != null)
-                  const PopupMenuItem(
-                    value: 'my-attendance',
-                    child: Row(children: [
-                      Icon(Icons.how_to_reg_rounded, size: 18),
-                      SizedBox(width: 12),
-                      Text('Mark my attendance'),
-                    ]),
-                  ),
-              ];
-            },
           ),
           const SizedBox(width: 4),
         ],
@@ -333,28 +323,39 @@ class _AdminAttendanceScreenState extends State<AdminAttendanceScreen> {
                     _StatBadge(
                         label: 'Present',
                         count: _provider.presentCount,
-                        color: AppColors.present),
-                    const SizedBox(width: 12),
+                        color: AppColors.present,
+                        icon: Icons.check_circle_rounded),
+                    const SizedBox(width: 10),
                     _StatBadge(
                         label: 'Absent',
                         count: _provider.absentCount,
-                        color: AppColors.absent),
-                    const SizedBox(width: 12),
+                        color: AppColors.absent,
+                        icon: Icons.cancel_rounded),
+                    const SizedBox(width: 10),
                     _StatBadge(
                         label: 'Pending',
                         count: _provider.pendingCount,
-                        color: AppColors.warning),
-                    const SizedBox(width: 12),
+                        color: AppColors.warning,
+                        icon: Icons.schedule_rounded),
+                    const SizedBox(width: 10),
                     // Issue 4: vacation members tracked separately — they are
                     // NOT counted as present / absent / pending.
                     _StatBadge(
                         label: 'Vacation',
                         count: _provider.vacationCount,
-                        color: AppColors.vacation),
+                        color: AppColors.vacation,
+                        icon: Icons.beach_access_rounded),
                   ],
                 ),
               ),
             ),
+
+          // ── Quick actions toolbar ───────────────────────────────────────────
+          // command_3 (#4/#5): frequently-used admin actions are surfaced here
+          // as a dedicated toolbar instead of being buried in the overflow (⋮)
+          // menu — including Vacation Approval as a first-class action.
+          if (_selectedGroupId != null) _buildQuickActions(isDark),
+
           const SizedBox(height: 8),
 
           // ── Filter bar ──────────────────────────────────────────────────────
@@ -370,7 +371,15 @@ class _AdminAttendanceScreenState extends State<AdminAttendanceScreen> {
             // Issue 4: while groups are still loading, show a loading state
             // instead of flashing "No groups found" before the group context
             // resolves. The empty state now only renders once loading is done.
-            child: _loadingGroups
+            // command_3: fade smoothly between loading / empty / filtered list.
+            child: AnimatedSwitcher(
+              duration: const Duration(milliseconds: 250),
+              child: KeyedSubtree(
+                key: ValueKey('att:$_loadingGroups:$_selectedGroupId:'
+                    '${_provider.isLoading}:${_provider.error != null}:'
+                    '${_provider.filterStatus}:'
+                    '${_provider.filteredRecords.length}'),
+                child: _loadingGroups
                 ? const AppLoadingIndicator()
                 : _selectedGroupId == null
                 ? const AppEmptyState(
@@ -408,8 +417,56 @@ class _AdminAttendanceScreenState extends State<AdminAttendanceScreen> {
                                   );
                                 },
                               ),
+              ),
+            ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+// ── Quick action pill ────────────────────────────────────────────────────────
+
+class _QuickActionPill extends StatelessWidget {
+  const _QuickActionPill({
+    required this.icon,
+    required this.label,
+    required this.color,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String label;
+  final Color color;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(20),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          decoration: BoxDecoration(
+            color: color.withValues(alpha: isDark ? 0.18 : 0.10),
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: color.withValues(alpha: 0.35)),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, size: 16, color: color),
+              const SizedBox(width: 6),
+              Text(label,
+                  style: AppTypography.labelMedium
+                      .copyWith(color: color, fontWeight: FontWeight.w700)),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -478,31 +535,53 @@ class _StatBadge extends StatelessWidget {
     required this.label,
     required this.count,
     required this.color,
+    required this.icon,
   });
 
   final String label;
   final int count;
   final Color color;
+  final IconData icon;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 200),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
       decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.1),
-        borderRadius: BorderRadius.circular(8),
+        color: color.withValues(alpha: isDark ? 0.16 : 0.10),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: color.withValues(alpha: 0.28)),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Text(
-            count.toString(),
-            style: AppTypography.numericSmall.copyWith(color: color),
+          Container(
+            width: 30,
+            height: 30,
+            decoration: BoxDecoration(
+              color: color.withValues(alpha: 0.18),
+              shape: BoxShape.circle,
+            ),
+            child: Icon(icon, size: 16, color: color),
           ),
-          const SizedBox(width: 4),
-          Text(
-            label,
-            style: AppTypography.labelSmall.copyWith(color: color),
+          const SizedBox(width: 8),
+          Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                count.toString(),
+                style: AppTypography.titleSmall
+                    .copyWith(color: color, fontWeight: FontWeight.w800, height: 1.0),
+              ),
+              Text(
+                label,
+                style: AppTypography.labelSmall
+                    .copyWith(color: color.withValues(alpha: 0.9)),
+              ),
+            ],
           ),
         ],
       ),
@@ -702,6 +781,14 @@ class _MyAttendanceSheetState extends State<_MyAttendanceSheet> {
       _savingStatus = status;
     });
     final now = DateTime.now();
+    // Use the meal's ORG business date, not the device date: the backend admin
+    // override rejects a date ahead of org-today as "future" (422). A wrong /
+    // ahead phone clock would otherwise block the admin from marking. Falls back
+    // to the device date when orgDate is absent (legacy payloads).
+    final orgDate = meal.orgDate;
+    final markDate = (orgDate != null && orgDate.length >= 10)
+        ? (DateTime.tryParse(orgDate) ?? DateTime(now.year, now.month, now.day))
+        : DateTime(now.year, now.month, now.day);
     final record = AttendanceModel(
       id: '',
       mealId: meal.id,
@@ -709,7 +796,7 @@ class _MyAttendanceSheetState extends State<_MyAttendanceSheet> {
       groupId: widget.groupId,
       organizationId: widget.organizationId,
       status: status,
-      date: DateTime(now.year, now.month, now.day),
+      date: markDate,
       preference: preference,
     );
     final res = await _attendanceRepo.adminOverride(record: record);

@@ -142,6 +142,33 @@ class AttendanceRepository implements IAttendanceRepository {
     };
   }
 
+  /// Members on APPROVED vacation covering [date] for [groupId] (day-level).
+  /// Powers the admin attendance dashboard "Vacation = N" summary AND the
+  /// "Vacation" filter list — the count/list reflect the SELECTED DATE
+  /// (server-computed, slot-aware) instead of a global per-user flag.
+  /// Returns (userId, name) pairs.
+  Future<Result<List<({String id, String name})>>> getGroupVacationMembers({
+    required String groupId,
+    required DateTime date,
+  }) async {
+    final result = await DioApiService.instance.get<Map<String, dynamic>>(
+      '/attendance/vacation-members',
+      queryParameters: {'groupId': groupId, 'date': _dateOnly(date)},
+    );
+    return switch (result) {
+      Err(:final failure) => Err(failure),
+      Ok(:final value) => Ok(
+          ((value['members'] as List?) ?? const <dynamic>[])
+              .whereType<Map<String, dynamic>>()
+              .map((m) => (
+                    id: (m['userId'] ?? '').toString(),
+                    name: (m['name'] ?? 'Member').toString(),
+                  ))
+              .toList(),
+        ),
+    };
+  }
+
   @override
   Future<Result<List<AttendanceModel>>> getGroupAttendance({
     required String groupId,

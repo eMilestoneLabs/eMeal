@@ -119,6 +119,27 @@ class _PreferenceGroupSelectorState extends State<PreferenceGroupSelector> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        // First-timer hint: a multi-preference meal asks for a choice in each
+        // group. Only shown when there is more than one group (single-group
+        // meals are self-explanatory).
+        if (visible.length > 1)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 10),
+            child: Row(
+              children: [
+                const Icon(Icons.restaurant_menu_rounded,
+                    size: 14, color: AppColors.textTertiary),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    'Pick an option for each part of the meal below.',
+                    style: AppTypography.bodySmall.copyWith(
+                        color: AppColors.textTertiary, fontSize: 11.5),
+                  ),
+                ),
+              ],
+            ),
+          ),
         for (final g in visible) ...[
           Padding(
             padding: const EdgeInsets.only(bottom: 6),
@@ -131,11 +152,7 @@ class _PreferenceGroupSelectorState extends State<PreferenceGroupSelector> {
                         .copyWith(fontWeight: FontWeight.w700),
                   ),
                 ),
-                Text(
-                  g.ruleLabel,
-                  style: AppTypography.bodySmall
-                      .copyWith(color: AppColors.textTertiary, fontSize: 11),
-                ),
+                _RulePill(group: g),
               ],
             ),
           ),
@@ -169,6 +186,46 @@ class _PreferenceGroupSelectorState extends State<PreferenceGroupSelector> {
             ),
           ),
       ],
+    );
+  }
+}
+
+/// Compact rule + required/optional badge shown next to each group name.
+/// Required groups (which gate marking Present) get an accent check pill;
+/// optional groups get a muted pill — clear status for first-time users.
+class _RulePill extends StatelessWidget {
+  const _RulePill({required this.group});
+
+  final PreferenceGroupModel group;
+
+  @override
+  Widget build(BuildContext context) {
+    final req = group.required;
+    final color = req ? AppColors.primary : AppColors.textTertiary;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.10),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: color.withValues(alpha: 0.30)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+              req
+                  ? Icons.check_circle_outline_rounded
+                  : Icons.tune_rounded,
+              size: 11,
+              color: color),
+          const SizedBox(width: 4),
+          Text(
+            req ? '${group.ruleLabel} · Required' : group.ruleLabel,
+            style: AppTypography.labelSmall.copyWith(
+                color: color, fontWeight: FontWeight.w700, fontSize: 10.5),
+          ),
+        ],
+      ),
     );
   }
 }

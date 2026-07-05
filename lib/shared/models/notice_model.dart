@@ -12,6 +12,8 @@ class NoticeModel {
     required this.title,
     required this.body,
     required this.priority,
+    this.linkType,
+    this.targetUserId,
     required this.pinned,
     required this.isActive,
     required this.isRead,
@@ -33,6 +35,16 @@ class NoticeModel {
 
   /// low | normal | high | urgent.
   final String priority;
+
+  /// Notification Center deep-link (command_3): when non-null, tapping this
+  /// notice opens the related approval workflow directly instead of a text
+  /// sheet. Known values: 'vacationRequests', 'correctionRequests'.
+  final String? linkType;
+
+  /// Notification Center (command_3): when set, this notice is a per-member
+  /// targeted decision (approval/rejection). The backend already scopes
+  /// visibility; kept here for cache round-trip fidelity.
+  final String? targetUserId;
   final bool pinned;
   final bool isActive;
 
@@ -62,6 +74,10 @@ class NoticeModel {
         title: (j['title'] ?? '').toString(),
         body: (j['body'] ?? '').toString(),
         priority: (j['priority'] ?? 'normal').toString(),
+        linkType: (j['linkType'] as String?)?.isEmpty == true
+            ? null
+            : j['linkType'] as String?,
+        targetUserId: j['targetUserId']?.toString(),
         pinned: j['pinned'] == true,
         isActive: j['isActive'] != false,
         isRead: j['isRead'] == true,
@@ -84,6 +100,8 @@ class NoticeModel {
         'title': title,
         'body': body,
         'priority': priority,
+        'linkType': linkType,
+        'targetUserId': targetUserId,
         'pinned': pinned,
         'isActive': isActive,
         'isRead': isRead,
@@ -102,6 +120,8 @@ class NoticeModel {
         title: title,
         body: body,
         priority: priority,
+        linkType: linkType,
+        targetUserId: targetUserId,
         pinned: pinned,
         isActive: isActive,
         isRead: isRead ?? this.isRead,

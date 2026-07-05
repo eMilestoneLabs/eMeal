@@ -28,6 +28,7 @@ class MemberAttendanceRow extends StatelessWidget {
     final name = displayMemberName(record.userName ?? memberName);
     final statusColor = _statusColor(record.status);
     final statusLabel = _statusLabel(record.status);
+    final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return Material(
       color: Colors.transparent,
@@ -37,15 +38,23 @@ class MemberAttendanceRow extends StatelessWidget {
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
           child: Row(
             children: [
-              // Avatar
-              CircleAvatar(
-                radius: 20,
-                backgroundColor: AppColors.primaryContainer,
-                child: Text(
-                  name.isNotEmpty ? name[0].toUpperCase() : '?',
-                  style: AppTypography.labelLarge.copyWith(
-                    color: AppColors.primary,
-                    fontWeight: FontWeight.w700,
+              // Avatar with a status-tinted ring for an at-a-glance scan.
+              Container(
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  border: Border.all(
+                      color: statusColor.withValues(alpha: 0.55), width: 2),
+                ),
+                padding: const EdgeInsets.all(2),
+                child: CircleAvatar(
+                  radius: 18,
+                  backgroundColor: AppColors.primaryContainer,
+                  child: Text(
+                    name.isNotEmpty ? name[0].toUpperCase() : '?',
+                    style: AppTypography.labelLarge.copyWith(
+                      color: AppColors.primary,
+                      fontWeight: FontWeight.w700,
+                    ),
                   ),
                 ),
               ),
@@ -58,7 +67,9 @@ class MemberAttendanceRow extends StatelessWidget {
                     Text(
                       name,
                       style: AppTypography.titleSmall.copyWith(
-                        color: AppColors.textPrimary,
+                        color: isDark
+                            ? AppColors.textPrimaryDark
+                            : AppColors.textPrimary,
                       ),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
@@ -67,7 +78,9 @@ class MemberAttendanceRow extends StatelessWidget {
                     Text(
                       record.mealName ?? record.mealId,
                       style: AppTypography.bodySmall.copyWith(
-                        color: AppColors.textSecondary,
+                        color: isDark
+                            ? AppColors.textSecondaryDark
+                            : AppColors.textSecondary,
                       ),
                     ),
                   ],
