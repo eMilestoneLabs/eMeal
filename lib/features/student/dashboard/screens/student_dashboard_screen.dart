@@ -331,6 +331,10 @@ class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
                         groupName: provider.groupName.isNotEmpty
                             ? provider.groupName
                             : null,
+                        // #2: the member's chosen per-group role (e.g. Member).
+                        roleLabel: provider.functionalRole.isNotEmpty
+                            ? provider.functionalRole
+                            : null,
                         streakDays: provider.streakDays,
                         isVacationMode: currentUser.isVacationMode,
                         attendanceRate:
@@ -424,7 +428,15 @@ class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
                     if (provider.mealsEnabled &&
                         provider.openNowMeals.isNotEmpty)
                       SliverToBoxAdapter(
-                        child: OpenNowCarousel(
+                        // #3: inset the carousel to the SAME horizontal margin as
+                        // the greeting card (space20) so the "Open Now" card edges
+                        // line up with the welcome card above instead of running
+                        // full-bleed. Padding is symmetric → responsive on any
+                        // width; the card fills the inset area.
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: AppConstants.space20),
+                          child: OpenNowCarousel(
                           meals: provider.openNowMeals,
                           pendingIndex: provider.firstPendingOpenIndex,
                           statusOf: (m) => provider.statusForMeal(m.id),
@@ -441,6 +453,7 @@ class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
                           // Issue 3: tap a carousel card to open meal details.
                           onTapMeal: (m) => _openMealDetail(
                               context, m, provider.statusForMeal(m.id)),
+                          ),
                         ),
                       ),
 

@@ -111,6 +111,7 @@ class GroupProvider extends ChangeNotifier {
     required String userId,
     required String joinCode,
     required String organizationId,
+    String? functionalRole,
   }) async {
     if (_isJoining) return false;
 
@@ -123,6 +124,8 @@ class GroupProvider extends ChangeNotifier {
       userId: userId,
       joinCode: joinCode.trim().toUpperCase(),
       organizationId: organizationId,
+      // #2: the member's chosen per-group display role (member-level only).
+      functionalRole: functionalRole,
     );
 
     bool success = false;

@@ -176,12 +176,18 @@ class GroupRepository implements IGroupRepository {
     required String organizationId,
     required String joinCode,
     required String userId,
+    String? functionalRole,
   }) async {
     // POST /groups/join — org scope derives from the JWT.
     // Blocked / already-member rules enforced server-side.
+    // #2: functionalRole is the member's chosen per-group display title
+    // (member-level only; validated + gated server-side). Omitted when null.
     final result = await DioApiService.instance.post<Map<String, dynamic>>(
       '/groups/join',
-      body: {'joinCode': joinCode},
+      body: {
+        'joinCode': joinCode,
+        if (functionalRole != null) 'functionalRole': functionalRole,
+      },
     );
     return switch (result) {
       Err(:final failure) => Err(failure),
@@ -227,9 +233,14 @@ class GroupRepository implements IGroupRepository {
   /// Member records nest the joined profile under `user`; fall back to a
   /// minimal model built from membership fields when it is absent.
   UserModel _memberToUser(Map<String, dynamic> m) {
+    // #2: the per-group display role lives on the OUTER membership record
+    // (m['functionalRole']), not the nested account profile. Carry it onto the
+    // UserModel WITHOUT touching [role] so admin gating (isAdmin) is unchanged.
+    final groupRole = UserRole.fromName(m['functionalRole'] as String?);
     final user = m['user'];
     if (user is Map<String, dynamic>) {
-      return UserModel.fromJson(user);
+      return UserModel.fromJson(user)
+          .copyWith(groupFunctionalRole: groupRole ?? UserModel.absent);
     }
     final status = m['status'];
     return UserModel(
@@ -239,6 +250,7 @@ class GroupRepository implements IGroupRepository {
       role: UserRole.student,
       organizationId: '',
       isActive: status != 'blocked' && status != 'removed',
+      groupFunctionalRole: groupRole,
     );
   }
 
@@ -263,10 +275,12 @@ class GroupRepository implements IGroupRepository {
     required String userId,
     required String joinCode,
     required String organizationId,
+    String? functionalRole,
   }) =>
       joinGroup(
         organizationId: organizationId,
         joinCode: joinCode,
         userId: userId,
+        functionalRole: functionalRole,
       );
 }

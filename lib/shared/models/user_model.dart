@@ -22,6 +22,7 @@ class UserModel extends Equatable {
     this.emailVerified = false,
     this.loginPreference = 'email',
     this.createdAt,
+    this.groupFunctionalRole,
   });
 
   final String id;
@@ -58,6 +59,13 @@ class UserModel extends Equatable {
   final String loginPreference;
 
   final DateTime? createdAt;
+
+  /// #2: the member's per-group DISPLAY role for the group currently in context
+  /// (from GroupMember.functionalRole). Display-only — never a permission grant.
+  /// Null for account-level user objects; set when a user is loaded as a group
+  /// member so the admin member list can show their chosen role. [role] (the
+  /// global account role) is left untouched so any isAdmin gating is unaffected.
+  final UserRole? groupFunctionalRole;
 
   /// Resolved group membership list.
   ///
@@ -98,6 +106,8 @@ class UserModel extends Equatable {
         loginPreference: j['loginPreference'] ?? 'email',
         createdAt:
             j['createdAt'] != null ? DateTime.parse(j['createdAt']) : null,
+        groupFunctionalRole:
+            UserRole.fromName(j['groupFunctionalRole'] as String?),
       );
 
   Map<String, dynamic> toJson() => {
@@ -119,6 +129,7 @@ class UserModel extends Equatable {
         'emailVerified': emailVerified,
         'loginPreference': loginPreference,
         'createdAt': createdAt?.toIso8601String(),
+        'groupFunctionalRole': groupFunctionalRole?.name,
       };
 
   // Sentinel used to distinguish "caller passed null intentionally" from
@@ -165,6 +176,8 @@ class UserModel extends Equatable {
     String? loginPreference,
     /// Pass [UserModel.absent] to explicitly clear this field to null.
     Object? createdAt = _absent,
+    /// Pass [UserModel.absent] to explicitly clear this field to null.
+    Object? groupFunctionalRole = _absent,
   }) =>
       UserModel(
         id: id,
@@ -191,6 +204,9 @@ class UserModel extends Equatable {
         createdAt: identical(createdAt, _absent)
             ? this.createdAt
             : createdAt as DateTime?,
+        groupFunctionalRole: identical(groupFunctionalRole, _absent)
+            ? this.groupFunctionalRole
+            : groupFunctionalRole as UserRole?,
       );
 
   /// Sentinel value to pass for nullable [copyWith] fields when you want to
@@ -215,5 +231,6 @@ class UserModel extends Equatable {
         remindersEnabled,
         emailVerified,
         loginPreference,
+        groupFunctionalRole,
       ];
 }

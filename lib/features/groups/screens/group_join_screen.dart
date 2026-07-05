@@ -7,6 +7,7 @@ import 'package:smart_meal_management/features/groups/screens/group_detail_scree
 import 'package:smart_meal_management/features/groups/widgets/group_join_card.dart';
 import 'package:smart_meal_management/features/groups/widgets/qr_scanner_view.dart';
 import 'package:smart_meal_management/shared/models/group_model.dart';
+import 'package:smart_meal_management/shared/enums/user_role.dart';
 import 'package:smart_meal_management/features/auth/providers/auth_provider.dart';
 
 /// Student group-join screen — 6-char code entry with success/error states.
@@ -28,6 +29,16 @@ class _GroupJoinScreenState extends State<GroupJoinScreen> {
   late final GroupProvider _provider;
   late final TextEditingController _codeCtrl;
   String? _successGroupId;
+
+  // #2: the member's chosen per-group display role. Member-level only — admin
+  // titles are never offered here (and the server rejects them). Default
+  // 'student'; the same value is used by the QR/deep-link auto-join path.
+  UserRole _selectedRole = UserRole.student;
+  static const List<UserRole> _memberRoleOptions = [
+    UserRole.student,
+    UserRole.member,
+    UserRole.guest,
+  ];
 
   @override
   void initState() {
@@ -64,6 +75,8 @@ class _GroupJoinScreenState extends State<GroupJoinScreen> {
       userId: userId,
       joinCode: code,
       organizationId: orgId,
+      // #2: send the chosen member-level role as the per-group display title.
+      functionalRole: _selectedRole.name,
     );
     if (!mounted) return;
     if (ok && _provider.lastJoined != null) {
@@ -168,6 +181,15 @@ class _GroupJoinScreenState extends State<GroupJoinScreen> {
                       isLoading: _provider.isJoining,
                       errorText: _provider.joinError,
                       onJoin: _onJoin,
+                    ),
+                    const SizedBox(height: 20),
+
+                    // ── #2: per-group role picker (member-level only) ───────
+                    _RolePicker(
+                      options: _memberRoleOptions,
+                      selected: _selectedRole,
+                      isDark: isDark,
+                      onChanged: (r) => setState(() => _selectedRole = r),
                     ),
                     const SizedBox(height: 16),
 
@@ -360,6 +382,102 @@ class _QrScanButton extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+// ── #2: role picker ────────────────────────────────────────────────────────
+
+/// Premium segmented picker for the member's per-group display role. Only
+/// member-level roles are offered — this is a display title, never a permission
+/// grant (the server rejects admin roles on join).
+class _RolePicker extends StatelessWidget {
+  const _RolePicker({
+    required this.options,
+    required this.selected,
+    required this.isDark,
+    required this.onChanged,
+  });
+
+  final List<UserRole> options;
+  final UserRole selected;
+  final bool isDark;
+  final ValueChanged<UserRole> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Your role in this group',
+          style: AppTypography.labelMedium.copyWith(
+            color: isDark ? AppColors.textPrimaryDark : AppColors.textPrimary,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          'Shown on your profile and to your admin. Display only — it never '
+          'changes your permissions.',
+          style: AppTypography.bodySmall.copyWith(
+            color: isDark
+                ? AppColors.textSecondaryDark
+                : AppColors.textSecondary,
+          ),
+        ),
+        const SizedBox(height: 10),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: options.map((role) {
+            final isSel = role == selected;
+            return GestureDetector(
+              onTap: () => onChanged(role),
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 160),
+                padding: const EdgeInsets.symmetric(
+                    horizontal: 18, vertical: 10),
+                decoration: BoxDecoration(
+                  color: isSel
+                      ? AppColors.primary.withValues(alpha: 0.12)
+                      : (isDark
+                          ? AppColors.surfaceVariantDark
+                          : AppColors.surfaceVariant),
+                  borderRadius: BorderRadius.circular(24),
+                  border: Border.all(
+                    color: isSel
+                        ? AppColors.primary
+                        : (isDark ? AppColors.borderDark : AppColors.border),
+                    width: isSel ? 1.5 : 1,
+                  ),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (isSel) ...[
+                      const Icon(Icons.check_rounded,
+                          size: 16, color: AppColors.primary),
+                      const SizedBox(width: 6),
+                    ],
+                    Text(
+                      role.label,
+                      style: AppTypography.labelMedium.copyWith(
+                        color: isSel
+                            ? AppColors.primary
+                            : (isDark
+                                ? AppColors.textPrimaryDark
+                                : AppColors.textPrimary),
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          }).toList(),
+        ),
+      ],
     );
   }
 }

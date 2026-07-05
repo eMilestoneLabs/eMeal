@@ -82,6 +82,9 @@ class StudentDashboardProvider extends ChangeNotifier {
   bool _remindersEnabled = true;
   GroupMealConfig _groupConfig = const GroupMealConfig();
   String _groupName = '';
+  // #2: the member's per-group display role label (e.g. "Student" / "Member").
+  // Empty when the membership has no explicit role (legacy joins).
+  String _functionalRole = '';
 
   // ── B10 realtime ───────────────────────────────────────────────────────────
   StreamSubscription<RealtimeMessage>? _rtSub;
@@ -123,6 +126,8 @@ class StudentDashboardProvider extends ChangeNotifier {
   bool get remindersEnabled => _remindersEnabled;
   GroupMealConfig get groupConfig => _groupConfig;
   String get groupName => _groupName;
+  /// #2: the member's per-group display role label ('' when unset).
+  String get functionalRole => _functionalRole;
 
   // ── Config-driven feature flags ────────────────────────────────────────────
 
@@ -290,11 +295,13 @@ class StudentDashboardProvider extends ChangeNotifier {
               .map(AttendanceModel.fromJson)
               .toList();
           final gn = cached['groupName'];
+          final fr = cached['functionalRole'];
           _todayMeals = meals..sort(MealModel.compareChronological);
           _todayAttendance = att;
           _weekHistory = hist;
           _streakDays = _computeStreak(_weekHistory);
           if (gn is String) _groupName = gn;
+          if (fr is String) _functionalRole = fr; // #2: role from cache
           // Cold-start zeros fix: restore the 30-day summary so the KPI cards
           // (attendance %, present/absent counts) paint last-known values
           // instead of 0 while the network refresh runs.
@@ -394,6 +401,9 @@ class StudentDashboardProvider extends ChangeNotifier {
       } else {
         _groupConfig = group.mealConfig;
         _groupName = group.name;
+        // #2: the requester's per-group display role (backend computes this
+        // from their GroupMember.functionalRole). Empty = fall back to nothing.
+        _functionalRole = group.functionalRole?.label ?? '';
         // Push config to shell so nav tabs update immediately.
         _groupConfigProvider?.update(
           config: _groupConfig,
@@ -473,6 +483,7 @@ class StudentDashboardProvider extends ChangeNotifier {
         'todayAtt': _todayAttendance.map((a) => a.toJson()).toList(),
         'weekHist': _weekHistory.map((a) => a.toJson()).toList(),
         'groupName': _groupName,
+        'functionalRole': _functionalRole, // #2: persist per-group role
         // Cold-start zeros fix: persist the KPI summary + meal-config so the
         // next cache-first paint restores them (never 0 / default mode).
         if (_summary != null) 'summary': _summary!.toJson(),

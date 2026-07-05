@@ -161,8 +161,11 @@ class GroupMemberTile extends StatelessWidget {
                   spacing: 6,
                   runSpacing: 4,
                   children: [
+                    // #2: prefer the member's per-group display role (chosen on
+                    // join) over the global account role; fall back when unset.
                     AppStatusChip.label(
-                      label: member.role.displayName,
+                      label: (member.groupFunctionalRole ?? member.role)
+                          .displayName,
                       color: isAdmin ? AppColors.primary : AppColors.secondary,
                       compact: true,
                     ),

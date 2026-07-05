@@ -18,6 +18,7 @@ class StudentGreetingCard extends StatelessWidget {
     String? name,
     this.user,
     this.groupName,
+    this.roleLabel,
     this.onAvatarTap,
     this.streakDays = 0,
     this.isVacationMode = false,
@@ -30,6 +31,10 @@ class StudentGreetingCard extends StatelessWidget {
 
   /// Displayed below the name as a subtle group label.
   final String? groupName;
+
+  /// #2: the member's per-group display role (e.g. "Member"), shown as a chip
+  /// beside the group name. Null hides it (legacy joins with no explicit role).
+  final String? roleLabel;
 
   final VoidCallback? onAvatarTap;
   final int streakDays;
@@ -111,7 +116,7 @@ class StudentGreetingCard extends StatelessWidget {
             ),
           ),
 
-          // ── Group label ───────────────────────────────────────────────────
+          // ── Group label + per-group role (#2) ─────────────────────────────
           if (groupName != null && groupName!.isNotEmpty) ...[
             const SizedBox(height: 4),
             Row(
@@ -122,12 +127,34 @@ class StudentGreetingCard extends StatelessWidget {
                   color: Colors.white60,
                 ),
                 const SizedBox(width: 4),
-                Text(
-                  groupName!,
-                  style: AppTypography.labelSmall.copyWith(
-                    color: Colors.white60,
+                Flexible(
+                  child: Text(
+                    groupName!,
+                    overflow: TextOverflow.ellipsis,
+                    style: AppTypography.labelSmall.copyWith(
+                      color: Colors.white60,
+                    ),
                   ),
                 ),
+                // #2: per-group role chip (e.g. "Member") next to the group.
+                if (roleLabel != null && roleLabel!.isNotEmpty) ...[
+                  const SizedBox(width: 8),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 8, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.18),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Text(
+                      roleLabel!,
+                      style: AppTypography.labelSmall.copyWith(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                ],
               ],
             ),
           ],
