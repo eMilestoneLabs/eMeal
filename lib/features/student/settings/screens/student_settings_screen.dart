@@ -224,6 +224,26 @@ class _StudentSettingsScreenState extends State<StudentSettingsScreen> {
 
               const SizedBox(height: AppConstants.space20),
 
+              // ── Section: Personal ───────────────────────────────────────────
+              _SectionLabel(label: 'Personal', isDark: isDark),
+              const SizedBox(height: AppConstants.space8),
+              _SettingsCard(
+                isDark: isDark,
+                children: [
+                  _ActionTile(
+                    icon: Icons.edit_note_rounded,
+                    iconColor: AppColors.primary,
+                    title: 'Personal Notepad',
+                    subtitle:
+                        'Private notes, lists and reminders — stored only on this device.',
+                    onTap: () => context.push(RouteNames.notepad),
+                    isDark: isDark,
+                  ),
+                ],
+              ),
+
+              const SizedBox(height: AppConstants.space20),
+
               // ── Section 5: Account ──────────────────────────────────────────
               _SectionLabel(label: 'Account', isDark: isDark),
               const SizedBox(height: AppConstants.space8),

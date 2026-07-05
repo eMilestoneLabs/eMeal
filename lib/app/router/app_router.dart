@@ -34,6 +34,7 @@ import 'package:smart_meal_management/features/events/screens/event_admin/event_
 import 'package:smart_meal_management/features/events/screens/event_admin/event_create_screen.dart';
 import 'package:smart_meal_management/features/events/screens/event_guest/event_guest_shell.dart';
 import 'package:smart_meal_management/features/groups/screens/group_join_screen.dart';
+import 'package:smart_meal_management/features/notepad/screens/notepad_list_screen.dart';
 import 'package:smart_meal_management/features/student/attendance/screens/attendance_history_screen.dart';
 import 'package:smart_meal_management/features/student/attendance/screens/attendance_screen.dart';
 import 'package:smart_meal_management/features/student/billing/screens/student_billing_screen.dart';
@@ -235,6 +236,15 @@ GoRouter buildRouter(AuthProvider auth) {
           final code = state.uri.queryParameters['code'];
           return GroupJoinScreen(prefillCode: code);
         },
+      ),
+
+      // Personal Notepad — device-local, offline; reachable by both roles.
+      // Sits outside the role shells (full-screen productivity surface); the
+      // redirect guard leaves `/notepad` untouched since it is neither an auth
+      // route nor a role-scoped (`/student`|`/admin`) path.
+      GoRoute(
+        path: RouteNames.notepad,
+        builder: (context, state) => const NotepadListScreen(),
       ),
 
       // Student shell (bottom nav persists across tabs)

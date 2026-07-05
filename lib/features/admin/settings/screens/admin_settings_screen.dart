@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
+import 'package:smart_meal_management/app/router/route_names.dart';
 import 'package:smart_meal_management/core/constants/app_constants.dart';
 import 'package:smart_meal_management/core/theme/app_colors.dart';
 import 'package:smart_meal_management/core/theme/app_typography.dart';
@@ -118,6 +120,17 @@ class _AdminSettingsScreenState extends State<AdminSettingsScreen> {
             ),
           ),
 
+          const SizedBox(height: 16),
+
+          // ── Personal ──────────────────────────────────────────────────────
+          const _SectionHeader('Personal'),
+          _NavTile(
+            icon: Icons.edit_note_rounded,
+            title: 'Personal Notepad',
+            subtitle: 'Private notes & reminders — stored only on this device',
+            onTap: () => context.push(RouteNames.notepad),
+          ),
+
           const SizedBox(height: 32),
 
           // ── Sign out ──────────────────────────────────────────────────────
@@ -218,6 +231,80 @@ class _SettingsTile extends StatelessWidget {
           ),
           trailing,
         ],
+      ),
+    );
+  }
+}
+
+// ── Navigation tile (tappable, chevron) ─────────────────────────────────────────
+
+class _NavTile extends StatelessWidget {
+  const _NavTile({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(AppConstants.cardRadius),
+        child: Ink(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          decoration: BoxDecoration(
+            color: isDark ? AppColors.surfaceDark : AppColors.surface,
+            borderRadius: BorderRadius.circular(AppConstants.cardRadius),
+            border: Border.all(
+              color: isDark ? AppColors.borderDark : AppColors.border,
+            ),
+          ),
+          child: Row(
+            children: [
+              Icon(icon, size: 20, color: AppColors.primary),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: AppTypography.titleSmall.copyWith(
+                        color: isDark
+                            ? AppColors.textPrimaryDark
+                            : AppColors.textPrimary,
+                      ),
+                    ),
+                    Text(
+                      subtitle,
+                      style: AppTypography.bodySmall.copyWith(
+                        color: isDark
+                            ? AppColors.textSecondaryDark
+                            : AppColors.textSecondary,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Icon(
+                Icons.chevron_right_rounded,
+                size: 20,
+                color: isDark
+                    ? AppColors.textTertiaryDark
+                    : AppColors.textTertiary,
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }

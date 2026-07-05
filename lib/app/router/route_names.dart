@@ -52,6 +52,9 @@ abstract final class RouteNames {
   // Groups (shared — accessed by students and admins)
   static const String groupJoin = '/groups/join';
 
+  // Personal Notepad (shared — device-local, offline; both roles)
+  static const String notepad = '/notepad';
+
   // Events — Admin
   /// Landing screen: list of admin's events + create new event.
   static const String eventAdminRoot = '/event-admin';
