@@ -11,6 +11,7 @@ import 'package:smart_meal_management/core/theme/app_colors.dart';
 import 'package:smart_meal_management/core/theme/app_typography.dart';
 import 'package:smart_meal_management/data/repositories/group_repository.dart';
 import 'package:smart_meal_management/data/services/image_cache_seeder.dart';
+import 'package:smart_meal_management/shared/widgets/cached_photo.dart';
 import 'package:smart_meal_management/features/auth/providers/auth_provider.dart';
 import 'package:smart_meal_management/features/auth/widgets/email_verification_badge.dart';
 import 'package:smart_meal_management/features/auth/widgets/login_preference_selector.dart';
@@ -482,22 +483,30 @@ class _AvatarCard extends StatelessWidget {
                           ),
                         )
                       : ClipOval(
-                          child: avatarBytes != null
-                              ? Image.memory(
-                                  avatarBytes!,
-                                  fit: BoxFit.cover,
-                                  width: 88,
-                                  height: 88,
-                                )
-                              : Center(
-                                  child: Text(
-                                    user?.initials ?? 'A',
-                                    style: AppTypography.headlineMedium.copyWith(
-                                      color: AppColors.primary,
-                                      fontWeight: FontWeight.w700,
-                                    ),
-                                  ),
+                          // Cache-first avatar (parity with the student
+                          // profile): just-picked bytes render instantly;
+                          // otherwise the STORED avatar serves from the disk
+                          // image cache (warmed at login) and refreshes
+                          // silently — previously this only used session
+                          // bytes, so after a restart the stored avatar
+                          // never rendered at all.
+                          child: CachedPhoto(
+                            bytes: avatarBytes,
+                            url: user?.avatarUrl,
+                            width: 88,
+                            height: 88,
+                            cacheWidth: 176,
+                            useThumbnail: true,
+                            placeholder: Center(
+                              child: Text(
+                                user?.initials ?? 'A',
+                                style: AppTypography.headlineMedium.copyWith(
+                                  color: AppColors.primary,
+                                  fontWeight: FontWeight.w700,
                                 ),
+                              ),
+                            ),
+                          ),
                         ),
                 ),
                 // Camera badge
