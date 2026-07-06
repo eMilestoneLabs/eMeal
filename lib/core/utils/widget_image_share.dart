@@ -30,9 +30,13 @@ class WidgetImageShare {
       final boundary = boundaryKey.currentContext?.findRenderObject()
           as RenderRepaintBoundary?;
       if (boundary == null) throw StateError('RepaintBoundary not found');
-      // If the boundary needs paint (mid-frame), give it one frame to settle.
-      if (boundary.debugNeedsPaint) {
-        await Future<void>.delayed(const Duration(milliseconds: 32));
+      // Wait for the boundary to be fully painted before capture. On real
+      // devices the share can be requested in the same frame the card lays out,
+      // so give it up to a few frames to settle (endOfFrame) rather than a
+      // single fixed delay — this is what makes the QR reliably capture as an
+      // image instead of throwing and degrading to a text-only share.
+      for (var i = 0; i < 5 && boundary.debugNeedsPaint; i++) {
+        await WidgetsBinding.instance.endOfFrame;
       }
       final ui.Image image = await boundary.toImage(pixelRatio: pixelRatio);
       final byteData = await image.toByteData(format: ui.ImageByteFormat.png);

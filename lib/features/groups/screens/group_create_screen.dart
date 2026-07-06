@@ -470,7 +470,7 @@ class _Step2MealToggle extends StatelessWidget {
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
 
-    return Padding(
+    return SingleChildScrollView(
       padding: const EdgeInsets.all(20),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -507,7 +507,7 @@ class _Step2MealToggle extends StatelessWidget {
             isSelected: !mealsEnabled,
             onTap: () => onChanged(false),
           ),
-          const Spacer(),
+          const SizedBox(height: 32),
           AppPrimaryButton(
             label: 'Continue',
             trailingIcon: Icons.arrow_forward_rounded,
@@ -783,7 +783,7 @@ class _Step4CapacityState extends State<_Step4Capacity> {
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
 
-    return Padding(
+    return SingleChildScrollView(
       padding: const EdgeInsets.all(20),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -856,7 +856,7 @@ class _Step4CapacityState extends State<_Step4Capacity> {
               },
             ),
           ],
-          const Spacer(),
+          const SizedBox(height: 32),
           AppPrimaryButton(
             label: 'Continue',
             trailingIcon: Icons.arrow_forward_rounded,

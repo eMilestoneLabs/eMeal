@@ -554,7 +554,7 @@ class _HowItWorksSection extends StatelessWidget {
           const SizedBox(height: 8),
           const _Step(
             number: '2',
-            text: 'Enter the 6-character code above and tap Join Group.',
+            text: 'Enter the group code above and tap Join Group.',
           ),
           const SizedBox(height: 8),
           const _Step(

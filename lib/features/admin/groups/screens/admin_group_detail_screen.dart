@@ -9,6 +9,7 @@ import 'package:smart_meal_management/core/utils/time_format.dart';
 import 'package:smart_meal_management/core/utils/qr_payload_parser.dart';
 import 'package:smart_meal_management/core/utils/widget_image_share.dart';
 import 'package:smart_meal_management/features/admin/groups/providers/admin_group_provider.dart';
+import 'package:smart_meal_management/features/admin/groups/screens/group_join_requests_screen.dart';
 import 'package:smart_meal_management/features/admin/groups/widgets/group_member_tile.dart';
 import 'package:smart_meal_management/shared/models/group_model.dart';
 import 'package:smart_meal_management/shared/models/meal_model.dart';
@@ -198,6 +199,23 @@ class _GroupAppBar extends StatelessWidget {
         onPressed: () => Navigator.of(context).pop(),
       ),
       actions: [
+        // MEM-006/007: group-specific join-request approvals with a live badge.
+        IconButton(
+          tooltip: 'Join requests',
+          onPressed: () => Navigator.of(context).push(
+            MaterialPageRoute(
+              builder: (_) => GroupJoinRequestsScreen(
+                groupId: group.id,
+                groupName: group.name,
+              ),
+            ),
+          ),
+          icon: Badge(
+            isLabelVisible: group.pendingCount > 0,
+            label: Text('${group.pendingCount}'),
+            child: const Icon(Icons.how_to_reg_rounded),
+          ),
+        ),
         IconButton(
           icon: const Icon(Icons.qr_code_rounded),
           tooltip: 'Show QR Code',
@@ -1355,6 +1373,9 @@ class _SettingsTabState extends State<_SettingsTab> {
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
+        // ── Join requests (MEM-006/007) — group-specific approvals entry ──────
+        _JoinRequestsTile(group: group),
+        const SizedBox(height: 12),
         // ── Join code ─────────────────────────────────────────────────────────
         Card(
           margin: EdgeInsets.zero,
@@ -1585,73 +1606,52 @@ class _SettingsTabState extends State<_SettingsTab> {
 
         const SizedBox(height: 16),
 
-        // ── Danger zone (GRP-016/018/019) ─────────────────────────────────────
-        Card(
-          margin: EdgeInsets.zero,
-          color: colorScheme.errorContainer.withValues(alpha: 0.3),
-          child: Column(
-            children: [
-              if (group.isActive)
-                ListTile(
-                  leading: _archiving
-                      ? SizedBox(
-                          width: 20,
-                          height: 20,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            color: colorScheme.error,
-                          ),
-                        )
-                      : Icon(Icons.archive_outlined, color: colorScheme.error),
-                  title: Text('Archive Group',
-                      style: TextStyle(
-                          fontWeight: FontWeight.w600,
-                          color: colorScheme.error)),
-                  subtitle: const Text(
-                      'Hide the group and remove member access. Restorable later.'),
-                  onTap: _archiving ? null : _confirmArchive,
-                )
-              else
-                ListTile(
-                  leading: _restoring
-                      ? const SizedBox(
-                          width: 20,
-                          height: 20,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Icon(Icons.unarchive_outlined,
-                          color: AppColors.present),
-                  title: const Text('Restore Group',
-                      style: TextStyle(
-                          fontWeight: FontWeight.w600,
-                          color: AppColors.present)),
-                  subtitle: const Text(
-                      'Make this group active again with all its data.'),
-                  onTap: _restoring ? null : _confirmRestore,
-                ),
-              const Divider(height: 1),
-              // GRP-019: permanent delete — always available, irreversible.
-              ListTile(
-                leading: _deleting
-                    ? SizedBox(
-                        width: 20,
-                        height: 20,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          color: colorScheme.error,
-                        ),
-                      )
-                    : Icon(Icons.delete_forever_outlined,
-                        color: colorScheme.error),
-                title: Text('Delete Permanently',
-                    style: TextStyle(
-                        fontWeight: FontWeight.w600, color: colorScheme.error)),
-                subtitle: const Text(
-                    'Remove the group and ALL its data. Cannot be undone.'),
-                onTap: _deleting ? null : _confirmPermanentDelete,
+        // ── Danger zone (GRP-016/018/019) — premium, theme-adaptive ───────────
+        Row(
+          children: [
+            Icon(Icons.warning_amber_rounded,
+                size: 18, color: colorScheme.error),
+            const SizedBox(width: 8),
+            Text(
+              'Danger Zone',
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w800,
+                letterSpacing: 0.4,
+                color: colorScheme.error,
               ),
-            ],
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        if (group.isActive)
+          _DangerTile(
+            icon: Icons.archive_rounded,
+            color: AppColors.warning,
+            title: 'Archive Group',
+            subtitle:
+                'Hide the group and remove member access. Restorable later.',
+            busy: _archiving,
+            onTap: _archiving ? null : _confirmArchive,
+          )
+        else
+          _DangerTile(
+            icon: Icons.unarchive_rounded,
+            color: AppColors.present,
+            title: 'Restore Group',
+            subtitle: 'Make this group active again with all its data.',
+            busy: _restoring,
+            onTap: _restoring ? null : _confirmRestore,
           ),
+        const SizedBox(height: 12),
+        // GRP-019: permanent delete — always available, irreversible.
+        _DangerTile(
+          icon: Icons.delete_forever_rounded,
+          color: colorScheme.error,
+          title: 'Delete Permanently',
+          subtitle: 'Remove the group and ALL its data. Cannot be undone.',
+          busy: _deleting,
+          onTap: _deleting ? null : _confirmPermanentDelete,
         ),
       ],
     );
@@ -1674,4 +1674,237 @@ class _SettingsTabState extends State<_SettingsTab> {
         MealPreferenceOption.egg => '🥚',
         MealPreferenceOption.jain => '🌿',
       };
+}
+
+/// Premium group-specific "Join Requests" entry for the Settings tab — shows a
+/// live pending count and opens the scoped approvals screen. Legible in both
+/// themes; the accent turns amber when requests are waiting.
+class _JoinRequestsTile extends StatelessWidget {
+  const _JoinRequestsTile({required this.group});
+  final GroupModel group;
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final pending = group.pendingCount;
+    final hasPending = pending > 0;
+    final accent = hasPending ? AppColors.warning : AppColors.primary;
+
+    return Material(
+      color: Colors.transparent,
+      borderRadius: BorderRadius.circular(16),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(16),
+        onTap: () => Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (_) => GroupJoinRequestsScreen(
+              groupId: group.id,
+              groupName: group.name,
+            ),
+          ),
+        ),
+        child: Ink(
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(16),
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [
+                accent.withValues(alpha: isDark ? 0.18 : 0.10),
+                accent.withValues(alpha: isDark ? 0.07 : 0.04),
+              ],
+            ),
+            border: Border.all(
+              color: accent.withValues(alpha: isDark ? 0.42 : 0.28),
+            ),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+            child: Row(
+              children: [
+                Container(
+                  width: 42,
+                  height: 42,
+                  decoration: BoxDecoration(
+                    color: accent.withValues(alpha: isDark ? 0.22 : 0.14),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Icon(Icons.how_to_reg_rounded, color: accent, size: 22),
+                ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Join Requests',
+                        style: TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w700,
+                          color: accent,
+                        ),
+                      ),
+                      const SizedBox(height: 3),
+                      Text(
+                        hasPending
+                            ? '$pending waiting for your approval'
+                            : 'No one is waiting to join',
+                        style: TextStyle(
+                          fontSize: 12,
+                          height: 1.3,
+                          color: colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 8),
+                if (hasPending)
+                  Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: accent,
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Text(
+                      '$pending',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w800,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ),
+                const SizedBox(width: 4),
+                Icon(Icons.chevron_right_rounded,
+                    size: 20, color: accent.withValues(alpha: 0.7)),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Premium, theme-adaptive danger-zone action tile.
+///
+/// Renders a tinted gradient surface with a rounded icon badge, ripple, and a
+/// subtle press-scale — legible and rich in BOTH light and dark themes. The
+/// accent [color] drives the whole tile (amber = archive, green = restore, red
+/// = delete); subtitle uses onSurfaceVariant so it stays readable on the tint.
+class _DangerTile extends StatefulWidget {
+  const _DangerTile({
+    required this.icon,
+    required this.color,
+    required this.title,
+    required this.subtitle,
+    required this.busy,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final Color color;
+  final String title;
+  final String subtitle;
+  final bool busy;
+  final VoidCallback? onTap;
+
+  @override
+  State<_DangerTile> createState() => _DangerTileState();
+}
+
+class _DangerTileState extends State<_DangerTile> {
+  bool _pressed = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final c = widget.color;
+
+    return AnimatedScale(
+      scale: _pressed ? 0.98 : 1,
+      duration: const Duration(milliseconds: 120),
+      curve: Curves.easeOut,
+      child: Material(
+        color: Colors.transparent,
+        borderRadius: BorderRadius.circular(16),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(16),
+          onTap: widget.onTap,
+          onHighlightChanged: (v) => setState(() => _pressed = v),
+          child: Ink(
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(16),
+              gradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [
+                  c.withValues(alpha: isDark ? 0.20 : 0.10),
+                  c.withValues(alpha: isDark ? 0.08 : 0.04),
+                ],
+              ),
+              border: Border.all(
+                color: c.withValues(alpha: isDark ? 0.45 : 0.30),
+              ),
+            ),
+            child: Padding(
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+              child: Row(
+                children: [
+                  Container(
+                    width: 42,
+                    height: 42,
+                    decoration: BoxDecoration(
+                      color: c.withValues(alpha: isDark ? 0.22 : 0.14),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: widget.busy
+                        ? Padding(
+                            padding: const EdgeInsets.all(11),
+                            child: CircularProgressIndicator(
+                                strokeWidth: 2.4, color: c),
+                          )
+                        : Icon(widget.icon, color: c, size: 22),
+                  ),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          widget.title,
+                          style: TextStyle(
+                            fontSize: 15,
+                            fontWeight: FontWeight.w700,
+                            color: c,
+                          ),
+                        ),
+                        const SizedBox(height: 3),
+                        Text(
+                          widget.subtitle,
+                          style: TextStyle(
+                            fontSize: 12,
+                            height: 1.3,
+                            color: colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Icon(Icons.chevron_right_rounded,
+                      size: 20, color: c.withValues(alpha: 0.7)),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 }

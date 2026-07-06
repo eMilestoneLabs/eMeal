@@ -542,6 +542,12 @@ class _NoticeCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final accent = _priorityColor(notice.priority);
+    // Theme-adaptive secondary/tertiary text so notices stay legible & premium
+    // in BOTH light and dark — raw AppColors.textSecondary/tertiary are
+    // light-theme-only tokens that wash out on dark surfaces.
+    final colorScheme = Theme.of(context).colorScheme;
+    final secondaryText = colorScheme.onSurfaceVariant;
+    final tertiaryText = colorScheme.onSurfaceVariant.withValues(alpha: 0.7);
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(14),
@@ -593,8 +599,7 @@ class _NoticeCard extends StatelessWidget {
             const SizedBox(height: 6),
             Text(
               notice.body,
-              style: AppTypography.bodySmall
-                  .copyWith(color: AppColors.textSecondary),
+              style: AppTypography.bodySmall.copyWith(color: secondaryText),
               maxLines: 2,
               overflow: TextOverflow.ellipsis,
             ),
@@ -604,17 +609,17 @@ class _NoticeCard extends StatelessWidget {
                 Icon(notice.isOrgWide
                     ? Icons.business_rounded
                     : Icons.groups_rounded,
-                    size: 13, color: AppColors.textTertiary),
+                    size: 13, color: tertiaryText),
                 const SizedBox(width: 4),
                 Text(
                   notice.isOrgWide ? 'Organisation' : 'Group',
-                  style: AppTypography.labelSmall
-                      .copyWith(color: AppColors.textTertiary),
+                  style:
+                      AppTypography.labelSmall.copyWith(color: tertiaryText),
                 ),
                 const SizedBox(width: 10),
                 Text(_relativeTime(notice.publishedAt),
                     style: AppTypography.labelSmall
-                        .copyWith(color: AppColors.textTertiary)),
+                        .copyWith(color: tertiaryText)),
                 if (notice.linkType != null) ...[
                   const SizedBox(width: 10),
                   Container(
@@ -641,7 +646,7 @@ class _NoticeCard extends StatelessWidget {
                 if (isAdmin) ...[
                   Text('${notice.readCount} read',
                       style: AppTypography.labelSmall
-                          .copyWith(color: AppColors.textTertiary)),
+                          .copyWith(color: tertiaryText)),
                   const SizedBox(width: 4),
                   InkWell(
                     onTap: onDelete,
@@ -736,12 +741,16 @@ class _NoticeDetailSheet extends StatelessWidget {
             ),
             const SizedBox(height: 6),
             Text(_relativeTime(notice.publishedAt),
-                style: AppTypography.labelSmall
-                    .copyWith(color: AppColors.textTertiary)),
+                style: AppTypography.labelSmall.copyWith(
+                    color: Theme.of(context)
+                        .colorScheme
+                        .onSurfaceVariant
+                        .withValues(alpha: 0.7))),
             const SizedBox(height: 16),
             Text(notice.body,
-                style: AppTypography.bodyMedium
-                    .copyWith(color: AppColors.textSecondary, height: 1.5)),
+                style: AppTypography.bodyMedium.copyWith(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    height: 1.5)),
           ],
         ),
       ),
@@ -768,12 +777,12 @@ class _EmptyState extends StatelessWidget {
                 ? Icons.notifications_active_outlined
                 : Icons.notifications_off_rounded,
             size: 48,
-            color: AppColors.textTertiary),
+            color: Theme.of(context).colorScheme.onSurfaceVariant),
         const SizedBox(height: 12),
         Center(
           child: Text(unavailable ? 'Notifications coming soon' : 'No notices yet',
-              style: AppTypography.bodyMedium
-                  .copyWith(color: AppColors.textTertiary)),
+              style: AppTypography.bodyMedium.copyWith(
+                  color: Theme.of(context).colorScheme.onSurfaceVariant)),
         ),
         if (unavailable) ...[
           const SizedBox(height: 6),
@@ -808,8 +817,8 @@ class _ErrorState extends StatelessWidget {
         Center(
           child: Text(message,
               textAlign: TextAlign.center,
-              style: AppTypography.bodySmall
-                  .copyWith(color: AppColors.textSecondary)),
+              style: AppTypography.bodySmall.copyWith(
+                  color: Theme.of(context).colorScheme.onSurfaceVariant)),
         ),
         const SizedBox(height: 12),
         Center(

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:smart_meal_management/app/router/route_names.dart';
 import 'package:smart_meal_management/core/theme/app_colors.dart';
@@ -80,6 +81,17 @@ class _AdminGroupsScreenState extends State<AdminGroupsScreen> {
     super.dispose();
   }
 
+  /// GRP-016/018: toggle between the active and archived group views.
+  void _toggleArchived() {
+    final user = AuthProviderScope.of(context).currentUser;
+    if (user == null) return;
+    setState(() => _showArchived = !_showArchived);
+    _provider.loadGroups(
+      organizationId: user.organizationId,
+      includeInactive: _showArchived,
+    );
+  }
+
   /// Shows the create-group bottom sheet.
   ///
   /// On success, navigates straight to the new group's detail screen.
@@ -117,21 +129,26 @@ class _AdminGroupsScreenState extends State<AdminGroupsScreen> {
         backgroundColor: colorScheme.surface,
         surfaceTintColor: Colors.transparent,
         actions: [
-          // GRP-016/018: toggle archived groups (to restore / permanently delete).
-          IconButton(
-            tooltip: _showArchived ? 'Show active' : 'Show archived',
-            icon: Icon(_showArchived
-                ? Icons.inventory_2_rounded
-                : Icons.inventory_2_outlined),
-            onPressed: () {
-              final user = AuthProviderScope.of(context).currentUser;
-              if (user == null) return;
-              setState(() => _showArchived = !_showArchived);
-              _provider.loadGroups(
-                organizationId: user.organizationId,
-                includeInactive: _showArchived,
-              );
-            },
+          // GRP-016/018: premium archived-view toggle. Amber tonal fill when
+          // active so the state reads clearly (and richly) in light + dark.
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 4),
+            child: _showArchived
+                ? IconButton.filledTonal(
+                    tooltip: 'Show active groups',
+                    icon: const Icon(Icons.inventory_2_rounded),
+                    onPressed: _toggleArchived,
+                    style: IconButton.styleFrom(
+                      backgroundColor:
+                          AppColors.warning.withValues(alpha: 0.18),
+                      foregroundColor: AppColors.warning,
+                    ),
+                  )
+                : IconButton(
+                    tooltip: 'Show archived groups',
+                    icon: const Icon(Icons.inventory_2_outlined),
+                    onPressed: _toggleArchived,
+                  ),
           ),
           // MODULE_02 (MEM-006/007): open the pending join-request approvals.
           IconButton(
@@ -152,7 +169,11 @@ class _AdminGroupsScreenState extends State<AdminGroupsScreen> {
         icon: const Icon(Icons.add_rounded),
         label: const Text('New Group'),
       ),
-      body: _provider.isLoading
+      body: Column(
+        children: [
+          if (_showArchived) const _ArchivedBanner(),
+          Expanded(
+            child: _provider.isLoading
           ? const AppListSkeleton(rows: 4, rowHeight: 108)
           : _provider.error != null
               ? AppEmptyState(
@@ -216,6 +237,72 @@ class _AdminGroupsScreenState extends State<AdminGroupsScreen> {
                         },
                       ),
                     ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ── Archived-mode banner ────────────────────────────────────────────────────────
+
+/// Premium banner shown while browsing archived groups — makes the mode obvious
+/// and rich in both light and dark (amber accent matches the archived toggle).
+class _ArchivedBanner extends StatelessWidget {
+  const _ArchivedBanner();
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(14),
+        gradient: LinearGradient(
+          colors: [
+            AppColors.warning.withValues(alpha: 0.16),
+            AppColors.warning.withValues(alpha: 0.06),
+          ],
+        ),
+        border: Border.all(color: AppColors.warning.withValues(alpha: 0.4)),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 36,
+            height: 36,
+            decoration: BoxDecoration(
+              color: AppColors.warning.withValues(alpha: 0.20),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: const Icon(Icons.inventory_2_rounded,
+                color: AppColors.warning, size: 20),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Archived groups',
+                  style: AppTypography.labelMedium.copyWith(
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.warning,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  'Open a group to restore it or delete it permanently.',
+                  style: AppTypography.bodySmall
+                      .copyWith(color: colorScheme.onSurfaceVariant),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -297,7 +384,47 @@ class _CreateGroupSheetState extends State<_CreateGroupSheet> {
   }
 
   @override
+  void initState() {
+    super.initState();
+    // GRP-004: load config-driven role member limits so the Maximum Members
+    // field can validate against the selected role live. Also rebuild as the
+    // admin types so the range error / Create-enabled state stay in sync.
+    widget.provider.loadLimits().then((_) {
+      if (mounted) setState(() {});
+    });
+    _maxMembersCtrl.addListener(_rebuild);
+  }
+
+  void _rebuild() {
+    if (mounted) setState(() {});
+  }
+
+  // GRP-004: config-driven range for the CURRENTLY selected role.
+  int get _roleMax => widget.provider.memberLimitForRole(_functionalRole);
+  int get _minMembers => widget.provider.minMembers;
+
+  /// Validation message for Maximum Members (null = valid). Empty is invalid
+  /// (the field is mandatory) but only surfaced as errorText once the admin
+  /// starts typing — the disabled Create button conveys "required" beforehand.
+  String? get _maxMembersError {
+    final raw = _maxMembersCtrl.text.trim();
+    if (raw.isEmpty) return 'Required';
+    final v = int.tryParse(raw);
+    if (v == null) return 'Enter a number';
+    if (v < _minMembers || v > _roleMax) {
+      return 'Value must be $_minMembers to $_roleMax';
+    }
+    return null;
+  }
+
+  bool get _canSubmit =>
+      !_saving &&
+      _nameCtrl.text.trim().isNotEmpty &&
+      _maxMembersError == null;
+
+  @override
   void dispose() {
+    _maxMembersCtrl.removeListener(_rebuild);
     _nameCtrl.dispose();
     _maxMembersCtrl.dispose();
     _countryCtrl.dispose();
@@ -337,11 +464,12 @@ class _CreateGroupSheetState extends State<_CreateGroupSheet> {
 
   Future<void> _save() async {
     final name = _nameCtrl.text.trim();
-    if (name.isEmpty) return;
+    // GRP-004: name + a valid role-capped Maximum Members are both mandatory.
+    if (name.isEmpty || _maxMembersError != null) return;
 
     setState(() => _saving = true);
 
-    final maxMembers = int.tryParse(_maxMembersCtrl.text.trim());
+    final maxMembers = int.parse(_maxMembersCtrl.text.trim());
 
     final qrExpiry = int.tryParse(_qrExpiryCtrl.text.trim());
 
@@ -351,7 +479,7 @@ class _CreateGroupSheetState extends State<_CreateGroupSheet> {
       type: _type,
       functionalRole: _functionalRole,
       mealConfig: GroupMealConfig(mealsEnabled: _mealsEnabled),
-      maxMembers: (maxMembers != null && maxMembers > 0) ? maxMembers : null,
+      maxMembers: maxMembers,
       joinApprovalRequired: _requireApproval,
       // GRP-003: extended metadata (immutable after creation).
       country: _trimOrNull(_countryCtrl),
@@ -389,7 +517,10 @@ class _CreateGroupSheetState extends State<_CreateGroupSheet> {
         borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
       ),
       padding: EdgeInsets.fromLTRB(24, 12, 24, 24 + bottom),
-      child: Column(
+      // Scrollable so the whole form (and the Create button) is always reachable
+      // — including with the keyboard up on short screens.
+      child: SingleChildScrollView(
+        child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -547,13 +678,22 @@ class _CreateGroupSheetState extends State<_CreateGroupSheet> {
           ),
           const SizedBox(height: 16),
 
-          // ── Maximum Members (GRP-004) — optional, capped by role limit ────
+          // ── Maximum Members (GRP-004) — mandatory, capped by SELECTED role ─
           TextField(
             controller: _maxMembersCtrl,
             keyboardType: TextInputType.number,
+            inputFormatters: [
+              FilteringTextInputFormatter.digitsOnly,
+              LengthLimitingTextInputFormatter(6),
+            ],
             decoration: InputDecoration(
-              labelText: 'Maximum Members (optional)',
-              hintText: 'Leave blank for no limit',
+              labelText: 'Maximum Members *',
+              hintText:
+                  'Between $_minMembers and $_roleMax (${_functionalRole.label})',
+              helperText: 'Cap follows your selected role.',
+              // Only surface the range/format error once the admin types.
+              errorText:
+                  _maxMembersCtrl.text.isEmpty ? null : _maxMembersError,
               filled: true,
               fillColor: colorScheme.surfaceContainerLowest,
               border: OutlineInputBorder(
@@ -649,9 +789,7 @@ class _CreateGroupSheetState extends State<_CreateGroupSheet> {
             width: double.infinity,
             height: 52,
             child: FilledButton(
-              onPressed: _saving || _nameCtrl.text.trim().isEmpty
-                  ? null
-                  : _save,
+              onPressed: _canSubmit ? _save : null,
               style: FilledButton.styleFrom(
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(14),
@@ -676,6 +814,7 @@ class _CreateGroupSheetState extends State<_CreateGroupSheet> {
             ),
           ),
         ],
+        ),
       ),
     );
   }

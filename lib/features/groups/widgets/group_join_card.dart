@@ -1,10 +1,20 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+/// Minimum / maximum length of a group join code accepted for manual entry.
+///
+/// The backend generates a fixed-length code (CFG-015, default 8; configurable
+/// via GROUPS_JOIN_CODE_LENGTH) from the [A-Z0-9] charset. We accept a tolerant
+/// range instead of a single hardcoded length so a config change (or any code
+/// in 6..12) is never rejected client-side before it reaches the server, which
+/// is the authoritative validator.
+const int kJoinCodeMinLength = 6;
+const int kJoinCodeMaxLength = 12;
+
 /// Code-entry card component for joining a group.
 ///
-/// Contains a 6-character text field with uppercase formatting, a Join button,
-/// and optional error display.
+/// Contains an uppercase code text field, a Join button, and optional error
+/// display. Length is validated against [kJoinCodeMinLength]/[kJoinCodeMaxLength].
 class GroupJoinCard extends StatefulWidget {
   const GroupJoinCard({
     super.key,
@@ -14,7 +24,7 @@ class GroupJoinCard extends StatefulWidget {
     this.controller,
   });
 
-  /// Called with the trimmed uppercase 6-char code when Join is pressed.
+  /// Called with the trimmed uppercase code when Join is pressed.
   final ValueChanged<String> onJoin;
   final bool isLoading;
   final String? errorText;
@@ -49,8 +59,12 @@ class _GroupJoinCardState extends State<GroupJoinCard> {
     super.dispose();
   }
 
-  bool get _canSubmit =>
-      _ctrl.text.trim().length == 6 && !widget.isLoading;
+  bool get _canSubmit {
+    final len = _ctrl.text.trim().length;
+    return len >= kJoinCodeMinLength &&
+        len <= kJoinCodeMaxLength &&
+        !widget.isLoading;
+  }
 
   void _submit() {
     if (!_canSubmit) return;
@@ -89,7 +103,7 @@ class _GroupJoinCardState extends State<GroupJoinCard> {
           ),
           const SizedBox(height: 6),
           Text(
-            'Ask your admin for the 6-character group code.',
+            'Ask your admin for the group code shown on their group QR.',
             style: textTheme.bodySmall?.copyWith(
               color: colorScheme.onSurfaceVariant,
             ),
@@ -101,7 +115,7 @@ class _GroupJoinCardState extends State<GroupJoinCard> {
             controller: _ctrl,
             enabled: !widget.isLoading,
             textCapitalization: TextCapitalization.characters,
-            maxLength: 6,
+            maxLength: kJoinCodeMaxLength,
             keyboardType: TextInputType.text,
             inputFormatters: [
               FilteringTextInputFormatter.allow(RegExp(r'[a-zA-Z0-9]')),
@@ -110,14 +124,14 @@ class _GroupJoinCardState extends State<GroupJoinCard> {
             textAlign: TextAlign.center,
             style: textTheme.headlineSmall?.copyWith(
               fontWeight: FontWeight.w800,
-              letterSpacing: 8,
+              letterSpacing: 6,
             ),
             decoration: InputDecoration(
               counterText: '',
-              hintText: 'XXXXXX',
+              hintText: 'XXXXXXXX',
               hintStyle: textTheme.headlineSmall?.copyWith(
                 fontWeight: FontWeight.w400,
-                letterSpacing: 8,
+                letterSpacing: 6,
                 color: colorScheme.onSurface.withValues(alpha: 0.25),
               ),
               errorText: widget.errorText,

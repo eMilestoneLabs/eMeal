@@ -37,6 +37,15 @@ class AdminGroupProvider extends ChangeNotifier {
   /// Populated dynamically — never hardcoded to any fixed meal types.
   List<MealModel> _selectedGroupMeals = [];
 
+  // GRP-004 / CFG-002/003/004: config-driven member-cap limits keyed by role
+  // name (e.g. hostelAdmin=50), plus the floor and fallback. Loaded once from
+  // GET /groups/limits so the create form bounds Maximum Members by the SELECTED
+  // role without hardcoding anything.
+  Map<String, int> _roleMemberLimits = const {};
+  int _defaultRoleMemberLimit = 50;
+  int _minMembers = 2;
+  bool _limitsLoaded = false;
+
   // ── Getters ───────────────────────────────────────────────────────────────
 
   bool get isLoading => _isLoading;
@@ -51,10 +60,44 @@ class AdminGroupProvider extends ChangeNotifier {
   /// Dynamic meal list for the selected group.
   List<MealModel> get selectedGroupMeals => _selectedGroupMeals;
 
+  /// GRP-004: minimum Maximum-Members an admin must set (config-driven floor).
+  int get minMembers => _minMembers;
+  bool get limitsLoaded => _limitsLoaded;
+
+  /// GRP-004: the configured member cap for [role] (falls back to the default).
+  int memberLimitForRole(UserRole role) =>
+      _roleMemberLimits[role.name] ?? _defaultRoleMemberLimit;
+
   int get totalMembers => _groups.fold(0, (s, g) => s + g.memberCount);
   int get activeGroupCount => _groups.where((g) => g.isActive).length;
 
   // ── Load ──────────────────────────────────────────────────────────────────
+
+  /// GRP-004 / CFG-002/003/004: load config-driven member-cap limits once so the
+  /// create form can bound Maximum Members by the selected role. Fail-safe —
+  /// keeps sensible defaults (min 2, cap = defaultRoleMemberLimit) on any error
+  /// and never surfaces an error for this non-critical prefetch.
+  Future<void> loadLimits() async {
+    if (_limitsLoaded) return;
+    final result = await _groupRepo.getGroupLimits();
+    switch (result) {
+      case Ok(:final value):
+        final raw = value['roleMemberLimits'];
+        if (raw is Map) {
+          _roleMemberLimits = raw.map(
+            (k, v) => MapEntry(k.toString(), (v as num).toInt()),
+          );
+        }
+        final def = value['defaultRoleMemberLimit'];
+        if (def is num) _defaultRoleMemberLimit = def.toInt();
+        final min = value['minMembers'];
+        if (min is num) _minMembers = min.toInt();
+        _limitsLoaded = true;
+        notifyListeners();
+      case Err():
+        break;
+    }
+  }
 
   Future<void> loadGroups({
     required String organizationId,
