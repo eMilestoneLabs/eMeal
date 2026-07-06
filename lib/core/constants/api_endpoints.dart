@@ -167,6 +167,37 @@ class GroupEndpoints {
 
   /// PUT — replace meal configuration for a group.
   String get updateMealConfig => '/groups/{groupId}/meal-config';
+
+  // ── Module 02 (Organization & Group Management) ─────────────────────────────
+
+  /// GET — config-driven group + member limits (ORG-013/GRP-010/CFG-013).
+  String get limits => '/groups/limits';
+
+  /// GET — pre-join preview by join code (MEM-002). Query: `joinCode`.
+  String get preview => '/groups/preview';
+
+  /// POST — the current member leaves a group (MEM-016/017).
+  String get leave => '/groups/{groupId}/leave';
+
+  /// POST — restore an archived group (GRP-018, admin).
+  String get restore => '/groups/{groupId}/restore';
+
+  /// DELETE — permanently delete a group and all its data (GRP-019, admin).
+  String get permanentDelete => '/groups/{groupId}/permanent';
+
+  /// GET — list pending join requests for a group (MEM-006, admin).
+  String get joinRequests => '/groups/{groupId}/join-requests';
+
+  /// PATCH — approve a pending join request (MEM-006, admin).
+  String get approveJoinRequest =>
+      '/groups/{groupId}/join-requests/{userId}/approve';
+
+  /// PATCH — reject a pending join request with optional reason (MEM-007, admin).
+  String get rejectJoinRequest =>
+      '/groups/{groupId}/join-requests/{userId}/reject';
+
+  /// DELETE — the current member cancels their own pending request (MEM-005).
+  String get cancelJoinRequest => '/groups/{groupId}/join-request';
 }
 
 class MealEndpoints {

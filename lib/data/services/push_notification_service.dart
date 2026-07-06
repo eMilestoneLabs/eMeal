@@ -163,12 +163,31 @@ class PushNotificationService {
     final title = message.notification?.title ?? message.data['title'];
     final body = message.notification?.body ?? message.data['body'];
     if (title == null && body == null) return;
+    // PRIORITY-1 (duplicate fix): render with a STABLE id + tag derived from the
+    // backend collapse key (`dedupeId`). A re-delivery of the same logical push
+    // then REPLACES the visible notification instead of showing a second copy.
+    final dedupe = (message.data['dedupeId'] ??
+            message.data['type'] ??
+            message.messageId ??
+            '${title ?? ''}|${body ?? ''}')
+        .toString();
     NotificationService.instance.showInstant(
       title: title ?? 'MealAttend',
       body: body ?? '',
       payload: _routeOf(message),
-      id: message.hashCode & 0x7fffffff,
+      id: _stableNotificationId(dedupe),
+      tag: dedupe,
     );
+  }
+
+  /// Deterministic 31-bit notification id from a string (FNV-1a) so the same
+  /// [dedupe] key always maps to the same notification slot.
+  int _stableNotificationId(String s) {
+    var h = 0x811C9DC5;
+    for (final c in s.codeUnits) {
+      h = ((h ^ c) * 0x01000193) & 0x7FFFFFFF;
+    }
+    return h;
   }
 
   void _onMessageOpenedApp(RemoteMessage message) {

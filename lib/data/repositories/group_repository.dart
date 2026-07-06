@@ -17,11 +17,18 @@ class GroupRepository implements IGroupRepository {
   @override
   Future<Result<PaginatedResponse<GroupModel>>> getOrganisationGroups({
     required String organizationId,
+    bool includeInactive = false,
   }) async {
     // GET /groups — org scope comes from the JWT, never the client.
+    // GRP-016/018: includeInactive surfaces archived groups (admin only) so
+    // they can be restored or permanently deleted.
     final result = await DioApiService.instance.get<Map<String, dynamic>>(
       '/groups',
-      queryParameters: {'page': '1', 'limit': '100'},
+      queryParameters: {
+        'page': '1',
+        'limit': '100',
+        if (includeInactive) 'includeInactive': 'true',
+      },
     );
     return switch (result) {
       Err(:final failure) => Err(failure),
@@ -76,6 +83,15 @@ class GroupRepository implements IGroupRepository {
     int? maxMembers,
     GroupMealConfig? mealConfig,
     UserRole? functionalRole,
+    // Module 02 (GRP-003) — extended metadata + policy captured at creation.
+    String? country,
+    String? state,
+    String? city,
+    String? address,
+    String? timezone,
+    String? currency,
+    bool? joinApprovalRequired,
+    int? qrExpiryDays,
   }) async {
     // POST /groups — CreateGroupDto whitelist only.
     // type.name serializes factory_ as "factory_" (locked API contract).
@@ -88,6 +104,16 @@ class GroupRepository implements IGroupRepository {
         if (maxMembers != null) 'maxMembers': maxMembers,
         if (mealConfig != null) 'mealConfig': mealConfig.toJson(),
         if (functionalRole != null) 'functionalRole': functionalRole.name,
+        // Module 02 additive fields — only sent when provided.
+        if (country != null) 'country': country,
+        if (state != null) 'state': state,
+        if (city != null) 'city': city,
+        if (address != null) 'address': address,
+        if (timezone != null) 'timezone': timezone,
+        if (currency != null) 'currency': currency,
+        if (joinApprovalRequired != null)
+          'joinApprovalRequired': joinApprovalRequired,
+        if (qrExpiryDays != null) 'qrExpiryDays': qrExpiryDays,
       },
     );
     return switch (result) {
@@ -283,4 +309,115 @@ class GroupRepository implements IGroupRepository {
         userId: userId,
         functionalRole: functionalRole,
       );
+
+  // ── Module 02 (Organization & Group Management) ─────────────────────────────
+
+  /// GET /groups/limits — config-driven group + member limits so the UI can
+  /// disable Create at the cap and bound the Maximum-Members input.
+  Future<Result<Map<String, dynamic>>> getGroupLimits() async {
+    final result =
+        await DioApiService.instance.get<Map<String, dynamic>>('/groups/limits');
+    return switch (result) {
+      Err(:final failure) => Err(failure),
+      Ok(:final value) => Ok(value),
+    };
+  }
+
+  /// GET /groups/preview?joinCode= — MEM-002 pre-join preview (identity +
+  /// capacity + approval), no membership change.
+  Future<Result<Map<String, dynamic>>> previewJoin({
+    required String joinCode,
+  }) async {
+    final result = await DioApiService.instance.get<Map<String, dynamic>>(
+      '/groups/preview',
+      queryParameters: {'joinCode': joinCode},
+    );
+    return switch (result) {
+      Err(:final failure) => Err(failure),
+      Ok(:final value) => Ok(value),
+    };
+  }
+
+  /// POST /groups/:id/leave — MEM-016/017 self-service leave.
+  Future<Result<Unit>> leaveGroup({required String groupId}) async {
+    final result =
+        await DioApiService.instance.post<dynamic>('/groups/$groupId/leave');
+    return switch (result) {
+      Err(:final failure) => Err(failure),
+      Ok() => const Ok(Unit.instance),
+    };
+  }
+
+  /// DELETE /groups/:id/join-request — MEM-005 cancel my own pending request.
+  Future<Result<Unit>> cancelJoinRequest({required String groupId}) async {
+    final result = await DioApiService.instance
+        .delete<dynamic>('/groups/$groupId/join-request');
+    return switch (result) {
+      Err(:final failure) => Err(failure),
+      Ok() => const Ok(Unit.instance),
+    };
+  }
+
+  /// POST /groups/:id/restore — GRP-018 restore an archived group (admin).
+  Future<Result<GroupModel>> restoreGroup({required String groupId}) async {
+    final result = await DioApiService.instance
+        .post<Map<String, dynamic>>('/groups/$groupId/restore');
+    return switch (result) {
+      Err(:final failure) => Err(failure),
+      Ok(:final value) => Ok(GroupModel.fromJson(value)),
+    };
+  }
+
+  /// DELETE /groups/:id/permanent — GRP-019 irreversible hard delete (admin).
+  Future<Result<Unit>> permanentDeleteGroup({required String groupId}) async {
+    final result = await DioApiService.instance
+        .delete<dynamic>('/groups/$groupId/permanent');
+    return switch (result) {
+      Err(:final failure) => Err(failure),
+      Ok() => const Ok(Unit.instance),
+    };
+  }
+
+  /// GET /groups/:id/join-requests — MEM-006 pending requests (admin).
+  Future<Result<PaginatedResponse<UserModel>>> getJoinRequests({
+    required String groupId,
+  }) async {
+    final result = await DioApiService.instance.get<Map<String, dynamic>>(
+      '/groups/$groupId/join-requests',
+      queryParameters: {'page': '1', 'limit': '100'},
+    );
+    return switch (result) {
+      Err(:final failure) => Err(failure),
+      Ok(:final value) => Ok(PaginatedResponse.fromJson(value, _memberToUser)),
+    };
+  }
+
+  /// PATCH /groups/:id/join-requests/:userId/approve — MEM-006 (admin).
+  Future<Result<Unit>> approveJoinRequest({
+    required String groupId,
+    required String userId,
+  }) async {
+    final result = await DioApiService.instance
+        .patch<dynamic>('/groups/$groupId/join-requests/$userId/approve');
+    return switch (result) {
+      Err(:final failure) => Err(failure),
+      Ok() => const Ok(Unit.instance),
+    };
+  }
+
+  /// PATCH /groups/:id/join-requests/:userId/reject — MEM-007 (admin).
+  Future<Result<Unit>> rejectJoinRequest({
+    required String groupId,
+    required String userId,
+    String? reason,
+  }) async {
+    final result = await DioApiService.instance.patch<dynamic>(
+      '/groups/$groupId/join-requests/$userId/reject',
+      body: {if (reason != null && reason.isNotEmpty) 'reason': reason},
+    );
+    return switch (result) {
+      Err(:final failure) => Err(failure),
+      Ok() => const Ok(Unit.instance),
+    };
+  }
 }

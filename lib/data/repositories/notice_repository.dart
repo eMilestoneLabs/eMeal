@@ -102,4 +102,30 @@ class NoticeRepository {
       Ok() => const Ok(Unit.instance),
     };
   }
+
+  // ── Member bell dismissal (NTF-006) — per-user hide, not a global delete ─────
+
+  /// DELETE /notices/:id/dismiss — remove ONE notice from the member's own bell.
+  Future<Result<Unit>> dismissNotice(String noticeId) async {
+    final result = await DioApiService.instance.delete<dynamic>(
+      '/notices/$noticeId/dismiss',
+    );
+    return switch (result) {
+      Err(:final failure) => Err(failure),
+      Ok() => const Ok(Unit.instance),
+    };
+  }
+
+  /// DELETE /notices/dismiss-all — "Delete All" from the member's bell.
+  Future<Result<int>> dismissAll({String? groupId}) async {
+    final path = groupId != null
+        ? '/notices/dismiss-all?groupId=$groupId'
+        : '/notices/dismiss-all';
+    final result =
+        await DioApiService.instance.delete<Map<String, dynamic>>(path);
+    return switch (result) {
+      Err(:final failure) => Err(failure),
+      Ok(:final value) => Ok((value['dismissed'] as num?)?.toInt() ?? 0),
+    };
+  }
 }

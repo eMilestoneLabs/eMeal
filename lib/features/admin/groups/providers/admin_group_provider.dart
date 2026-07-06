@@ -56,10 +56,15 @@ class AdminGroupProvider extends ChangeNotifier {
 
   // ── Load ──────────────────────────────────────────────────────────────────
 
-  Future<void> loadGroups({required String organizationId}) async {
+  Future<void> loadGroups({
+    required String organizationId,
+    bool includeInactive = false,
+  }) async {
     if (_isLoading) return;
-    // Cache-first: paint last-known groups instantly, then refresh.
-    final cacheKey = 'admin_groups:$organizationId';
+    // Cache-first: paint last-known groups instantly, then refresh. Archived
+    // views use a separate cache key so they never overwrite the active list.
+    final cacheKey =
+        'admin_groups:$organizationId${includeInactive ? ':all' : ''}';
     if (_groups.isEmpty) {
       _isLoading = true; // sync: first build shows the loader, never empty state
       _groups = await ResponseCacheService.instance.readList(
@@ -71,6 +76,7 @@ class AdminGroupProvider extends ChangeNotifier {
 
     final result = await _groupRepo.getOrganisationGroups(
       organizationId: organizationId,
+      includeInactive: includeInactive,
     );
 
     switch (result) {
@@ -213,6 +219,15 @@ class AdminGroupProvider extends ChangeNotifier {
     int? maxMembers,
     GroupMealConfig? mealConfig,
     UserRole? functionalRole,
+    // Module 02 (GRP-003) — extended metadata + policy captured at creation.
+    String? country,
+    String? state,
+    String? city,
+    String? address,
+    String? timezone,
+    String? currency,
+    bool? joinApprovalRequired,
+    int? qrExpiryDays,
   }) async {
     _isCreating = true;
     _error = null;
@@ -226,6 +241,14 @@ class AdminGroupProvider extends ChangeNotifier {
       maxMembers: maxMembers,
       mealConfig: mealConfig,
       functionalRole: functionalRole,
+      country: country,
+      state: state,
+      city: city,
+      address: address,
+      timezone: timezone,
+      currency: currency,
+      joinApprovalRequired: joinApprovalRequired,
+      qrExpiryDays: qrExpiryDays,
     );
 
     switch (result) {
@@ -295,6 +318,90 @@ class AdminGroupProvider extends ChangeNotifier {
           _groups = List.of(_groups)
             ..[idx] = _groups[idx].copyWith(isActive: false);
         }
+        notifyListeners();
+        return true;
+      case Err(:final failure):
+        _error = failure.message;
+        notifyListeners();
+        return false;
+    }
+  }
+
+  /// GRP-018: restore an archived group (flips it back to active).
+  Future<bool> restoreGroup(
+    String groupId, {
+    required String organizationId,
+  }) async {
+    final result = await _groupRepo.restoreGroup(groupId: groupId);
+    switch (result) {
+      case Ok(:final value):
+        final idx = _groups.indexWhere((g) => g.id == groupId);
+        if (idx != -1) {
+          _groups = List.of(_groups)..[idx] = value;
+        } else {
+          _groups = [value, ..._groups];
+        }
+        notifyListeners();
+        return true;
+      case Err(:final failure):
+        _error = failure.message;
+        notifyListeners();
+        return false;
+    }
+  }
+
+  /// GRP-019: permanently delete a group and all its data (irreversible).
+  Future<bool> permanentDeleteGroup(
+    String groupId, {
+    required String organizationId,
+  }) async {
+    final result = await _groupRepo.permanentDeleteGroup(groupId: groupId);
+    switch (result) {
+      case Ok():
+        _groups = _groups.where((g) => g.id != groupId).toList();
+        if (_selectedGroup?.id == groupId) _selectedGroup = null;
+        notifyListeners();
+        return true;
+      case Err(:final failure):
+        _error = failure.message;
+        notifyListeners();
+        return false;
+    }
+  }
+
+  // ── Join approval workflow (MEM-006/007) ────────────────────────────────────
+
+  /// Approve a pending join request; on success the member becomes active.
+  Future<bool> approveJoinRequest({
+    required String groupId,
+    required String userId,
+  }) async {
+    final result =
+        await _groupRepo.approveJoinRequest(groupId: groupId, userId: userId);
+    switch (result) {
+      case Ok():
+        notifyListeners();
+        return true;
+      case Err(:final failure):
+        _error = failure.message;
+        notifyListeners();
+        return false;
+    }
+  }
+
+  /// Reject a pending join request with an optional reason.
+  Future<bool> rejectJoinRequest({
+    required String groupId,
+    required String userId,
+    String? reason,
+  }) async {
+    final result = await _groupRepo.rejectJoinRequest(
+      groupId: groupId,
+      userId: userId,
+      reason: reason,
+    );
+    switch (result) {
+      case Ok():
         notifyListeners();
         return true;
       case Err(:final failure):

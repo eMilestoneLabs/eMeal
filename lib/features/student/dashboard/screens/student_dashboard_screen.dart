@@ -6,6 +6,7 @@ import 'package:smart_meal_management/core/theme/app_colors.dart';
 import 'package:smart_meal_management/core/theme/app_typography.dart';
 import 'package:smart_meal_management/data/services/notification_service.dart';
 import 'package:smart_meal_management/features/auth/providers/auth_provider.dart';
+import 'package:smart_meal_management/data/services/group_order_service.dart';
 import 'package:smart_meal_management/features/notices/widgets/notice_bell.dart';
 import 'package:smart_meal_management/features/groups/screens/group_detail_screen.dart';
 import 'package:smart_meal_management/features/student/dashboard/providers/student_dashboard_provider.dart';
@@ -1182,7 +1183,10 @@ class _ErrorView extends StatelessWidget {
 
 /// Horizontal chip row letting a multi-group student switch their active group.
 /// Labels are positional ("Group N") — raw group IDs are never shown.
-class _GroupSwitcherRow extends StatelessWidget {
+/// MEM-013/015: premium group switcher. Displays joined groups as chips in the
+/// member's saved (drag-reorderable) order and lets them switch the active
+/// group. Long-press any chip to open the "Reorder groups" sheet.
+class _GroupSwitcherRow extends StatefulWidget {
   const _GroupSwitcherRow({
     required this.groupIds,
     required this.activeGroupId,
@@ -1199,7 +1203,122 @@ class _GroupSwitcherRow extends StatelessWidget {
   final bool isDark;
 
   @override
+  State<_GroupSwitcherRow> createState() => _GroupSwitcherRowState();
+}
+
+class _GroupSwitcherRowState extends State<_GroupSwitcherRow> {
+  List<String> _order = const [];
+  String _userId = '';
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_userId.isEmpty) {
+      _userId = AuthProviderScope.of(context).currentUser?.id ?? '';
+      GroupOrderService.instance.load(_userId).then((o) {
+        if (mounted) setState(() => _order = o);
+      });
+    }
+  }
+
+  /// MEM-015: joined group ids in the member's saved order (new groups first).
+  List<String> get _ordered =>
+      GroupOrderService.instance.applyToIds(widget.groupIds, _order);
+
+  Future<void> _saveOrder(List<String> ids) async {
+    setState(() => _order = ids);
+    await GroupOrderService.instance.save(_userId, ids);
+  }
+
+  /// MEM-015: drag-and-drop reorder sheet.
+  Future<void> _openReorderSheet() async {
+    final working = List<String>.from(_ordered);
+    await showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setLocal) => Container(
+          decoration: BoxDecoration(
+            color: widget.isDark ? AppColors.surfaceDark : AppColors.surface,
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+          ),
+          padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Center(
+                child: Container(
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: Theme.of(ctx)
+                        .colorScheme
+                        .onSurfaceVariant
+                        .withValues(alpha: 0.4),
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+              Text('Reorder groups',
+                  style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w700,
+                      color: Theme.of(ctx).colorScheme.onSurface)),
+              const SizedBox(height: 4),
+              Text('Drag to change the order of your group switcher.',
+                  style: TextStyle(
+                      fontSize: 13,
+                      color: Theme.of(ctx).colorScheme.onSurfaceVariant)),
+              const SizedBox(height: 12),
+              Flexible(
+                child: ReorderableListView.builder(
+                  shrinkWrap: true,
+                  itemCount: working.length,
+                  onReorder: (oldI, newI) {
+                    setLocal(() {
+                      if (newI > oldI) newI -= 1;
+                      final m = working.removeAt(oldI);
+                      working.insert(newI, m);
+                    });
+                  },
+                  itemBuilder: (c, i) {
+                    final id = working[i];
+                    final active = id == widget.activeGroupId;
+                    return ListTile(
+                      key: ValueKey(id),
+                      leading: const Icon(Icons.drag_indicator_rounded),
+                      title: Text('Group ${i + 1}${active ? '  (active)' : ''}'),
+                      trailing: active
+                          ? const Icon(Icons.check_circle_rounded,
+                              color: AppColors.primary, size: 18)
+                          : null,
+                    );
+                  },
+                ),
+              ),
+              const SizedBox(height: 12),
+              SizedBox(
+                width: double.infinity,
+                child: FilledButton(
+                  onPressed: () async {
+                    await _saveOrder(working);
+                    if (ctx.mounted) Navigator.pop(ctx);
+                  },
+                  child: const Text('Save order'),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final ids = _ordered;
     return SizedBox(
       height: 40,
       child: ListView.separated(
@@ -1208,15 +1327,15 @@ class _GroupSwitcherRow extends StatelessWidget {
         padding:
             const EdgeInsets.symmetric(horizontal: AppConstants.space20),
         // +1 trailing "Join another" action chip (ISSUE 3).
-        itemCount: groupIds.length + 1,
+        itemCount: ids.length + 1,
         separatorBuilder: (_, _) =>
             const SizedBox(width: AppConstants.space8),
         itemBuilder: (context, i) {
-          if (i == groupIds.length) {
+          if (i == ids.length) {
             return ActionChip(
               avatar: const Icon(Icons.add_rounded, size: 18),
               label: const Text('Join'),
-              onPressed: onJoinAnother,
+              onPressed: widget.onJoinAnother,
               labelStyle: const TextStyle(
                 fontSize: 13,
                 fontWeight: FontWeight.w600,
@@ -1229,20 +1348,24 @@ class _GroupSwitcherRow extends StatelessWidget {
               ),
             );
           }
-          final id = groupIds[i];
-          final selected = id == activeGroupId;
-          return ChoiceChip(
-            label: Text('Group ${i + 1}'),
-            selected: selected,
-            onSelected: (_) => onSwitch(id),
-            selectedColor: AppColors.primary.withValues(alpha: 0.15),
-            labelStyle: TextStyle(
-              fontSize: 13,
-              fontWeight: FontWeight.w600,
-              color: selected ? AppColors.primary : null,
-            ),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(AppConstants.chipRadius),
+          final id = ids[i];
+          final selected = id == widget.activeGroupId;
+          // MEM-015: long-press opens the drag-reorder sheet.
+          return GestureDetector(
+            onLongPress: _openReorderSheet,
+            child: ChoiceChip(
+              label: Text('Group ${i + 1}'),
+              selected: selected,
+              onSelected: (_) => widget.onSwitch(id),
+              selectedColor: AppColors.primary.withValues(alpha: 0.15),
+              labelStyle: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+                color: selected ? AppColors.primary : null,
+              ),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(AppConstants.chipRadius),
+              ),
             ),
           );
         },

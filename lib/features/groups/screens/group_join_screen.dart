@@ -29,6 +29,8 @@ class _GroupJoinScreenState extends State<GroupJoinScreen> {
   late final GroupProvider _provider;
   late final TextEditingController _codeCtrl;
   String? _successGroupId;
+  // MEM-004: set when a join created a pending approval request.
+  GroupModel? _pendingGroup;
 
   // #2: the member's chosen per-group display role. Member-level only — admin
   // titles are never offered here (and the server rejects them). Default
@@ -49,7 +51,7 @@ class _GroupJoinScreenState extends State<GroupJoinScreen> {
     // Auto-submit when a code arrives via deep-link / QR URL.
     if (widget.prefillCode != null && widget.prefillCode!.isNotEmpty) {
       WidgetsBinding.instance.addPostFrameCallback(
-        (_) => _onJoin(widget.prefillCode!),
+        (_) => _onJoin(widget.prefillCode!, preview: false),
       );
     }
   }
@@ -66,7 +68,19 @@ class _GroupJoinScreenState extends State<GroupJoinScreen> {
     super.dispose();
   }
 
-  Future<void> _onJoin(String code) async {
+  /// MEM-002: manually-entered codes get a pre-join preview (identity +
+  /// capacity + whether approval is required). QR / deep-link auto-joins skip
+  /// the extra round-trip (scanning already implies intent).
+  Future<void> _onJoin(String code, {bool preview = true}) async {
+    if (preview) {
+      final info = await _provider.previewJoin(code);
+      if (info == null) return; // joinError surfaced by the card
+      if (!mounted) return;
+      final confirmed = await _showPreviewSheet(info);
+      if (confirmed != true) return;
+    }
+    if (!mounted) return;
+
     final authProvider = AuthProviderScope.of(context);
     final user = authProvider.currentUser;
     final userId = user?.id ?? '';
@@ -79,6 +93,14 @@ class _GroupJoinScreenState extends State<GroupJoinScreen> {
       functionalRole: _selectedRole.name,
     );
     if (!mounted) return;
+
+    // MEM-004: a pending join shows the "waiting for approval" state — no org
+    // sync / session refresh until an admin approves.
+    if (ok && (_provider.lastJoined?.isPendingApproval ?? false)) {
+      setState(() => _pendingGroup = _provider.lastJoined);
+      return;
+    }
+
     if (ok && _provider.lastJoined != null) {
       setState(() {
         _successGroupId = _provider.lastJoined!.id;
@@ -123,14 +145,138 @@ class _GroupJoinScreenState extends State<GroupJoinScreen> {
 
     if (code != null && mounted) {
       _codeCtrl.text = code;
-      await _onJoin(code);
+      await _onJoin(code, preview: false);
     }
   }
 
   void _reset() {
     _codeCtrl.clear();
     _provider.clearLastJoined();
-    setState(() => _successGroupId = null);
+    setState(() {
+      _successGroupId = null;
+      _pendingGroup = null;
+    });
+  }
+
+  /// MEM-002: bottom-sheet preview shown before a manual join. Returns true when
+  /// the member confirms.
+  Future<bool?> _showPreviewSheet(Map<String, dynamic> info) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final approval = info['approvalRequired'] == true;
+    final isFull = info['isFull'] == true;
+    final expired = info['expired'] == true;
+    final current = (info['currentMembers'] as num?)?.toInt() ?? 0;
+    final max = (info['maxMembers'] as num?)?.toInt();
+    return showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => Container(
+        decoration: BoxDecoration(
+          color: isDark ? AppColors.surfaceDark : AppColors.surface,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+        ),
+        padding: EdgeInsets.fromLTRB(
+            24, 16, 24, 24 + MediaQuery.viewInsetsOf(ctx).bottom),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Center(
+              child: Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: Theme.of(ctx)
+                      .colorScheme
+                      .onSurfaceVariant
+                      .withValues(alpha: 0.4),
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+            ),
+            const SizedBox(height: 18),
+            Text(info['name']?.toString() ?? 'Group',
+                style: AppTypography.titleMedium.copyWith(
+                    fontWeight: FontWeight.w800,
+                    color: Theme.of(ctx).colorScheme.onSurface)),
+            if (info['organizationName'] != null) ...[
+              const SizedBox(height: 2),
+              Text(info['organizationName'].toString(),
+                  style: AppTypography.bodySmall.copyWith(
+                      color: Theme.of(ctx).colorScheme.onSurfaceVariant)),
+            ],
+            if ((info['description'] as String?)?.isNotEmpty == true) ...[
+              const SizedBox(height: 10),
+              Text(info['description'].toString(),
+                  style: AppTypography.bodyMedium.copyWith(
+                      color: Theme.of(ctx).colorScheme.onSurfaceVariant)),
+            ],
+            const SizedBox(height: 14),
+            Row(children: [
+              Icon(Icons.groups_rounded,
+                  size: 16,
+                  color: Theme.of(ctx).colorScheme.onSurfaceVariant),
+              const SizedBox(width: 6),
+              Text(
+                max != null ? '$current / $max members' : '$current members',
+                style: AppTypography.labelMedium.copyWith(
+                    color: Theme.of(ctx).colorScheme.onSurfaceVariant),
+              ),
+            ]),
+            if (approval) ...[
+              const SizedBox(height: 8),
+              Row(children: [
+                const Icon(Icons.verified_user_rounded,
+                    size: 16, color: AppColors.warning),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text('Admin approval required to join.',
+                      style: AppTypography.labelMedium
+                          .copyWith(color: AppColors.warning)),
+                ),
+              ]),
+            ],
+            const SizedBox(height: 20),
+            SizedBox(
+              width: double.infinity,
+              height: 50,
+              child: FilledButton(
+                onPressed: (isFull || expired)
+                    ? null
+                    : () => Navigator.pop(ctx, true),
+                child: Text(
+                  isFull
+                      ? 'Group Full'
+                      : expired
+                          ? 'Code Expired'
+                          : approval
+                              ? 'Request to Join'
+                              : 'Join Group',
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _cancelPending() async {
+    final g = _pendingGroup;
+    if (g == null) return;
+    final ok = await _provider.cancelPendingRequest(g.id);
+    if (!mounted) return;
+    if (ok) {
+      _reset();
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Join request cancelled.')),
+      );
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(_provider.joinError ?? 'Could not cancel.')),
+      );
+    }
   }
 
   @override
@@ -151,7 +297,13 @@ class _GroupJoinScreenState extends State<GroupJoinScreen> {
             horizontal: AppConstants.pagePaddingH,
             vertical: AppConstants.pagePaddingV,
           ),
-          child: _successGroupId != null
+          child: _pendingGroup != null
+              ? _PendingView(
+                  group: _pendingGroup!,
+                  onCancel: _cancelPending,
+                  onDone: _reset,
+                )
+              : _successGroupId != null
               ? _SuccessView(
                   group: _provider.lastJoined,
                   onJoinAnother: _reset,
@@ -213,6 +365,74 @@ class _GroupJoinScreenState extends State<GroupJoinScreen> {
           organizationId: _provider.lastJoined?.organizationId ?? '',
         ),
       ),
+    );
+  }
+}
+
+// ── Pending (waiting for approval) view — MEM-004/005 ────────────────────────
+
+class _PendingView extends StatelessWidget {
+  const _PendingView({
+    required this.group,
+    required this.onCancel,
+    required this.onDone,
+  });
+
+  final GroupModel group;
+  final VoidCallback onCancel;
+  final VoidCallback onDone;
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return Column(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        const SizedBox(height: 48),
+        Container(
+          width: 80,
+          height: 80,
+          decoration: BoxDecoration(
+            color: AppColors.warning.withValues(alpha: 0.12),
+            shape: BoxShape.circle,
+          ),
+          child: const Icon(Icons.hourglass_top_rounded,
+              size: 44, color: AppColors.warning),
+        ),
+        const SizedBox(height: 20),
+        Text(
+          'Waiting for approval',
+          style: AppTypography.headlineSmall.copyWith(
+            color: isDark ? AppColors.textPrimaryDark : AppColors.textPrimary,
+            fontWeight: FontWeight.w800,
+          ),
+        ),
+        const SizedBox(height: 8),
+        Text(
+          'Your request to join ${group.name} has been sent. You will be '
+          'notified once an admin approves it.',
+          textAlign: TextAlign.center,
+          style: AppTypography.bodyMedium.copyWith(
+            color: isDark ? AppColors.textSecondaryDark : AppColors.textSecondary,
+          ),
+        ),
+        const SizedBox(height: 28),
+        SizedBox(
+          width: double.infinity,
+          height: 50,
+          child: OutlinedButton.icon(
+            onPressed: onCancel,
+            style: OutlinedButton.styleFrom(
+              foregroundColor: AppColors.error,
+              side: BorderSide(color: AppColors.error.withValues(alpha: 0.5)),
+            ),
+            icon: const Icon(Icons.close_rounded, size: 18),
+            label: const Text('Cancel request'),
+          ),
+        ),
+        const SizedBox(height: 12),
+        TextButton(onPressed: onDone, child: const Text('Done')),
+      ],
     );
   }
 }

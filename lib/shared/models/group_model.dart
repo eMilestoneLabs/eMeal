@@ -482,6 +482,20 @@ class GroupModel extends Equatable {
     this.functionalRole,
     this.adminName,
     this.organizationName,
+    // ── Module 02 (Organization & Group Management) — additive ───────────────
+    this.joinApprovalRequired = false,
+    this.pendingCount = 0,
+    this.pendingMemberIds = const [],
+    this.country,
+    this.state,
+    this.city,
+    this.address,
+    this.timezone,
+    this.currency,
+    this.qrExpiryDays,
+    this.joinCodeExpiresAt,
+    this.archivedAt,
+    this.joinStatus,
   });
 
   final String id;
@@ -513,6 +527,38 @@ class GroupModel extends Equatable {
   final String? adminName;
   final String? organizationName;
 
+  // ── Module 02 (Organization & Group Management) — additive ─────────────────
+
+  /// GRP-003/MEM-004: when true, joining creates a pending request an admin
+  /// must approve.
+  final bool joinApprovalRequired;
+
+  /// MEM-008/010: pending join requests (for the admin approvals badge).
+  final int pendingCount;
+  final List<String> pendingMemberIds;
+
+  /// GRP-003: extended metadata captured at creation (immutable afterward).
+  final String? country;
+  final String? state;
+  final String? city;
+  final String? address;
+  final String? timezone;
+  final String? currency;
+
+  /// GRP-013/CFG-014: QR expiry policy (days; null = Never) + concrete deadline.
+  final int? qrExpiryDays;
+  final DateTime? joinCodeExpiresAt;
+
+  /// GRP-016: archive timestamp (null while active).
+  final DateTime? archivedAt;
+
+  /// MEM-004: transient join outcome returned by POST /groups/join —
+  /// 'active' (joined) or 'pending' (awaiting admin approval). null elsewhere.
+  final String? joinStatus;
+
+  /// True when the most recent join created a pending approval request.
+  bool get isPendingApproval => joinStatus == 'pending';
+
   int get memberCount => memberIds.length;
 
   factory GroupModel.fromJson(Map<String, dynamic> j) => GroupModel(
@@ -538,6 +584,23 @@ class GroupModel extends Equatable {
         functionalRole: UserRole.fromName(j['functionalRole'] as String?),
         adminName: j['adminName'] as String?,
         organizationName: j['organizationName'] as String?,
+        joinApprovalRequired: j['joinApprovalRequired'] ?? false,
+        pendingCount: j['pendingCount'] ?? 0,
+        pendingMemberIds: List<String>.from(j['pendingMemberIds'] ?? []),
+        country: j['country'] as String?,
+        state: j['state'] as String?,
+        city: j['city'] as String?,
+        address: j['address'] as String?,
+        timezone: j['timezone'] as String?,
+        currency: j['currency'] as String?,
+        qrExpiryDays: j['qrExpiryDays'] as int?,
+        joinCodeExpiresAt: j['joinCodeExpiresAt'] != null
+            ? DateTime.tryParse(j['joinCodeExpiresAt'])
+            : null,
+        archivedAt: j['archivedAt'] != null
+            ? DateTime.tryParse(j['archivedAt'])
+            : null,
+        joinStatus: j['joinStatus'] as String?,
       );
 
   Map<String, dynamic> toJson() => {
@@ -557,6 +620,18 @@ class GroupModel extends Equatable {
         'functionalRole': functionalRole?.name,
         'adminName': adminName,
         'organizationName': organizationName,
+        'joinApprovalRequired': joinApprovalRequired,
+        'pendingCount': pendingCount,
+        'pendingMemberIds': pendingMemberIds,
+        'country': country,
+        'state': state,
+        'city': city,
+        'address': address,
+        'timezone': timezone,
+        'currency': currency,
+        'qrExpiryDays': qrExpiryDays,
+        'joinCodeExpiresAt': joinCodeExpiresAt?.toIso8601String(),
+        'archivedAt': archivedAt?.toIso8601String(),
       };
 
   GroupModel copyWith({
@@ -572,6 +647,11 @@ class GroupModel extends Equatable {
     UserRole? functionalRole,
     String? adminName,
     String? organizationName,
+    bool? joinApprovalRequired,
+    int? pendingCount,
+    List<String>? pendingMemberIds,
+    DateTime? joinCodeExpiresAt,
+    DateTime? archivedAt,
   }) =>
       GroupModel(
         id: id,
@@ -590,6 +670,20 @@ class GroupModel extends Equatable {
         functionalRole: functionalRole ?? this.functionalRole,
         adminName: adminName ?? this.adminName,
         organizationName: organizationName ?? this.organizationName,
+        // Module 02: preserve immutable metadata through copies; allow the
+        // few mutable lifecycle fields to be overridden.
+        joinApprovalRequired: joinApprovalRequired ?? this.joinApprovalRequired,
+        pendingCount: pendingCount ?? this.pendingCount,
+        pendingMemberIds: pendingMemberIds ?? this.pendingMemberIds,
+        country: country,
+        state: state,
+        city: city,
+        address: address,
+        timezone: timezone,
+        currency: currency,
+        qrExpiryDays: qrExpiryDays,
+        joinCodeExpiresAt: joinCodeExpiresAt ?? this.joinCodeExpiresAt,
+        archivedAt: archivedAt ?? this.archivedAt,
       );
 
   @override
@@ -603,5 +697,8 @@ class GroupModel extends Equatable {
         blockedMemberIds,
         isActive,
         functionalRole,
+        joinApprovalRequired,
+        pendingCount,
+        archivedAt,
       ];
 }

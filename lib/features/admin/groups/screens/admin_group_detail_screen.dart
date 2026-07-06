@@ -1076,6 +1076,9 @@ class _SettingsTabState extends State<_SettingsTab> {
   bool _togglingPrefs = false;
   bool _updatingPrefTypes = false;
   bool _archiving = false;
+  // GRP-018/019: restore + permanent-delete busy flags.
+  bool _restoring = false;
+  bool _deleting = false;
 
   Future<void> _toggleMeals(bool newValue) async {
     setState(() => _togglingMeals = true);
@@ -1212,8 +1215,8 @@ class _SettingsTabState extends State<_SettingsTab> {
       builder: (ctx) => AlertDialog(
         title: const Text('Archive Group?'),
         content: Text(
-          'Archiving "${widget.group.name}" will remove all member access. '
-          'This action cannot be undone.',
+          'Archiving "${widget.group.name}" hides it and removes all member '
+          'access. You can restore it later from the archived group.',
         ),
         actions: [
           TextButton(
@@ -1250,6 +1253,96 @@ class _SettingsTabState extends State<_SettingsTab> {
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Failed to archive group')),
+      );
+    }
+  }
+
+  /// GRP-018: restore an archived group.
+  Future<void> _confirmRestore() async {
+    setState(() => _restoring = true);
+    final ok = await widget.provider.restoreGroup(
+      widget.group.id,
+      organizationId: widget.organizationId,
+    );
+    if (!mounted) return;
+    setState(() => _restoring = false);
+    if (ok) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Group restored')),
+      );
+      Navigator.of(context).pop();
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(widget.provider.error ?? 'Failed to restore')),
+      );
+    }
+  }
+
+  /// GRP-019: permanently delete a group — irreversible, danger-confirmed by
+  /// typing the group name.
+  Future<void> _confirmPermanentDelete() async {
+    final confirmCtrl = TextEditingController();
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setLocal) => AlertDialog(
+          title: const Text('Permanently delete group?'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'This permanently removes "${widget.group.name}" and ALL of its '
+                'data (members, meals, attendance, billing). This CANNOT be '
+                'undone.\n\nType the group name to confirm:',
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: confirmCtrl,
+                onChanged: (_) => setLocal(() {}),
+                decoration: InputDecoration(
+                  hintText: widget.group.name,
+                  border: const OutlineInputBorder(),
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: confirmCtrl.text.trim() == widget.group.name
+                  ? () => Navigator.pop(ctx, true)
+                  : null,
+              style: FilledButton.styleFrom(
+                backgroundColor: Theme.of(ctx).colorScheme.error,
+              ),
+              child: const Text('Delete forever'),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    if (confirmed != true || !mounted) return;
+
+    setState(() => _deleting = true);
+    final ok = await widget.provider.permanentDeleteGroup(
+      widget.group.id,
+      organizationId: widget.organizationId,
+    );
+    if (!mounted) return;
+    setState(() => _deleting = false);
+    if (ok) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Group permanently deleted')),
+      );
+      Navigator.of(context).pop();
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(widget.provider.error ?? 'Failed to delete')),
       );
     }
   }
@@ -1492,28 +1585,72 @@ class _SettingsTabState extends State<_SettingsTab> {
 
         const SizedBox(height: 16),
 
-        // ── Danger zone ───────────────────────────────────────────────────────
+        // ── Danger zone (GRP-016/018/019) ─────────────────────────────────────
         Card(
           margin: EdgeInsets.zero,
           color: colorScheme.errorContainer.withValues(alpha: 0.3),
-          child: ListTile(
-            leading: _archiving
-                ? SizedBox(
-                    width: 20,
-                    height: 20,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2,
-                      color: colorScheme.error,
-                    ),
-                  )
-                : Icon(Icons.archive_outlined, color: colorScheme.error),
-            title: Text('Archive Group',
-                style: TextStyle(
-                    fontWeight: FontWeight.w600,
-                    color: colorScheme.error)),
-            subtitle: const Text(
-                'Members will lose access. This cannot be undone.'),
-            onTap: _archiving ? null : _confirmArchive,
+          child: Column(
+            children: [
+              if (group.isActive)
+                ListTile(
+                  leading: _archiving
+                      ? SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: colorScheme.error,
+                          ),
+                        )
+                      : Icon(Icons.archive_outlined, color: colorScheme.error),
+                  title: Text('Archive Group',
+                      style: TextStyle(
+                          fontWeight: FontWeight.w600,
+                          color: colorScheme.error)),
+                  subtitle: const Text(
+                      'Hide the group and remove member access. Restorable later.'),
+                  onTap: _archiving ? null : _confirmArchive,
+                )
+              else
+                ListTile(
+                  leading: _restoring
+                      ? const SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.unarchive_outlined,
+                          color: AppColors.present),
+                  title: const Text('Restore Group',
+                      style: TextStyle(
+                          fontWeight: FontWeight.w600,
+                          color: AppColors.present)),
+                  subtitle: const Text(
+                      'Make this group active again with all its data.'),
+                  onTap: _restoring ? null : _confirmRestore,
+                ),
+              const Divider(height: 1),
+              // GRP-019: permanent delete — always available, irreversible.
+              ListTile(
+                leading: _deleting
+                    ? SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: colorScheme.error,
+                        ),
+                      )
+                    : Icon(Icons.delete_forever_outlined,
+                        color: colorScheme.error),
+                title: Text('Delete Permanently',
+                    style: TextStyle(
+                        fontWeight: FontWeight.w600, color: colorScheme.error)),
+                subtitle: const Text(
+                    'Remove the group and ALL its data. Cannot be undone.'),
+                onTap: _deleting ? null : _confirmPermanentDelete,
+              ),
+            ],
           ),
         ),
       ],

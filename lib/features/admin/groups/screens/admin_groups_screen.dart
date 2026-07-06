@@ -10,6 +10,8 @@ import 'package:smart_meal_management/shared/enums/user_role.dart';
 import 'package:smart_meal_management/shared/widgets/app_empty_state.dart';
 import 'package:smart_meal_management/features/auth/providers/auth_provider.dart';
 import 'package:smart_meal_management/shared/widgets/app_skeleton.dart';
+import 'package:smart_meal_management/features/admin/groups/screens/group_join_requests_screen.dart';
+import 'package:smart_meal_management/data/services/group_order_service.dart';
 
 /// Admin groups list screen.
 ///
@@ -25,6 +27,11 @@ class AdminGroupsScreen extends StatefulWidget {
 class _AdminGroupsScreenState extends State<AdminGroupsScreen> {
   late final AdminGroupProvider _provider;
   bool _initialized = false;
+  // GRP-016/018: toggle the archived-groups view (for restore / permanent delete).
+  bool _showArchived = false;
+  // GRP-007: device-local drag-and-drop order of groups (per user).
+  List<String> _order = const [];
+  String _userId = '';
 
   @override
   void didChangeDependencies() {
@@ -36,14 +43,34 @@ class _AdminGroupsScreenState extends State<AdminGroupsScreen> {
       final auth = AuthProviderScope.of(context);
       final user = auth.currentUser;
       if (user == null) return;
+      _userId = user.id;
       _provider.loadGroups(
         organizationId: user.organizationId,
       );
+      // GRP-007: load the saved drag order (device-local).
+      GroupOrderService.instance.load(_userId).then((o) {
+        if (mounted) setState(() => _order = o);
+      });
     }
   }
 
   void _rebuild() {
     if (mounted) setState(() {});
+  }
+
+  /// GRP-007: groups in the user's saved drag order (new groups first).
+  List<GroupModel> get _orderedGroups =>
+      GroupOrderService.instance.applyToGroups(_provider.groups, _order);
+
+  /// GRP-007: persist a new drag order after a reorder gesture.
+  Future<void> _onReorder(int oldIndex, int newIndex) async {
+    final list = _orderedGroups;
+    if (newIndex > oldIndex) newIndex -= 1;
+    final ids = list.map((g) => g.id).toList();
+    final moved = ids.removeAt(oldIndex);
+    ids.insert(newIndex, moved);
+    setState(() => _order = ids);
+    await GroupOrderService.instance.save(_userId, ids);
   }
 
   @override
@@ -89,6 +116,34 @@ class _AdminGroupsScreenState extends State<AdminGroupsScreen> {
         title: Text('Groups', style: AppTypography.titleLarge),
         backgroundColor: colorScheme.surface,
         surfaceTintColor: Colors.transparent,
+        actions: [
+          // GRP-016/018: toggle archived groups (to restore / permanently delete).
+          IconButton(
+            tooltip: _showArchived ? 'Show active' : 'Show archived',
+            icon: Icon(_showArchived
+                ? Icons.inventory_2_rounded
+                : Icons.inventory_2_outlined),
+            onPressed: () {
+              final user = AuthProviderScope.of(context).currentUser;
+              if (user == null) return;
+              setState(() => _showArchived = !_showArchived);
+              _provider.loadGroups(
+                organizationId: user.organizationId,
+                includeInactive: _showArchived,
+              );
+            },
+          ),
+          // MODULE_02 (MEM-006/007): open the pending join-request approvals.
+          IconButton(
+            tooltip: 'Join requests',
+            icon: const Icon(Icons.how_to_reg_rounded),
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (_) => const GroupJoinRequestsScreen(),
+              ),
+            ),
+          ),
+        ],
       ),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: _showCreateSheet,
@@ -134,18 +189,28 @@ class _AdminGroupsScreenState extends State<AdminGroupsScreen> {
                           organizationId: user.organizationId,
                         );
                       },
-                      child: ListView.separated(
+                      // GRP-007: drag-and-drop reordering (persisted per user).
+                      child: ReorderableListView.builder(
                         padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),
-                        itemCount: _provider.groups.length,
-                        separatorBuilder: (_, _) =>
-                            const SizedBox(height: 12),
+                        itemCount: _orderedGroups.length,
+                        onReorder: _onReorder,
+                        proxyDecorator: (child, index, animation) => Material(
+                          color: Colors.transparent,
+                          elevation: 6,
+                          borderRadius: BorderRadius.circular(16),
+                          child: child,
+                        ),
                         itemBuilder: (context, i) {
-                          final group = _provider.groups[i];
-                          return GroupCard(
-                            group: group,
-                            onTap: () => context.push(
-                              RouteNames.adminGroupDetail
-                                  .replaceAll(':groupId', group.id),
+                          final group = _orderedGroups[i];
+                          return Padding(
+                            key: ValueKey(group.id),
+                            padding: const EdgeInsets.only(bottom: 12),
+                            child: GroupCard(
+                              group: group,
+                              onTap: () => context.push(
+                                RouteNames.adminGroupDetail
+                                    .replaceAll(':groupId', group.id),
+                              ),
                             ),
                           );
                         },
@@ -178,8 +243,19 @@ class _CreateGroupSheet extends StatefulWidget {
 
 class _CreateGroupSheetState extends State<_CreateGroupSheet> {
   final _nameCtrl = TextEditingController();
+  final _maxMembersCtrl = TextEditingController();
+  // GRP-003: extended metadata captured at creation (immutable afterward).
+  final _countryCtrl = TextEditingController();
+  final _stateCtrl = TextEditingController();
+  final _cityCtrl = TextEditingController();
+  final _addressCtrl = TextEditingController();
+  final _currencyCtrl = TextEditingController();
+  final _qrExpiryCtrl = TextEditingController();
+  bool _showMoreOptions = false;
   GroupType _type = GroupType.hostel;
   bool _mealsEnabled = true;
+  // MODULE_02 (GRP-003/MEM-004): require admin approval for join requests.
+  bool _requireApproval = false;
   bool _saving = false;
 
   // #1: the admin's per-group functional role/title (display-only). Seeded from
@@ -223,7 +299,40 @@ class _CreateGroupSheetState extends State<_CreateGroupSheet> {
   @override
   void dispose() {
     _nameCtrl.dispose();
+    _maxMembersCtrl.dispose();
+    _countryCtrl.dispose();
+    _stateCtrl.dispose();
+    _cityCtrl.dispose();
+    _addressCtrl.dispose();
+    _currencyCtrl.dispose();
+    _qrExpiryCtrl.dispose();
     super.dispose();
+  }
+
+  String? _trimOrNull(TextEditingController c) {
+    final v = c.text.trim();
+    return v.isEmpty ? null : v;
+  }
+
+  Widget _metaField(
+    TextEditingController ctrl,
+    String label,
+    ColorScheme colorScheme, {
+    bool number = false,
+  }) {
+    return TextField(
+      controller: ctrl,
+      keyboardType: number ? TextInputType.number : TextInputType.text,
+      textCapitalization:
+          number ? TextCapitalization.none : TextCapitalization.words,
+      decoration: InputDecoration(
+        labelText: label,
+        isDense: true,
+        filled: true,
+        fillColor: colorScheme.surfaceContainerLowest,
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+      ),
+    );
   }
 
   Future<void> _save() async {
@@ -232,12 +341,25 @@ class _CreateGroupSheetState extends State<_CreateGroupSheet> {
 
     setState(() => _saving = true);
 
+    final maxMembers = int.tryParse(_maxMembersCtrl.text.trim());
+
+    final qrExpiry = int.tryParse(_qrExpiryCtrl.text.trim());
+
     final group = await widget.provider.createGroup(
       organizationId: widget.organizationId,
       name: name,
       type: _type,
       functionalRole: _functionalRole,
       mealConfig: GroupMealConfig(mealsEnabled: _mealsEnabled),
+      maxMembers: (maxMembers != null && maxMembers > 0) ? maxMembers : null,
+      joinApprovalRequired: _requireApproval,
+      // GRP-003: extended metadata (immutable after creation).
+      country: _trimOrNull(_countryCtrl),
+      state: _trimOrNull(_stateCtrl),
+      city: _trimOrNull(_cityCtrl),
+      address: _trimOrNull(_addressCtrl),
+      currency: _trimOrNull(_currencyCtrl),
+      qrExpiryDays: (qrExpiry != null && qrExpiry > 0) ? qrExpiry : null,
     );
 
     if (!mounted) return;
@@ -423,6 +545,103 @@ class _CreateGroupSheetState extends State<_CreateGroupSheet> {
               onChanged: (v) => setState(() => _mealsEnabled = v),
             ),
           ),
+          const SizedBox(height: 16),
+
+          // ── Maximum Members (GRP-004) — optional, capped by role limit ────
+          TextField(
+            controller: _maxMembersCtrl,
+            keyboardType: TextInputType.number,
+            decoration: InputDecoration(
+              labelText: 'Maximum Members (optional)',
+              hintText: 'Leave blank for no limit',
+              filled: true,
+              fillColor: colorScheme.surfaceContainerLowest,
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+            ),
+          ),
+          const SizedBox(height: 16),
+
+          // ── Join Approval Mode (GRP-003 / MEM-004) ────────────────────────
+          Container(
+            decoration: BoxDecoration(
+              color: colorScheme.surfaceContainerLowest,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                color: colorScheme.outlineVariant.withValues(alpha: 0.4),
+              ),
+            ),
+            child: SwitchListTile(
+              contentPadding:
+                  const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
+              title: Text(
+                'Require Approval to Join',
+                style: AppTypography.labelMedium
+                    .copyWith(fontWeight: FontWeight.w600),
+              ),
+              subtitle: Text(
+                _requireApproval
+                    ? 'New members wait for your approval before joining.'
+                    : 'Anyone with the code/QR joins immediately.',
+                style: AppTypography.bodySmall
+                    .copyWith(color: colorScheme.onSurfaceVariant),
+              ),
+              value: _requireApproval,
+              onChanged: (v) => setState(() => _requireApproval = v),
+            ),
+          ),
+          const SizedBox(height: 8),
+
+          // ── More options (GRP-003 location/currency/QR expiry) ────────────
+          InkWell(
+            onTap: () => setState(() => _showMoreOptions = !_showMoreOptions),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 8),
+              child: Row(
+                children: [
+                  Icon(
+                    _showMoreOptions
+                        ? Icons.expand_less_rounded
+                        : Icons.expand_more_rounded,
+                    size: 20,
+                    color: colorScheme.onSurfaceVariant,
+                  ),
+                  const SizedBox(width: 6),
+                  Text(
+                    'More options (location, currency, QR expiry)',
+                    style: AppTypography.labelMedium
+                        .copyWith(color: colorScheme.onSurfaceVariant),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          if (_showMoreOptions) ...[
+            const SizedBox(height: 8),
+            Row(children: [
+              Expanded(child: _metaField(_countryCtrl, 'Country', colorScheme)),
+              const SizedBox(width: 10),
+              Expanded(child: _metaField(_stateCtrl, 'State', colorScheme)),
+            ]),
+            const SizedBox(height: 10),
+            Row(children: [
+              Expanded(child: _metaField(_cityCtrl, 'City', colorScheme)),
+              const SizedBox(width: 10),
+              Expanded(
+                  child: _metaField(_currencyCtrl, 'Currency (e.g. INR)',
+                      colorScheme)),
+            ]),
+            const SizedBox(height: 10),
+            _metaField(_addressCtrl, 'Address', colorScheme),
+            const SizedBox(height: 10),
+            _metaField(
+              _qrExpiryCtrl,
+              'QR expiry in days (blank = never)',
+              colorScheme,
+              number: true,
+            ),
+          ],
           const SizedBox(height: 24),
 
           // ── Save ───────────────────────────────────────────────────────

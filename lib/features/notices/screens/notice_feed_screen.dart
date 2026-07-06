@@ -14,6 +14,8 @@ import 'package:smart_meal_management/features/admin/attendance/screens/vacation
 import 'package:smart_meal_management/features/student/attendance/screens/my_corrections_screen.dart';
 import 'package:smart_meal_management/features/student/settings/screens/student_vacation_request_screen.dart';
 import 'package:smart_meal_management/features/notices/screens/notice_composer_screen.dart';
+import 'package:smart_meal_management/features/admin/groups/screens/group_join_requests_screen.dart';
+import 'package:smart_meal_management/features/admin/groups/screens/admin_groups_screen.dart';
 import 'package:smart_meal_management/shared/models/notice_model.dart';
 import 'package:smart_meal_management/shared/models/notification_diagnostics_model.dart';
 import 'package:smart_meal_management/shared/models/result.dart';
@@ -158,6 +160,14 @@ class _NoticeFeedScreenState extends State<NoticeFeedScreen> {
         return const StudentVacationRequestScreen();
       case 'myCorrections': // member: their correction requests + decision
         return const MyCorrectionsScreen();
+      // Module 02 (MEM-006/007): admin join-request approvals.
+      case 'groupJoinRequests':
+        return const GroupJoinRequestsScreen();
+      // Module 02 (NTF-004): group-full alert opens group management.
+      case 'groupMembers':
+        return const AdminGroupsScreen();
+      // 'myGroups' (member lifecycle decisions) falls through to the detail
+      // sheet — the notice text is the actionable content.
       default:
         return null;
     }
@@ -216,6 +226,18 @@ class _NoticeFeedScreenState extends State<NoticeFeedScreen> {
             onDelete: () => _delete(n),
           ),
         );
+        // NTF-006: members swipe a notice away to remove it from their OWN bell
+        // (per-user dismissal). Admins keep the swipe-to-mark-read behaviour so
+        // their management gestures are unchanged.
+        if (!widget.isAdmin) {
+          return Dismissible(
+            key: ValueKey('dis_${n.id}'),
+            direction: DismissDirection.endToStart,
+            background: const _SwipeDismissBackground(),
+            onDismissed: (_) => _dismiss(n),
+            child: card,
+          );
+        }
         if (n.isRead) return card;
         // Swipe left to mark read without opening (confirmDismiss returns false
         // so the row snaps back, now read, instead of being removed).
@@ -239,6 +261,46 @@ class _NoticeFeedScreenState extends State<NoticeFeedScreen> {
     setState(() {
       _notices = _notices.map((n) => n.copyWith(isRead: true)).toList();
     });
+  }
+
+  /// NTF-006: remove ONE notice from THIS member's bell (per-user hide). The
+  /// shared notice is untouched for everyone else.
+  Future<void> _dismiss(NoticeModel n) async {
+    setState(() => _notices.removeWhere((x) => x.id == n.id));
+    await _repo.dismissNotice(n.id);
+  }
+
+  /// NTF-006: "Delete All" — clear every notice from THIS member's bell.
+  Future<void> _dismissAll() async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Clear all notifications?'),
+        content: const Text(
+          'This removes every notification from your bell. It does not affect '
+          'other members.',
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancel')),
+          FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Clear all')),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    final snapshot = _notices;
+    setState(() => _notices = []);
+    final res = await _repo.dismissAll(groupId: widget.groupId);
+    if (!mounted) return;
+    if (res case Err(:final failure)) {
+      // Restore on failure so nothing is silently lost.
+      setState(() => _notices = snapshot);
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(failure.message)));
+    }
   }
 
   Future<void> _compose() async {
@@ -310,6 +372,13 @@ class _NoticeFeedScreenState extends State<NoticeFeedScreen> {
             TextButton(
               onPressed: _markAllRead,
               child: Text('Mark all read', style: AppTypography.labelMedium),
+            ),
+          // NTF-006: clear all notifications from this user's own bell.
+          if (_notices.isNotEmpty)
+            IconButton(
+              tooltip: 'Clear all',
+              icon: const Icon(Icons.clear_all_rounded),
+              onPressed: _dismissAll,
             ),
           if (widget.isAdmin)
             IconButton(
@@ -419,6 +488,35 @@ class _SwipeMarkReadBackground extends StatelessWidget {
           Text('Mark read',
               style: AppTypography.labelMedium.copyWith(
                   color: AppColors.present, fontWeight: FontWeight.w700)),
+        ],
+      ),
+    );
+  }
+}
+
+/// NTF-006: swipe background for a member dismissing a notice from their bell.
+class _SwipeDismissBackground extends StatelessWidget {
+  const _SwipeDismissBackground();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      alignment: Alignment.centerRight,
+      padding: const EdgeInsets.only(right: 20),
+      decoration: BoxDecoration(
+        color: AppColors.error.withValues(alpha: 0.14),
+        borderRadius: BorderRadius.circular(14),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(Icons.delete_sweep_rounded,
+              size: 18, color: AppColors.error),
+          const SizedBox(width: 6),
+          Text('Remove',
+              style: AppTypography.labelMedium.copyWith(
+                  color: AppColors.error, fontWeight: FontWeight.w700)),
         ],
       ),
     );

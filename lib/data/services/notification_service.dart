@@ -378,20 +378,25 @@ class NotificationService {
     required String body,
     String? payload,
     int id = 0,
+    String? tag,
   }) async {
     if (!_initialized) return;
     await _plugin.show(
       id,
       title,
       body,
-      const NotificationDetails(
+      NotificationDetails(
+        // PRIORITY-1 (duplicate fix): the Android `tag` + a stable `id` make a
+        // repeat of the SAME logical push REPLACE the existing notification
+        // instead of stacking a second copy.
         android: AndroidNotificationDetails(
           'meal_instant',
           'Meal Notifications',
           channelDescription: 'Instant meal notifications.',
           importance: Importance.defaultImportance,
+          tag: tag,
         ),
-        iOS: DarwinNotificationDetails(),
+        iOS: const DarwinNotificationDetails(),
       ),
       payload: payload,
     );

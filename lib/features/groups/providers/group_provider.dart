@@ -132,12 +132,15 @@ class GroupProvider extends ChangeNotifier {
     switch (result) {
       case Ok(:final value):
         _lastJoined = value;
-        // Add / update in myGroups list
-        final idx = _myGroups.indexWhere((g) => g.id == value.id);
-        if (idx >= 0) {
-          _myGroups[idx] = value;
-        } else {
-          _myGroups = [..._myGroups, value];
+        // MEM-004: a PENDING join is awaiting approval — the member is NOT yet
+        // active, so it must not enter the active groups list.
+        if (!value.isPendingApproval) {
+          final idx = _myGroups.indexWhere((g) => g.id == value.id);
+          if (idx >= 0) {
+            _myGroups[idx] = value;
+          } else {
+            _myGroups = [..._myGroups, value];
+          }
         }
         success = true;
       case Err(:final failure):
@@ -169,16 +172,15 @@ class GroupProvider extends ChangeNotifier {
 
   // ── Leave group ────────────────────────────────────────────────────────────
 
+  /// MEM-016/017: self-service leave. Uses the dedicated member endpoint (the
+  /// old path called the admin-only removeMember route, which 403'd for a
+  /// student leaving their own group).
   Future<bool> leaveGroup({
     required String organizationId,
     required String groupId,
     required String userId,
   }) async {
-    final result = await _repo.removeMember(
-      organizationId: organizationId,
-      groupId: groupId,
-      userId: userId,
-    );
+    final result = await _repo.leaveGroup(groupId: groupId);
 
     switch (result) {
       case Ok():
@@ -186,7 +188,42 @@ class GroupProvider extends ChangeNotifier {
         if (_selectedGroup?.id == groupId) _selectedGroup = null;
         notifyListeners();
         return true;
-      case Err():
+      case Err(:final failure):
+        _error = failure.message;
+        notifyListeners();
+        return false;
+    }
+  }
+
+  // ── Join preview (MEM-002) ──────────────────────────────────────────────────
+
+  /// Pre-join preview: identity, capacity and whether approval is required.
+  /// Returns null on failure (caller shows [joinError]).
+  Future<Map<String, dynamic>?> previewJoin(String joinCode) async {
+    final result = await _repo.previewJoin(joinCode: joinCode.trim());
+    switch (result) {
+      case Ok(:final value):
+        return value;
+      case Err(:final failure):
+        _joinError = failure.message;
+        notifyListeners();
+        return null;
+    }
+  }
+
+  // ── Cancel pending request (MEM-005) ────────────────────────────────────────
+
+  /// Cancel the member's own pending join request.
+  Future<bool> cancelPendingRequest(String groupId) async {
+    final result = await _repo.cancelJoinRequest(groupId: groupId);
+    switch (result) {
+      case Ok():
+        if (_lastJoined?.id == groupId) _lastJoined = null;
+        notifyListeners();
+        return true;
+      case Err(:final failure):
+        _joinError = failure.message;
+        notifyListeners();
         return false;
     }
   }
