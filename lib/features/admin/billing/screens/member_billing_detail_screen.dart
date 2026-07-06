@@ -11,6 +11,7 @@ import 'package:smart_meal_management/shared/models/attendance_model.dart';
 import 'package:smart_meal_management/shared/models/meal_model.dart';
 import 'package:smart_meal_management/shared/models/paginated_response.dart';
 import 'package:smart_meal_management/shared/models/result.dart';
+import 'package:smart_meal_management/shared/widgets/app_skeleton.dart';
 
 /// Member Billing Detail (V2) — dedicated screen (not a bottom sheet).
 class MemberBillingDetailScreen extends StatefulWidget {
@@ -25,6 +26,9 @@ class MemberBillingDetailScreen extends StatefulWidget {
     required this.from,
     required this.to,
     required this.pricingEnabled,
+    this.guestCount = 0,
+    this.guestAmount = 0,
+    this.adjustmentsTotal = 0,
   });
 
   final String userId;
@@ -36,6 +40,14 @@ class MemberBillingDetailScreen extends StatefulWidget {
   final DateTime from;
   final DateTime to;
   final bool pricingEnabled;
+
+  /// Billing-consistency fix: the same hosted-guest charges and signed ledger
+  /// adjustments the Member Billing list shows, so this screen's headline is
+  /// the SAME net figure the member sees on their own My Billing screen
+  /// (net = meals + guests + adjustments) instead of a meals-only number.
+  final int guestCount;
+  final int guestAmount;
+  final int adjustmentsTotal;
 
   @override
   State<MemberBillingDetailScreen> createState() =>
@@ -138,6 +150,16 @@ class _MemberBillingDetailScreenState extends State<MemberBillingDetailScreen> {
     });
   }
 
+  /// Guest + adjustment figures for this member so the exported summary is
+  /// the SAME net bill the screen (and the member's My Billing) shows.
+  Map<String, MemberExportFinancials> get _exportFinancials => {
+        widget.userId: MemberExportFinancials(
+          guestCount: widget.guestCount,
+          guestAmount: widget.guestAmount,
+          adjustmentsTotal: widget.adjustmentsTotal,
+        ),
+      };
+
   Future<void> _export(String fmt) async {
     if (_exporting) return;
     setState(() => _exporting = true);
@@ -157,6 +179,7 @@ class _MemberBillingDetailScreenState extends State<MemberBillingDetailScreen> {
             dateRangeLabel: label,
             todayMeals: _todayMeals,
             vacationUserIds: _vacationUserIds,
+            financialsByUser: _exportFinancials,
           );
         case 'csv':
           await svc.exportCsv(
@@ -169,6 +192,7 @@ class _MemberBillingDetailScreenState extends State<MemberBillingDetailScreen> {
             dateRangeLabel: label,
             todayMeals: _todayMeals,
             vacationUserIds: _vacationUserIds,
+            financialsByUser: _exportFinancials,
           );
         default:
           await svc.exportXlsx(
@@ -181,6 +205,7 @@ class _MemberBillingDetailScreenState extends State<MemberBillingDetailScreen> {
             dateRangeLabel: label,
             todayMeals: _todayMeals,
             vacationUserIds: _vacationUserIds,
+            financialsByUser: _exportFinancials,
           );
       }
       if (mounted) {
@@ -236,6 +261,20 @@ class _MemberBillingDetailScreenState extends State<MemberBillingDetailScreen> {
     return days == 0 ? 0 : (bill / days).round();
   }
 
+  /// Meals-only charge (sum of PRESENT rows) — matches the "Meals by date"
+  /// table below.
+  int get _mealsBill => _summary?.totalBill ?? 0;
+
+  /// The bill: meals + hosted guests + signed adjustments. Computed from the
+  /// figures shown on this screen so the on-screen math always adds up, and
+  /// identical to the backend's netBill / the member's own My Billing total.
+  int get _netBill => _mealsBill + widget.guestAmount + widget.adjustmentsTotal;
+
+  bool get _hasFinancialExtras =>
+      widget.guestAmount != 0 || widget.adjustmentsTotal != 0;
+
+  static String _rupees(int v) => v < 0 ? '-₹${-v}' : '₹$v';
+
   String _fmtDate(DateTime d) {
     const m = [
       'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
@@ -280,7 +319,7 @@ class _MemberBillingDetailScreenState extends State<MemberBillingDetailScreen> {
         ],
       ),
       body: _loading
-          ? const Center(child: CircularProgressIndicator())
+          ? const AppDetailSkeleton(headerHeight: 150, rows: 5)
           : RefreshIndicator(
               onRefresh: _load,
               color: AppColors.primary,
@@ -344,12 +383,22 @@ class _MemberBillingDetailScreenState extends State<MemberBillingDetailScreen> {
                   .copyWith(color: Colors.white.withValues(alpha: 0.75))),
           if (widget.pricingEnabled) ...[
             const SizedBox(height: 14),
-            Text('Total Bill',
+            Text(_hasFinancialExtras ? 'Net Bill' : 'Total Bill',
                 style: AppTypography.labelSmall
                     .copyWith(color: Colors.white.withValues(alpha: 0.85))),
-            Text('₹${_summary?.totalBill ?? 0}',
+            Text(_rupees(_netBill),
                 style: AppTypography.numericMedium.copyWith(
                     color: Colors.white, fontWeight: FontWeight.w800)),
+            // The same components the member list + student screen show, so
+            // every surface tells one identical money story.
+            if (_hasFinancialExtras)
+              Text(
+                'Meals ${_rupees(_mealsBill)}'
+                '${widget.guestAmount != 0 ? ' · Guests +₹${widget.guestAmount}' : ''}'
+                '${widget.adjustmentsTotal != 0 ? ' · Adjustments ${widget.adjustmentsTotal > 0 ? '+' : '−'}₹${widget.adjustmentsTotal.abs()}' : ''}',
+                style: AppTypography.labelSmall
+                    .copyWith(color: Colors.white.withValues(alpha: 0.85)),
+              ),
           ],
         ],
       ),
@@ -360,7 +409,9 @@ class _MemberBillingDetailScreenState extends State<MemberBillingDetailScreen> {
     final s = _summary;
     final items = <List<String>>[
       ['Present', '${s?.present ?? 0}'],
-      ['Skipped', '${s?.skipped ?? 0}'],
+      // Includes virtual auto-skips (closed windows never marked) — the member
+      // list's "Skipped" counts only explicitly marked skips, hence differs.
+      ['Skipped (incl. auto)', '${s?.skipped ?? 0}'],
       ['Absent', '${s?.absent ?? 0}'],
       ['Total meals', '${s?.totalMeals ?? 0}'],
       if (widget.pricingEnabled) ['Avg daily', '₹$_avgDailyCost'],
@@ -502,15 +553,54 @@ class _MemberBillingDetailScreenState extends State<MemberBillingDetailScreen> {
                   ],
                 ),
               )),
+          // Same structure as the member's own My Billing breakdown, so admin
+          // and member always reconcile line-by-line to the same net figure.
+          if (widget.guestAmount != 0)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 5),
+              child: Row(
+                children: [
+                  Expanded(
+                      child: Text('Hosted guests (${widget.guestCount})',
+                          style: AppTypography.bodySmall
+                              .copyWith(color: AppColors.secondary))),
+                  Text('₹${widget.guestAmount}',
+                      style: AppTypography.bodySmall.copyWith(
+                          fontWeight: FontWeight.w700,
+                          color: AppColors.secondary)),
+                ],
+              ),
+            ),
+          if (widget.adjustmentsTotal != 0)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 5),
+              child: Row(
+                children: [
+                  Expanded(
+                      child: Text('Adjustments (credits / refunds)',
+                          style: AppTypography.bodySmall.copyWith(
+                              color: widget.adjustmentsTotal > 0
+                                  ? AppColors.warning
+                                  : AppColors.present))),
+                  Text(
+                      '${widget.adjustmentsTotal > 0 ? '+' : '−'}₹${widget.adjustmentsTotal.abs()}',
+                      style: AppTypography.bodySmall.copyWith(
+                          fontWeight: FontWeight.w700,
+                          color: widget.adjustmentsTotal > 0
+                              ? AppColors.warning
+                              : AppColors.present)),
+                ],
+              ),
+            ),
           const Divider(height: 18),
           Row(
             children: [
               Expanded(
-                child: Text('Grand Total',
+                child: Text(_hasFinancialExtras ? 'Net Total' : 'Grand Total',
                     style: AppTypography.labelLarge
                         .copyWith(fontWeight: FontWeight.w800)),
               ),
-              Text('₹${_summary?.totalBill ?? 0}',
+              Text(_rupees(_netBill),
                   style: AppTypography.titleSmall.copyWith(
                       fontWeight: FontWeight.w800, color: AppColors.primary)),
             ],

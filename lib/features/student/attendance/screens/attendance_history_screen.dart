@@ -9,6 +9,7 @@ import 'package:smart_meal_management/shared/models/attendance_model.dart';
 import 'package:smart_meal_management/shared/models/paginated_response.dart';
 import 'package:smart_meal_management/shared/models/result.dart';
 import 'package:smart_meal_management/shared/widgets/app_screen_states.dart';
+import 'package:smart_meal_management/shared/widgets/app_skeleton.dart';
 
 /// Student attendance history — premium timeline with monthly summary + streak.
 ///
@@ -266,16 +267,7 @@ class _AttendanceHistoryScreenState extends State<AttendanceHistoryScreen> {
                               const SizedBox(height: AppConstants.space8),
                           itemBuilder: (context, i) {
                             if (i == _records.length) {
-                              return const Padding(
-                                padding:
-                                    EdgeInsets.all(AppConstants.space16),
-                                child: Center(
-                                  child: CircularProgressIndicator(
-                                    color: AppColors.primary,
-                                    strokeWidth: 2,
-                                  ),
-                                ),
-                              );
+                              return const AppSheetSkeleton(rows: 1, rowHeight: 64, padding: EdgeInsets.symmetric(vertical: 8));
                             }
                             return _HistoryTile(
                               record: _records[i],
@@ -840,12 +832,7 @@ class _LoadingView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const Center(
-      child: CircularProgressIndicator(
-        color: AppColors.primary,
-        strokeWidth: 2.5,
-      ),
-    );
+    return const AppListSkeleton(rows: 6, rowHeight: 72);
   }
 }
 

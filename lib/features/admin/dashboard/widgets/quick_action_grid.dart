@@ -8,12 +8,14 @@ import 'package:smart_meal_management/core/theme/app_colors.dart';
 /// Each tile is a tappable card that navigates to a key admin feature:
 /// Groups, Configure Meals, Export Reports, Attendance, and Billing.
 /// FR-ADM-050: optional callback tiles add "Publish Notice" and
-/// "Corrections" when the host screen provides handlers.
+/// "Corrections" when the host screen provides handlers; "Vacations" opens
+/// the vacation-approval queue and "Notepad" the personal notepad.
 class QuickActionGrid extends StatelessWidget {
   const QuickActionGrid({
     super.key,
     this.onPublishNotice,
     this.onReviewCorrections,
+    this.onVacationRequests,
   });
 
   /// FR-ADM-050 (ISSUE-15): opens the notice composer when provided.
@@ -21,6 +23,9 @@ class QuickActionGrid extends StatelessWidget {
 
   /// Module 33: opens the correction-requests review queue when provided.
   final VoidCallback? onReviewCorrections;
+
+  /// command_3: opens the vacation-requests approval queue when provided.
+  final VoidCallback? onVacationRequests;
 
   @override
   Widget build(BuildContext context) {
@@ -69,6 +74,19 @@ class QuickActionGrid extends StatelessWidget {
           color: AppColors.secondary,
           onTap: onReviewCorrections,
         ),
+      if (onVacationRequests != null)
+        _ActionItem(
+          icon: Icons.beach_access_rounded,
+          label: 'Vacations',
+          color: AppColors.vacation,
+          onTap: onVacationRequests,
+        ),
+      const _ActionItem(
+        icon: Icons.edit_note_rounded,
+        label: 'Notepad',
+        color: AppColors.violet,
+        route: RouteNames.notepad,
+      ),
     ];
 
     return GridView.count(

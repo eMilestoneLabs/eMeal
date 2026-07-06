@@ -7,6 +7,7 @@ import 'package:smart_meal_management/data/repositories/vacation_repository.dart
 import 'package:smart_meal_management/shared/models/meal_model.dart';
 import 'package:smart_meal_management/shared/models/result.dart';
 import 'package:smart_meal_management/shared/models/vacation_request_model.dart';
+import 'package:smart_meal_management/shared/widgets/app_skeleton.dart';
 
 /// Issue 3 — Student "Request Vacation" screen.
 ///
@@ -251,10 +252,7 @@ class _StudentVacationRequestScreenState
                   .copyWith(fontWeight: FontWeight.w700)),
           const SizedBox(height: 12),
           if (_loading)
-            const Center(child: Padding(
-              padding: EdgeInsets.all(16),
-              child: CircularProgressIndicator(),
-            ))
+            const AppSheetSkeleton(rows: 3, rowHeight: 72, padding: EdgeInsets.symmetric(vertical: 8))
           else if (_mine.isEmpty)
             Text('No requests yet.',
                 style: AppTypography.bodySmall

@@ -12,6 +12,7 @@ import 'package:smart_meal_management/shared/models/meal_model.dart';
 import 'package:smart_meal_management/shared/models/my_billing.dart';
 import 'package:smart_meal_management/shared/models/paginated_response.dart';
 import 'package:smart_meal_management/shared/models/result.dart';
+import 'package:smart_meal_management/shared/widgets/app_skeleton.dart';
 
 /// Student Billing — a transparent, snapshot-accurate view of the student's OWN
 /// meal charges. Fully additive: reuses [BillingService] (snapshot prices +
@@ -216,12 +217,29 @@ class _StudentBillingScreenState extends State<StudentBillingScreen> {
     }
   }
 
+  /// The signed-in member's own guest + adjustment figures (from the shared
+  /// billing engine) so the exported summary carries the SAME net bill the
+  /// screen shows — hosted guests billed to this member, itemised.
+  Map<String, MemberExportFinancials> get _exportFinancials {
+    final uid = AuthProviderScope.of(context).currentUser?.id;
+    final sb = _serverBilling;
+    if (uid == null || sb == null) return const {};
+    return {
+      uid: MemberExportFinancials(
+        guestCount: sb.guestCount,
+        guestAmount: sb.guestAmount,
+        adjustmentsTotal: sb.adjustmentsTotal,
+      ),
+    };
+  }
+
   Future<void> _export(String fmt) async {
     if (_exporting) return;
     setState(() => _exporting = true);
     final svc = ExportService.instance;
     final label = '${_fmtDate(_from)} - ${_fmtDate(_to)}';
     final name = _groupName.isEmpty ? 'My Billing' : _groupName;
+    final financials = _exportFinancials;
     try {
       switch (fmt) {
         case 'pdf':
@@ -235,6 +253,7 @@ class _StudentBillingScreenState extends State<StudentBillingScreen> {
             dateRangeLabel: label,
             todayMeals: _todayMeals,
             vacationUserIds: _vacationUserIds,
+            financialsByUser: financials,
           );
         case 'csv':
           await svc.exportCsv(
@@ -247,6 +266,7 @@ class _StudentBillingScreenState extends State<StudentBillingScreen> {
             dateRangeLabel: label,
             todayMeals: _todayMeals,
             vacationUserIds: _vacationUserIds,
+            financialsByUser: financials,
           );
         default:
           await svc.exportXlsx(
@@ -259,6 +279,7 @@ class _StudentBillingScreenState extends State<StudentBillingScreen> {
             dateRangeLabel: label,
             todayMeals: _todayMeals,
             vacationUserIds: _vacationUserIds,
+            financialsByUser: financials,
           );
       }
       if (mounted) {
@@ -382,7 +403,7 @@ class _StudentBillingScreenState extends State<StudentBillingScreen> {
         ],
       ),
       body: _loading
-          ? const Center(child: CircularProgressIndicator())
+          ? const AppDetailSkeleton(headerHeight: 150, rows: 5, rowHeight: 68)
           : _error != null
               ? _infoCard(isDark, _error!, AppColors.error)
               : RefreshIndicator(
@@ -435,7 +456,9 @@ class _StudentBillingScreenState extends State<StudentBillingScreen> {
             Icons.account_balance_wallet_rounded, AppColors.primary),
       _statCard(isDark, 'Present', '$present', Icons.restaurant_rounded,
           AppColors.present),
-      _statCard(isDark, 'Skipped', '${s?.skipped ?? 0}',
+      // Includes virtual auto-skips (closed windows never marked) — matches
+      // the admin's member detail; the admin LIST counts only marked skips.
+      _statCard(isDark, 'Skipped (incl. auto)', '${s?.skipped ?? 0}',
           Icons.skip_next_rounded, AppColors.warning),
       _statCard(isDark, 'Absent', '${s?.absent ?? 0}',
           Icons.event_busy_rounded, AppColors.absent),
@@ -867,7 +890,8 @@ class _StudentBillingScreenState extends State<StudentBillingScreen> {
 
   // ── Helpers ────────────────────────────────────────────────────────────────
 
-  String _cur(int v) => '₹$v';
+  // Negative-safe (credits can exceed the bill): -₹962, not ₹-962.
+  String _cur(int v) => v < 0 ? '-₹${-v}' : '₹$v';
 
   Widget _breakdownRow(String label, String value, Color color) => Padding(
         padding: const EdgeInsets.symmetric(vertical: 5),

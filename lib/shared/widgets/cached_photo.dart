@@ -2,6 +2,8 @@ import 'dart:typed_data';
 
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
+import 'package:smart_meal_management/core/theme/app_colors.dart';
+import 'package:smart_meal_management/shared/widgets/app_skeleton.dart';
 
 /// Displays an image from local [bytes] (a just-picked image or a base64 data
 /// URI already decoded) when available, otherwise from a network [url] with
@@ -63,7 +65,11 @@ class CachedPhoto extends StatelessWidget {
       // Snap the image in instead of the default 500ms fade.
       fadeInDuration: const Duration(milliseconds: 120),
       fadeOutDuration: const Duration(milliseconds: 120),
-      placeholder: placeholder == null ? null : (_, _) => placeholder!,
+      // Loading state: caller's placeholder, else a shimmer skeleton sized to
+      // the image footprint (never a blank box). Error keeps the caller's
+      // placeholder/fallback semantics unchanged — loading ≠ error UI.
+      placeholder: (_, _) =>
+          placeholder ?? _ImageSkeleton(width: width, height: height),
       errorWidget: (_, _, _) =>
           onError != null ? onError() : (placeholder ?? const SizedBox.shrink()),
     );
@@ -90,5 +96,26 @@ class CachedPhoto extends StatelessWidget {
       return _networkImage(original);
     }
     return placeholder ?? const SizedBox.shrink();
+  }
+}
+
+/// Default loading placeholder for [CachedPhoto]: a soft shimmer block that
+/// fills the image footprint (clipped by whatever shape the caller applies —
+/// avatar circle, card radius, banner). Fades out when the image fades in.
+class _ImageSkeleton extends StatelessWidget {
+  const _ImageSkeleton({this.width, this.height});
+
+  final double? width;
+  final double? height;
+
+  @override
+  Widget build(BuildContext context) {
+    return AppShimmer(
+      child: Container(
+        width: width,
+        height: height,
+        color: AppColors.surfaceVariant,
+      ),
+    );
   }
 }

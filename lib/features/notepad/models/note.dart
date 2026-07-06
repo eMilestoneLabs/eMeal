@@ -1,10 +1,14 @@
 import 'package:flutter/material.dart';
 
-/// Filter buckets for the notepad list.
-enum NoteFilter { all, pinned, favorites, archived }
+/// Filter buckets for the notepad list. `today` / `week` / `checklists` are
+/// smart filters computed from note state — nothing extra is persisted.
+enum NoteFilter { all, pinned, favorites, today, week, checklists, archived }
 
 /// Sort orders for the notepad list.
 enum NoteSort { newest, oldest, lastModified, alphabetical }
+
+/// Home-screen layout: single-column list or two-column masonry grid.
+enum NoteLayout { list, grid }
 
 extension NoteSortLabel on NoteSort {
   String get label => switch (this) {
@@ -20,7 +24,21 @@ extension NoteFilterLabel on NoteFilter {
     NoteFilter.all => 'All',
     NoteFilter.pinned => 'Pinned',
     NoteFilter.favorites => 'Favorites',
+    NoteFilter.today => 'Today',
+    NoteFilter.week => 'This Week',
+    NoteFilter.checklists => 'Checklists',
     NoteFilter.archived => 'Archived',
+  };
+
+  /// Small leading glyph for the filter chip rail.
+  IconData get icon => switch (this) {
+    NoteFilter.all => Icons.grid_view_rounded,
+    NoteFilter.pinned => Icons.push_pin_rounded,
+    NoteFilter.favorites => Icons.favorite_rounded,
+    NoteFilter.today => Icons.today_rounded,
+    NoteFilter.week => Icons.date_range_rounded,
+    NoteFilter.checklists => Icons.checklist_rounded,
+    NoteFilter.archived => Icons.archive_rounded,
   };
 }
 
@@ -125,6 +143,17 @@ class Note {
   }
 
   int get characterCount => body.characters.length;
+
+  /// Estimated reading time in minutes (~200 wpm, minimum 1 for any content).
+  int get readingMinutes {
+    final w = wordCount;
+    if (w == 0) return 0;
+    return (w / 200).ceil();
+  }
+
+  /// Checklist completion ratio in `[0, 1]` (0 for empty checklists).
+  double get checklistProgress =>
+      checklistTotal == 0 ? 0 : checklistDone / checklistTotal;
 
   Note copyWith({
     String? title,

@@ -10,6 +10,7 @@ import 'package:smart_meal_management/shared/models/attendance_model.dart';
 import 'package:smart_meal_management/shared/models/group_model.dart';
 import 'package:smart_meal_management/shared/models/meal_model.dart';
 import 'package:smart_meal_management/shared/models/result.dart';
+import 'package:smart_meal_management/shared/widgets/app_skeleton.dart';
 
 /// Issue 5 — Staff (admin / manager) self-attendance.
 ///
@@ -224,7 +225,7 @@ class _StaffAttendanceScreenState extends State<StaffAttendanceScreen> {
     return Scaffold(
       appBar: AppBar(title: const Text('Mark My Attendance')),
       body: _loadingGroups
-          ? const Center(child: CircularProgressIndicator())
+          ? const AppListSkeleton(rows: 4, rowHeight: 120, headerHeight: 48)
           : RefreshIndicator(
               onRefresh: _load,
               child: ListView(
@@ -242,10 +243,7 @@ class _StaffAttendanceScreenState extends State<StaffAttendanceScreen> {
                   if (_groups.isNotEmpty) _groupSelector(isDark),
                   const SizedBox(height: 16),
                   if (_loading)
-                    const Padding(
-                      padding: EdgeInsets.symmetric(vertical: 48),
-                      child: Center(child: CircularProgressIndicator()),
-                    )
+                    const AppSheetSkeleton(rows: 3, rowHeight: 110, padding: EdgeInsets.symmetric(vertical: 24))
                   else if (_error != null)
                     _infoCard(isDark, _error!, AppColors.error)
                   else if (_meals.isEmpty)

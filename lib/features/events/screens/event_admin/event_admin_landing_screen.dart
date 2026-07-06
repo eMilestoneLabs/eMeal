@@ -7,6 +7,7 @@ import 'package:smart_meal_management/core/theme/app_typography.dart';
 import 'package:smart_meal_management/features/auth/providers/auth_provider.dart';
 import 'package:smart_meal_management/features/events/models/event_model.dart';
 import 'package:smart_meal_management/features/events/providers/event_admin_provider.dart';
+import 'package:smart_meal_management/shared/widgets/app_skeleton.dart';
 
 // ── EventAdminLandingScreen ────────────────────────────────────────────────────
 
@@ -122,12 +123,7 @@ class _EventAdminLandingScreenState extends State<EventAdminLandingScreen> {
 
           if (_provider.isLoadingEvents)
             const SliverFillRemaining(
-              child: Center(
-                child: CircularProgressIndicator(
-                  valueColor:
-                      AlwaysStoppedAnimation<Color>(AppColors.vacation),
-                ),
-              ),
+              child: AppListSkeleton(rows: 3, rowHeight: 120),
             )
           else if (_provider.myEvents.isEmpty)
             SliverFillRemaining(

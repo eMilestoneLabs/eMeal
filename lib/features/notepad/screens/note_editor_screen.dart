@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_animate/flutter_animate.dart';
 import 'package:smart_meal_management/core/constants/app_constants.dart';
 import 'package:smart_meal_management/core/theme/app_colors.dart';
 import 'package:smart_meal_management/core/theme/app_typography.dart';
@@ -40,6 +41,10 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
   // One controller per checklist row, cached by item id across rebuilds.
   final Map<String, TextEditingController> _itemControllers = {};
   String? _pendingFocusItemId;
+
+  /// Bumped when the checklist reaches 100% so the progress ring replays its
+  /// celebration animation exactly once per completion.
+  int _celebrationTick = 0;
 
   NotepadProvider get _provider => widget.provider;
 
@@ -110,6 +115,38 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
   void _addChecklistItem() {
     final id = _provider.addChecklistItem(widget.noteId);
     setState(() => _pendingFocusItemId = id);
+  }
+
+  /// Toggles a checklist row and fires a small celebration the moment the
+  /// list transitions to fully complete.
+  Future<void> _toggleItem(Note note, ChecklistItem item) async {
+    final wasComplete =
+        note.checklistTotal > 0 && note.checklistDone == note.checklistTotal;
+    await _provider.toggleChecklistItem(note.id, item.id);
+    if (!mounted) return;
+    final updated = _provider.noteById(note.id);
+    if (updated == null) return;
+    final nowComplete =
+        updated.checklistTotal > 0 &&
+        updated.checklistDone == updated.checklistTotal;
+    if (nowComplete && !wasComplete) {
+      setState(() => _celebrationTick++);
+      _snack('All ${updated.checklistTotal} items done — great job! 🎉');
+    }
+  }
+
+  /// Inserts [text] at the current cursor position of the body field
+  /// (replacing any selection). The controller listener autosaves as usual.
+  void _insertIntoBody(String text) {
+    final value = _bodyController.value;
+    final sel = value.selection;
+    final start = sel.isValid ? sel.start : value.text.length;
+    final end = sel.isValid ? sel.end : value.text.length;
+    final updated = value.text.replaceRange(start, end, text);
+    _bodyController.value = TextEditingValue(
+      text: updated,
+      selection: TextSelection.collapsed(offset: start + text.length),
+    );
   }
 
   // ── Actions ──────────────────────────────────────────────────────────────────
@@ -223,10 +260,13 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
         }
         if (note.isChecklist) _syncItemControllers(note);
 
+        // Coloured notes tint the whole canvas so the editor matches the card.
+        final canvas = NotePalette.cardFill(note.colorId, isDark) ?? bg;
+
         return Scaffold(
-          backgroundColor: bg,
+          backgroundColor: canvas,
           appBar: AppBar(
-            backgroundColor: bg,
+            backgroundColor: canvas,
             surfaceTintColor: Colors.transparent,
             elevation: 0,
             actions: [
@@ -275,6 +315,10 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
                         _reminderChip(note, isDark),
                       ],
                       const SizedBox(height: AppConstants.space8),
+                      if (note.isChecklist && note.checklistTotal > 0) ...[
+                        _checklistProgressHeader(note, isDark),
+                        const SizedBox(height: AppConstants.space12),
+                      ],
                       if (note.isChecklist)
                         _checklistEditor(note, isDark)
                       else
@@ -284,6 +328,7 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
                     ],
                   ),
                 ),
+                _editorToolbar(note, isDark),
                 _EditorFooter(
                   provider: _provider,
                   noteId: widget.noteId,
@@ -376,8 +421,7 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
                                 ? AppColors.textTertiaryDark
                                 : AppColors.textTertiary),
                   ),
-                  onPressed:
-                      () => _provider.toggleChecklistItem(note.id, item.id),
+                  onPressed: () => _toggleItem(note, item),
                 ),
                 Expanded(
                   child: TextField(
@@ -458,6 +502,237 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
           ),
         ),
       ],
+    );
+  }
+
+  /// Animated completion ring + count for checklist notes. Replays a small
+  /// celebratory pulse (keyed by [_celebrationTick]) when everything is done.
+  Widget _checklistProgressHeader(Note note, bool isDark) {
+    final progress = note.checklistProgress;
+    final complete = progress >= 1.0;
+    final color = complete ? AppColors.secondary : AppColors.primary;
+
+    Widget ring = SizedBox(
+      width: 44,
+      height: 44,
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          TweenAnimationBuilder<double>(
+            tween: Tween(begin: 0, end: progress),
+            duration: AppConstants.animNormal,
+            curve: Curves.easeOutCubic,
+            builder:
+                (context, v, _) => CircularProgressIndicator(
+                  value: v,
+                  strokeWidth: 4,
+                  backgroundColor: (isDark
+                          ? AppColors.borderDark
+                          : AppColors.border)
+                      .withValues(alpha: 0.5),
+                  valueColor: AlwaysStoppedAnimation<Color>(color),
+                ),
+          ),
+          complete
+              ? Icon(Icons.check_rounded, size: 20, color: color)
+              : Text(
+                '${(progress * 100).round()}%',
+                style: AppTypography.labelSmall.copyWith(
+                  fontSize: 10,
+                  fontWeight: FontWeight.w800,
+                  color: color,
+                ),
+              ),
+        ],
+      ),
+    );
+    if (complete) {
+      ring = ring
+          .animate(key: ValueKey('celebrate_$_celebrationTick'))
+          .scale(
+            begin: const Offset(0.7, 0.7),
+            end: const Offset(1, 1),
+            duration: AppConstants.animNormal,
+            curve: Curves.elasticOut,
+          );
+    }
+
+    return Container(
+      padding: const EdgeInsets.all(AppConstants.space12),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: isDark ? 0.14 : 0.07),
+        borderRadius: BorderRadius.circular(AppConstants.cardRadius),
+        border: Border.all(color: color.withValues(alpha: 0.25)),
+      ),
+      child: Row(
+        children: [
+          ring,
+          const SizedBox(width: AppConstants.space12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  complete
+                      ? 'All done — beautifully finished! 🎉'
+                      : '${note.checklistDone} / ${note.checklistTotal} completed',
+                  style: AppTypography.titleSmall.copyWith(
+                    fontWeight: FontWeight.w700,
+                    color:
+                        isDark
+                            ? AppColors.textPrimaryDark
+                            : AppColors.textPrimary,
+                  ),
+                ),
+                const SizedBox(height: AppConstants.space6),
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(3),
+                  child: TweenAnimationBuilder<double>(
+                    tween: Tween(begin: 0, end: progress),
+                    duration: AppConstants.animNormal,
+                    curve: Curves.easeOutCubic,
+                    builder:
+                        (context, v, _) => LinearProgressIndicator(
+                          value: v,
+                          minHeight: 6,
+                          backgroundColor: (isDark
+                                  ? AppColors.borderDark
+                                  : AppColors.border)
+                              .withValues(alpha: 0.5),
+                          valueColor: AlwaysStoppedAnimation<Color>(color),
+                        ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Slim always-visible tool strip above the footer: note colours, insert
+  /// date/time (text notes), and text⇄checklist conversion.
+  Widget _editorToolbar(Note note, bool isDark) {
+    final divider = Container(
+      width: 1,
+      height: 24,
+      margin: const EdgeInsets.symmetric(horizontal: AppConstants.space8),
+      color: (isDark ? AppColors.borderDark : AppColors.border).withValues(
+        alpha: 0.6,
+      ),
+    );
+
+    return Container(
+      height: 48,
+      padding: const EdgeInsets.symmetric(horizontal: AppConstants.space12),
+      decoration: BoxDecoration(
+        border: Border(
+          top: BorderSide(
+            color: (isDark ? AppColors.borderDark : AppColors.border)
+                .withValues(alpha: 0.5),
+          ),
+        ),
+      ),
+      child: ListView(
+        scrollDirection: Axis.horizontal,
+        children: [
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // Colour dots — applied instantly, autosaved by the provider.
+              ...List.generate(NotePalette.count, (i) {
+                final selected = note.colorId == i;
+                final accent = NotePalette.accent(i, isDark);
+                return Padding(
+                  padding: const EdgeInsets.only(right: AppConstants.space6),
+                  child: InkResponse(
+                    radius: 16,
+                    onTap: () => _provider.setColor(note.id, i),
+                    child: AnimatedContainer(
+                      duration: AppConstants.animFast,
+                      width: 22,
+                      height: 22,
+                      decoration: BoxDecoration(
+                        color:
+                            i == 0
+                                ? Colors.transparent
+                                : accent.withValues(alpha: isDark ? 0.4 : 0.3),
+                        shape: BoxShape.circle,
+                        border: Border.all(
+                          color: selected ? AppColors.primary : accent,
+                          width: selected ? 2 : 1,
+                        ),
+                      ),
+                      child:
+                          selected
+                              ? Icon(
+                                Icons.check_rounded,
+                                size: 12,
+                                color:
+                                    i == 0
+                                        ? AppColors.primary
+                                        : (isDark
+                                            ? Colors.white
+                                            : AppColors.textPrimary),
+                              )
+                              : null,
+                    ),
+                  ),
+                );
+              }),
+              divider,
+              if (!note.isChecklist) ...[
+                IconButton(
+                  tooltip: 'Insert date',
+                  visualDensity: VisualDensity.compact,
+                  icon: const Icon(Icons.calendar_today_rounded, size: 19),
+                  color: AppColors.primary,
+                  onPressed:
+                      () => _insertIntoBody(
+                        NoteDateFormat.dateStamp(DateTime.now()),
+                      ),
+                ),
+                IconButton(
+                  tooltip: 'Insert time',
+                  visualDensity: VisualDensity.compact,
+                  icon: const Icon(Icons.schedule_rounded, size: 19),
+                  color: AppColors.primary,
+                  onPressed:
+                      () => _insertIntoBody(
+                        NoteDateFormat.timeStamp(DateTime.now()),
+                      ),
+                ),
+              ],
+              IconButton(
+                tooltip:
+                    note.isChecklist
+                        ? 'Convert to text note'
+                        : 'Convert to checklist',
+                visualDensity: VisualDensity.compact,
+                icon: Icon(
+                  note.isChecklist
+                      ? Icons.notes_rounded
+                      : Icons.checklist_rounded,
+                  size: 20,
+                ),
+                color: AppColors.primary,
+                onPressed: () async {
+                  final toChecklist = !note.isChecklist;
+                  await _provider.setChecklistMode(note.id, toChecklist);
+                  if (!mounted) return;
+                  if (toChecklist) {
+                    _bodyController.clear();
+                  } else {
+                    _bodyController.text =
+                        _provider.noteById(note.id)?.body ?? '';
+                  }
+                },
+              ),
+            ],
+          ),
+        ],
+      ),
     );
   }
 
@@ -622,7 +897,10 @@ class _EditorFooter extends StatelessWidget {
         final metric =
             note.isChecklist
                 ? '${note.checklistDone}/${note.checklistTotal} done'
-                : '${note.wordCount} words · ${note.characterCount} chars';
+                : note.wordCount == 0
+                ? '0 words · 0 chars'
+                : '${note.wordCount} words · ${note.characterCount} chars · '
+                    '${note.readingMinutes} min read';
         return Container(
           padding: const EdgeInsets.symmetric(
             horizontal: AppConstants.space20,

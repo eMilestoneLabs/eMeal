@@ -51,7 +51,23 @@ class NoteCard extends StatelessWidget {
         borderRadius: BorderRadius.circular(AppConstants.cardRadius),
         child: Ink(
           decoration: BoxDecoration(
-            color: fill,
+            color: note.colorId > 0 ? null : fill,
+            // Coloured notes get a soft two-stop gradient of their accent so
+            // the card reads premium instead of a flat tint.
+            gradient:
+                note.colorId > 0
+                    ? LinearGradient(
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                      colors: [
+                        fill,
+                        Color.alphaBlend(
+                          accent.withValues(alpha: isDark ? 0.06 : 0.04),
+                          fill,
+                        ),
+                      ],
+                    )
+                    : null,
             borderRadius: BorderRadius.circular(AppConstants.cardRadius),
             border: Border.all(color: borderColor, width: selected ? 2 : 1),
             boxShadow:
@@ -59,9 +75,10 @@ class NoteCard extends StatelessWidget {
                     ? null
                     : [
                       BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.04),
-                        blurRadius: 8,
-                        offset: const Offset(0, 2),
+                        color: (note.colorId > 0 ? accent : Colors.black)
+                            .withValues(alpha: 0.06),
+                        blurRadius: 14,
+                        offset: const Offset(0, 4),
                       ),
                     ],
           ),
@@ -96,6 +113,10 @@ class NoteCard extends StatelessWidget {
                   ],
                 ),
                 _buildPreview(isDark),
+                if (note.isChecklist && note.checklistTotal > 0) ...[
+                  const SizedBox(height: AppConstants.space8),
+                  _progressBar(isDark),
+                ],
                 if (note.tags.isNotEmpty) ...[
                   const SizedBox(height: AppConstants.space8),
                   _tagWrap(isDark),
@@ -232,6 +253,47 @@ class NoteCard extends StatelessWidget {
     );
   }
 
+  /// Slim animated completion bar for checklist cards — fills as items are
+  /// ticked and turns green when everything is done.
+  Widget _progressBar(bool isDark) {
+    final progress = note.checklistProgress;
+    final done = progress >= 1.0;
+    final barColor = done ? AppColors.secondary : AppColors.primary;
+    return Row(
+      children: [
+        Expanded(
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(3),
+            child: TweenAnimationBuilder<double>(
+              tween: Tween(begin: 0, end: progress),
+              duration: AppConstants.animNormal,
+              curve: Curves.easeOutCubic,
+              builder:
+                  (context, v, _) => LinearProgressIndicator(
+                    value: v,
+                    minHeight: 5,
+                    backgroundColor: (isDark
+                            ? AppColors.borderDark
+                            : AppColors.border)
+                        .withValues(alpha: 0.5),
+                    valueColor: AlwaysStoppedAnimation<Color>(barColor),
+                  ),
+            ),
+          ),
+        ),
+        const SizedBox(width: AppConstants.space8),
+        Text(
+          '${(progress * 100).round()}%',
+          style: AppTypography.labelSmall.copyWith(
+            fontSize: 11,
+            fontWeight: FontWeight.w700,
+            color: barColor,
+          ),
+        ),
+      ],
+    );
+  }
+
   Widget _tagWrap(bool isDark) {
     final shown = note.tags.take(3).toList();
     final extra = note.tags.length - shown.length;
@@ -287,7 +349,13 @@ class NoteCard extends StatelessWidget {
         ],
         Flexible(
           child: Text(
-            NoteDateFormat.relative(note.updatedAt),
+            // Text notes surface word count + reading time next to the stamp
+            // (e.g. "8 min ago · 120 words · 1 min read").
+            note.isChecklist || note.wordCount == 0
+                ? NoteDateFormat.relative(note.updatedAt)
+                : '${NoteDateFormat.relative(note.updatedAt)} · '
+                    '${note.wordCount} word${note.wordCount == 1 ? '' : 's'} · '
+                    '${note.readingMinutes} min read',
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: AppTypography.labelSmall.copyWith(

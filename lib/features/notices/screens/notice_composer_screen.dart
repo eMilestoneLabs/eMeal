@@ -5,6 +5,7 @@ import 'package:smart_meal_management/data/repositories/group_repository.dart';
 import 'package:smart_meal_management/data/repositories/notice_repository.dart';
 import 'package:smart_meal_management/shared/models/group_model.dart';
 import 'package:smart_meal_management/shared/models/result.dart';
+import 'package:smart_meal_management/shared/widgets/app_skeleton.dart';
 
 /// Premium priority colours (Issue 2) — shared with the notice feed card so the
 /// chip in the composer matches what members will see. Spec: low=grey,
@@ -272,10 +273,7 @@ class _NoticeComposerScreenState extends State<NoticeComposerScreen> {
           if (_scope == 'groups') ...[
             const SizedBox(height: 6),
             if (_loadingGroups)
-              const Padding(
-                padding: EdgeInsets.symmetric(vertical: 12),
-                child: Center(child: CircularProgressIndicator()),
-              )
+              const AppSheetSkeleton(rows: 2, rowHeight: 52, padding: EdgeInsets.symmetric(vertical: 8))
             else if (_groups.isEmpty)
               Text(
                 'No groups yet — create a group first.',

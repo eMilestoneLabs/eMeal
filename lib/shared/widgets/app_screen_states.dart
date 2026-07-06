@@ -3,6 +3,7 @@ import 'package:smart_meal_management/core/errors/failure.dart';
 import 'package:smart_meal_management/core/theme/app_colors.dart';
 import 'package:smart_meal_management/core/theme/app_typography.dart';
 import 'package:smart_meal_management/shared/widgets/app_empty_state.dart';
+import 'package:smart_meal_management/shared/widgets/app_skeleton.dart';
 
 /// Pass 13 (SRS Module 28) — the canonical screen-state kit.
 ///
@@ -121,6 +122,9 @@ class AppSectionError extends StatelessWidget {
 
 /// ES-004 — layout-stable skeleton rows: same heights/radii as the real list
 /// tiles so content never jumps when data lands.
+///
+/// Now backed by the premium shimmer system in [AppListSkeleton] (single
+/// sweep animation, dark-mode aware, reduced-motion safe). API unchanged.
 class AppSkeletonList extends StatelessWidget {
   const AppSkeletonList({
     super.key,
@@ -135,54 +139,12 @@ class AppSkeletonList extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final base = isDark ? AppColors.surfaceVariantDark : AppColors.surfaceVariant;
-    return Column(
-      children: [
-        for (var i = 0; i < rows; i++) ...[
-          _PulseBox(height: rowHeight, color: base),
-          if (i != rows - 1) SizedBox(height: spacing),
-        ],
-      ],
-    );
-  }
-}
-
-class _PulseBox extends StatefulWidget {
-  const _PulseBox({required this.height, required this.color});
-  final double height;
-  final Color color;
-
-  @override
-  State<_PulseBox> createState() => _PulseBoxState();
-}
-
-class _PulseBoxState extends State<_PulseBox>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _c = AnimationController(
-    vsync: this,
-    duration: const Duration(milliseconds: 900),
-    lowerBound: 0.45,
-    upperBound: 1.0,
-  )..repeat(reverse: true);
-
-  @override
-  void dispose() {
-    _c.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return FadeTransition(
-      opacity: _c,
-      child: Container(
-        height: widget.height,
-        decoration: BoxDecoration(
-          color: widget.color,
-          borderRadius: BorderRadius.circular(16),
-        ),
-      ),
+    return AppListSkeleton(
+      rows: rows,
+      rowHeight: rowHeight,
+      spacing: spacing,
+      expand: false,
+      padding: EdgeInsets.zero,
     );
   }
 }

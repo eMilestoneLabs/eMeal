@@ -23,6 +23,7 @@ class ExportPreviewScreen extends StatelessWidget {
     required this.dateRangeLabel,
     required this.onExport,
     required this.isExporting,
+    this.financialsByUser = const {},
   });
 
   final List<BillingRow> rows;
@@ -30,6 +31,10 @@ class ExportPreviewScreen extends StatelessWidget {
   final String groupName;
   final bool pricingEnabled;
   final String dateRangeLabel;
+
+  /// Guests + adjustments per member — the preview headlines the same
+  /// host-inclusive NET bill the exported files (and billing screens) show.
+  final Map<String, MemberExportFinancials> financialsByUser;
 
   /// Triggers the actual export ('pdf' | 'xlsx' | 'csv').
   final Future<void> Function(String format) onExport;
@@ -157,6 +162,8 @@ class ExportPreviewScreen extends StatelessWidget {
     final consumed = s.consumedByMeal.entries
         .map((e) => '${e.key}: ${e.value}')
         .join(' · ');
+    final fin = financialsByUser[s.userId];
+    final hasFin = fin != null && fin.hasAny;
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
       padding: const EdgeInsets.all(14),
@@ -179,7 +186,11 @@ class ExportPreviewScreen extends StatelessWidget {
                         .copyWith(fontWeight: FontWeight.w700)),
               ),
               if (pricingEnabled)
-                Text('₹${s.totalBill}',
+                Text(
+                    hasFin
+                        ? MemberExportFinancials.net(
+                            '₹', fin.netFor(s.totalBill))
+                        : '₹${s.totalBill}',
                     style: AppTypography.titleSmall.copyWith(
                         color: AppColors.primary,
                         fontWeight: FontWeight.w700)),
@@ -192,6 +203,17 @@ class ExportPreviewScreen extends StatelessWidget {
             style: AppTypography.labelSmall
                 .copyWith(color: AppColors.textSecondary),
           ),
+          // Host-inclusive money components — matches file exports exactly.
+          if (pricingEnabled && hasFin) ...[
+            const SizedBox(height: 2),
+            Text(
+              'Meals ₹${s.totalBill}'
+              '${fin.guestAmount != 0 ? ' · Guests (${fin.guestCount}) +₹${fin.guestAmount}' : ''}'
+              '${fin.adjustmentsTotal != 0 ? ' · Adj ${fin.adjustmentsTotal > 0 ? '+' : '−'}₹${fin.adjustmentsTotal.abs()}' : ''}',
+              style: AppTypography.labelSmall
+                  .copyWith(color: AppColors.textSecondary),
+            ),
+          ],
           if (consumed.isNotEmpty) ...[
             const SizedBox(height: 2),
             Text(consumed,

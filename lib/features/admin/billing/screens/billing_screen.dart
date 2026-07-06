@@ -10,6 +10,7 @@ import 'package:smart_meal_management/shared/widgets/app_screen_states.dart';
 import 'package:smart_meal_management/features/auth/providers/auth_provider.dart';
 import 'package:smart_meal_management/shared/models/billing_summary.dart';
 import 'package:smart_meal_management/shared/models/group_model.dart';
+import 'package:smart_meal_management/shared/widgets/app_skeleton.dart';
 
 /// Member Billing V2 — premium fintech-style billing dashboard (admin).
 class BillingScreen extends StatefulWidget {
@@ -67,6 +68,11 @@ class _BillingScreenState extends State<BillingScreen> {
           from: _provider.from,
           to: _provider.to,
           pricingEnabled: _provider.pricingEnabled,
+          // Billing-consistency fix: hand over the guest + adjustment figures
+          // so the detail headline is the same net bill this list shows.
+          guestCount: m.guestCount,
+          guestAmount: m.guestAmount,
+          adjustmentsTotal: m.adjustmentsTotal,
         ),
       ),
     );
@@ -120,7 +126,7 @@ class _BillingScreenState extends State<BillingScreen> {
         listenable: _provider,
         builder: (context, _) {
           if (_provider.loadingGroups) {
-            return const Center(child: CircularProgressIndicator());
+            return const AppDashboardSkeleton();
           }
           if (_provider.groups.isEmpty) {
             return Center(
@@ -224,11 +230,14 @@ class _BillingScreenState extends State<BillingScreen> {
       _SummaryCard(
         // Module 22 (FR-HG-050): guest revenue is itemised inside the total.
         // Pass 12 (FR-BILLX-030): ledger adjustments surface as NET revenue.
-        label: s.adjustmentsTotal != 0
-            ? 'Net Revenue (adj ${s.adjustmentsTotal > 0 ? '+' : '−'}${cur(s.adjustmentsTotal.abs())})'
+        // Short label (the long "(adj −₹…)" suffix truncated on phones); the
+        // gross + adjustment components live in the subline instead.
+        label: s.adjustmentsTotal != 0 ? 'Net Revenue' : 'Revenue',
+        sub: s.adjustmentsTotal != 0
+            ? 'gross ${cur(s.revenue)} · adj ${s.adjustmentsTotal > 0 ? '+' : '−'}${cur(s.adjustmentsTotal.abs())}'
             : (s.guestRevenue > 0
-                ? 'Revenue (incl. ${cur(s.guestRevenue)} guests)'
-                : 'Revenue'),
+                ? 'incl. ${cur(s.guestRevenue)} guests'
+                : null),
         value: cur(s.adjustmentsTotal != 0 ? s.netRevenue : s.revenue),
         icon: Icons.payments_rounded,
         accent: AppColors.present,
@@ -282,7 +291,9 @@ class _BillingScreenState extends State<BillingScreen> {
     }
 
     return SizedBox(
-      height: 96,
+      // 110 (was 96): room for the net-revenue components subline without
+      // overflowing the fixed-height horizontal strip.
+      height: 110,
       child: ListView.separated(
         scrollDirection: Axis.horizontal,
         physics: const BouncingScrollPhysics(),
@@ -367,7 +378,8 @@ class _BillingScreenState extends State<BillingScreen> {
   }
 }
 
-String cur(int v) => '₹$v';
+// Negative-safe: ₹-962 reads badly, -₹962 reads like money owed back.
+String cur(int v) => v < 0 ? '-₹${-v}' : '₹$v';
 
 // Summary card
 class _SummaryCard extends StatelessWidget {
@@ -376,11 +388,15 @@ class _SummaryCard extends StatelessWidget {
     required this.value,
     required this.icon,
     required this.accent,
+    this.sub,
   });
   final String label;
   final String value;
   final IconData icon;
   final Color accent;
+
+  /// Optional secondary line (e.g. gross + adjustments behind a net figure).
+  final String? sub;
 
   @override
   Widget build(BuildContext context) {
@@ -414,6 +430,12 @@ class _SummaryCard extends StatelessWidget {
           Text(label,
               style: AppTypography.labelSmall
                   .copyWith(color: AppColors.textTertiary)),
+          if (sub != null)
+            Text(sub!,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: AppTypography.labelSmall
+                    .copyWith(color: AppColors.textTertiary, fontSize: 10)),
         ],
       ),
     );
@@ -848,7 +870,7 @@ class _MemberCard extends StatelessWidget {
                     if (pricingEnabled && member.adjustmentsTotal != 0)
                       Text(
                         'Adjustments ${member.adjustmentsTotal > 0 ? '+' : '−'}'
-                        '${cur(member.adjustmentsTotal.abs())} → net ${cur(member.netBill)}',
+                        '${cur(member.adjustmentsTotal.abs())}',
                         style: AppTypography.labelSmall.copyWith(
                           color: member.adjustmentsTotal > 0
                               ? AppColors.warning
@@ -866,11 +888,20 @@ class _MemberCard extends StatelessWidget {
               Column(
                 crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
-                  if (pricingEnabled)
-                    Text(cur(member.totalBill),
+                  // Billing-consistency fix: the headline is the NET bill
+                  // (meals + guests + adjustments) — the same figure the
+                  // member sees on My Billing and the sum behind the Net
+                  // Revenue card. Gross stays visible right below.
+                  if (pricingEnabled) ...[
+                    Text(cur(member.netBill),
                         style: AppTypography.titleSmall.copyWith(
                             fontWeight: FontWeight.w800,
                             color: AppColors.primary)),
+                    if (member.netBill != member.totalBill)
+                      Text('gross ${cur(member.totalBill)}',
+                          style: AppTypography.labelSmall
+                              .copyWith(color: AppColors.textTertiary)),
+                  ],
                   const SizedBox(height: 2),
                   const Icon(Icons.chevron_right_rounded,
                       color: AppColors.textTertiary),
@@ -1156,7 +1187,7 @@ class _BillingAnalyticsLoading extends StatelessWidget {
               .withValues(alpha: 0.4),
         ),
       ),
-      child: const Center(child: CircularProgressIndicator()),
+      child: const AppChartSkeleton(height: 148, padding: EdgeInsets.all(16)),
     );
   }
 }

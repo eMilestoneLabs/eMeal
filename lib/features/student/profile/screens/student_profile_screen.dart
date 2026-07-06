@@ -17,6 +17,7 @@ import 'package:smart_meal_management/features/auth/widgets/login_preference_sel
 import 'package:smart_meal_management/features/student/profile/providers/student_profile_provider.dart';
 import 'package:smart_meal_management/shared/widgets/cached_photo.dart';
 import 'package:smart_meal_management/shared/widgets/delete_account_section.dart';
+import 'package:smart_meal_management/shared/widgets/app_skeleton.dart';
 
 /// Student profile screen — premium gradient header, stats, account info.
 ///
@@ -124,7 +125,7 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
     final provider = _provider;
     if (provider == null) {
       return const Scaffold(
-        body: Center(child: CircularProgressIndicator(color: AppColors.primary)),
+        body: AppProfileSkeleton(),
       );
     }
 

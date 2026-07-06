@@ -8,8 +8,8 @@ import 'package:smart_meal_management/features/admin/groups/widgets/group_card.d
 import 'package:smart_meal_management/shared/models/group_model.dart';
 import 'package:smart_meal_management/shared/enums/user_role.dart';
 import 'package:smart_meal_management/shared/widgets/app_empty_state.dart';
-import 'package:smart_meal_management/shared/widgets/app_loading_indicator.dart';
 import 'package:smart_meal_management/features/auth/providers/auth_provider.dart';
+import 'package:smart_meal_management/shared/widgets/app_skeleton.dart';
 
 /// Admin groups list screen.
 ///
@@ -98,7 +98,7 @@ class _AdminGroupsScreenState extends State<AdminGroupsScreen> {
         label: const Text('New Group'),
       ),
       body: _provider.isLoading
-          ? const AppLoadingIndicator()
+          ? const AppListSkeleton(rows: 4, rowHeight: 108)
           : _provider.error != null
               ? AppEmptyState(
                   icon: Icons.error_outline_rounded,

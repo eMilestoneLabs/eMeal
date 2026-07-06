@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
+import 'package:smart_meal_management/data/services/notification_service.dart';
 import 'package:smart_meal_management/features/notepad/data/notepad_repository.dart';
 import 'package:smart_meal_management/features/notepad/models/note.dart';
 
@@ -29,6 +30,7 @@ class NotepadProvider extends ChangeNotifier {
 
   NoteFilter _filter = NoteFilter.all;
   NoteSort _sort = NoteSort.lastModified;
+  NoteLayout _layout = NoteLayout.grid;
   String _query = '';
 
   // Multi-select state.
@@ -39,6 +41,7 @@ class NotepadProvider extends ChangeNotifier {
   bool get isLoading => _loading;
   NoteFilter get filter => _filter;
   NoteSort get sort => _sort;
+  NoteLayout get layout => _layout;
   String get query => _query;
 
   int get totalCount => _notes.values.where((n) => !n.archived).length;
@@ -47,6 +50,43 @@ class NotepadProvider extends ChangeNotifier {
   int get favoriteCount =>
       _notes.values.where((n) => n.favorite && !n.archived).length;
   int get archivedCount => _notes.values.where((n) => n.archived).length;
+  int get checklistCount =>
+      _notes.values.where((n) => n.isChecklist && !n.archived).length;
+  int get todayCount =>
+      _notes.values.where((n) => !n.archived && _isToday(n.updatedAt)).length;
+  int get weekCount =>
+      _notes.values
+          .where((n) => !n.archived && _isWithinWeek(n.updatedAt))
+          .length;
+
+  /// Sum of open (not-done) checklist rows across active checklists — the
+  /// "things left to do" figure for the home stats card.
+  int get openChecklistItems => _notes.values
+      .where((n) => n.isChecklist && !n.archived)
+      .fold(0, (sum, n) => sum + (n.checklistTotal - n.checklistDone));
+
+  /// Most recent edit across active notes (null when the pad is empty).
+  DateTime? get lastEditedAt {
+    DateTime? latest;
+    for (final n in _notes.values) {
+      if (n.archived || n.isEmpty) continue;
+      if (latest == null || n.updatedAt.isAfter(latest)) latest = n.updatedAt;
+    }
+    return latest;
+  }
+
+  static bool _isToday(DateTime d) {
+    final now = DateTime.now();
+    return d.year == now.year && d.month == now.month && d.day == now.day;
+  }
+
+  static bool _isWithinWeek(DateTime d) {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final day = DateTime(d.year, d.month, d.day);
+    final diff = today.difference(day).inDays;
+    return diff >= 0 && diff < 7;
+  }
 
   /// Live snapshot of a single note (or `null` if it was deleted elsewhere).
   Note? noteById(String id) => _notes[id];
@@ -72,6 +112,15 @@ class NotepadProvider extends ChangeNotifier {
               break;
             case NoteFilter.favorites:
               if (n.archived || !n.favorite) return false;
+              break;
+            case NoteFilter.today:
+              if (n.archived || !_isToday(n.updatedAt)) return false;
+              break;
+            case NoteFilter.week:
+              if (n.archived || !_isWithinWeek(n.updatedAt)) return false;
+              break;
+            case NoteFilter.checklists:
+              if (n.archived || !n.isChecklist) return false;
               break;
             case NoteFilter.archived:
               if (!n.archived) return false;
@@ -120,12 +169,23 @@ class NotepadProvider extends ChangeNotifier {
   // ── Loading ────────────────────────────────────────────────────────────────
   Future<void> load() async {
     final loaded = await _repo.loadAll();
+    final layout = await _repo.loadLayout();
     if (_disposed) return;
     _notes
       ..clear()
       ..addEntries(loaded.map((n) => MapEntry(n.id, n)));
+    _layout = layout;
     _loading = false;
     _safeNotify();
+    // Re-assert device alarms for every future reminder (idempotent: the same
+    // note always maps to the same notification id, so this replaces rather
+    // than duplicates). Covers app reinstalls and reminder toggles elsewhere.
+    for (final n in loaded) {
+      final at = n.reminderAt;
+      if (at != null && at.isAfter(DateTime.now())) {
+        _syncReminderAlarm(n);
+      }
+    }
   }
 
   // ── Query / filter / sort ───────────────────────────────────────────────────
@@ -145,6 +205,13 @@ class NotepadProvider extends ChangeNotifier {
     if (_query == value) return;
     _query = value;
     _safeNotify();
+  }
+
+  /// Toggles between list and masonry layouts; persisted across sessions.
+  void toggleLayout() {
+    _layout = _layout == NoteLayout.grid ? NoteLayout.list : NoteLayout.grid;
+    _safeNotify();
+    _repo.saveLayout(_layout);
   }
 
   // ── CRUD ─────────────────────────────────────────────────────────────────────
@@ -232,6 +299,7 @@ class NotepadProvider extends ChangeNotifier {
     _pendingSaves.remove(id)?.cancel();
     final removed = _notes.remove(id);
     if (removed == null) return null;
+    if (removed.hasReminder) _cancelReminderAlarm(id);
     _safeNotify();
     await _repo.remove(id);
     return removed;
@@ -242,6 +310,7 @@ class NotepadProvider extends ChangeNotifier {
     _notes[note.id] = note;
     _safeNotify();
     await _repo.put(note);
+    if (note.hasReminder) _syncReminderAlarm(note);
   }
 
   /// Flushes any pending debounced save for [id] immediately (call on editor
@@ -359,15 +428,46 @@ class NotepadProvider extends ChangeNotifier {
     ),
   );
 
-  // ── Reminder (local-only indicator) ──────────────────────────────────────────
+  // ── Reminder (persisted flag + real device notification) ────────────────────
 
-  Future<void> setReminder(String id, DateTime? when) => _mutate(
-    id,
-    (n) =>
-        when == null
-            ? n.copyWith(clearReminder: true, updatedAt: n.updatedAt)
-            : n.copyWith(reminderAt: when, updatedAt: n.updatedAt),
-  );
+  Future<void> setReminder(String id, DateTime? when) async {
+    await _mutate(
+      id,
+      (n) =>
+          when == null
+              ? n.copyWith(clearReminder: true, updatedAt: n.updatedAt)
+              : n.copyWith(reminderAt: when, updatedAt: n.updatedAt),
+    );
+    final note = _notes[id];
+    if (note != null) _syncReminderAlarm(note);
+  }
+
+  /// Aligns the device alarm with [note]'s current reminder state. Fail-soft:
+  /// notification problems never break the notepad itself.
+  void _syncReminderAlarm(Note note) {
+    try {
+      final at = note.reminderAt;
+      if (at != null && at.isAfter(DateTime.now())) {
+        NotificationService.instance.scheduleNoteReminder(
+          noteId: note.id,
+          title: note.title,
+          when: at,
+        );
+      } else {
+        NotificationService.instance.cancelNoteReminder(note.id);
+      }
+    } catch (_) {
+      // Never let scheduling issues surface as notepad errors.
+    }
+  }
+
+  void _cancelReminderAlarm(String noteId) {
+    try {
+      NotificationService.instance.cancelNoteReminder(noteId);
+    } catch (_) {
+      // Fail soft.
+    }
+  }
 
   // ── Multi-select ─────────────────────────────────────────────────────────────
 
@@ -421,7 +521,10 @@ class NotepadProvider extends ChangeNotifier {
     for (final id in _selectedIds.toList()) {
       _pendingSaves.remove(id)?.cancel();
       final note = _notes.remove(id);
-      if (note != null) removed.add(note);
+      if (note != null) {
+        removed.add(note);
+        if (note.hasReminder) _cancelReminderAlarm(id);
+      }
     }
     _selectedIds.clear();
     _selectionMode = false;
@@ -440,6 +543,7 @@ class NotepadProvider extends ChangeNotifier {
     _safeNotify();
     for (final n in notes) {
       await _repo.put(n);
+      if (n.hasReminder) _syncReminderAlarm(n);
     }
   }
 

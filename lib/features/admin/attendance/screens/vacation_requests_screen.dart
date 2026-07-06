@@ -5,6 +5,7 @@ import 'package:smart_meal_management/core/utils/name_display.dart';
 import 'package:smart_meal_management/data/repositories/vacation_repository.dart';
 import 'package:smart_meal_management/shared/models/result.dart';
 import 'package:smart_meal_management/shared/models/vacation_request_model.dart';
+import 'package:smart_meal_management/shared/widgets/app_skeleton.dart';
 
 /// Issue 3 — Admin "Vacation Requests" management screen.
 ///
@@ -180,7 +181,7 @@ class _VacationRequestsScreenState extends State<VacationRequestsScreen> {
           ),
           Expanded(
             child: _loading
-                ? const Center(child: CircularProgressIndicator())
+                ? const AppListSkeleton(rows: 5, rowHeight: 104)
                 : _error != null
                     ? _info(isDark, _error!, AppColors.error, onRetry: _load)
                     : _items.isEmpty

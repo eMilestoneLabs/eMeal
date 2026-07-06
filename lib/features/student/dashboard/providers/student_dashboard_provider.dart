@@ -632,7 +632,8 @@ class StudentDashboardProvider extends ChangeNotifier {
     if (_remindersEnabled == enabled) return;
     _remindersEnabled = enabled;
     if (!enabled) {
-      NotificationService.instance.cancelAll();
+      // Scoped: only meal reminders — notepad reminders are user-owned.
+      NotificationService.instance.cancelMealReminders();
     } else if (!_isVacationMode && _todayMeals.isNotEmpty) {
       NotificationService.instance.syncReminders(
         _todayMeals,

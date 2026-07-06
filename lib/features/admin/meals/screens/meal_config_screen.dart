@@ -14,6 +14,7 @@ import 'package:smart_meal_management/shared/widgets/app_empty_state.dart';
 import 'package:smart_meal_management/shared/widgets/app_section_title.dart';
 import 'package:smart_meal_management/shared/widgets/app_status_chip.dart';
 import 'package:smart_meal_management/features/auth/providers/auth_provider.dart';
+import 'package:smart_meal_management/shared/widgets/app_skeleton.dart';
 
 /// Admin meal configuration screen.
 ///
@@ -135,7 +136,7 @@ class _MealConfigScreenState extends State<MealConfigScreen> {
             )
           : null,
       body: _provider.isLoading
-          ? const Center(child: CircularProgressIndicator())
+          ? const AppListSkeleton(rows: 4, rowHeight: 104, headerHeight: 48)
           : ListView(
               padding: const EdgeInsets.fromLTRB(20, 20, 20, 100),
               children: [
@@ -202,10 +203,7 @@ class _MealConfigScreenState extends State<MealConfigScreen> {
                 ] else if (_provider.selectedGroup == null) ...[
                   // Groups exist but none resolved yet (brief) — show a loader,
                   // never the misleading "No groups yet" empty state.
-                  const Padding(
-                    padding: EdgeInsets.symmetric(vertical: 48),
-                    child: Center(child: CircularProgressIndicator()),
-                  ),
+                  const AppSheetSkeleton(rows: 3, rowHeight: 104, padding: EdgeInsets.symmetric(vertical: 24)),
                 ] else ...[
                   // ── Master meal toggle ───────────────────────────────────
                   const AppSectionTitle(title: 'Meal System'),

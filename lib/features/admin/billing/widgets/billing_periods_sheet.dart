@@ -3,6 +3,7 @@ import 'package:smart_meal_management/core/theme/app_colors.dart';
 import 'package:smart_meal_management/core/theme/app_typography.dart';
 import 'package:smart_meal_management/data/repositories/billing_periods_repository.dart';
 import 'package:smart_meal_management/shared/models/result.dart';
+import 'package:smart_meal_management/shared/widgets/app_skeleton.dart';
 
 /// SRS FR-DISP-010 (Pass 7) — admin sheet to finalize (lock) the currently
 /// selected billing range and manage existing periods (controlled reopen /
@@ -186,12 +187,7 @@ class _BillingPeriodsSheetState extends State<BillingPeriodsSheet> {
           ),
           const SizedBox(height: 16),
           if (_loading)
-            const Center(
-              child: Padding(
-                padding: EdgeInsets.all(20),
-                child: CircularProgressIndicator(),
-              ),
-            )
+            const AppSheetSkeleton(rows: 3, rowHeight: 64)
           else if (_error != null)
             Text(_error!,
                 style:

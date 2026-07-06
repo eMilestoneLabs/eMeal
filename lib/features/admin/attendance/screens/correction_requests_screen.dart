@@ -5,6 +5,7 @@ import 'package:smart_meal_management/core/utils/name_display.dart';
 import 'package:smart_meal_management/data/repositories/correction_repository.dart';
 import 'package:smart_meal_management/shared/models/correction_request_model.dart';
 import 'package:smart_meal_management/shared/models/result.dart';
+import 'package:smart_meal_management/shared/widgets/app_skeleton.dart';
 
 /// Module 33 — Admin "Correction Requests" queue (FR-ACR-010, ISSUE-17).
 ///
@@ -163,7 +164,7 @@ class _CorrectionRequestsScreenState extends State<CorrectionRequestsScreen> {
           ),
           Expanded(
             child: _loading
-                ? const Center(child: CircularProgressIndicator())
+                ? const AppListSkeleton(rows: 5, rowHeight: 104)
                 : _error != null
                     ? _info(isDark, _error!, AppColors.error, onRetry: _load)
                     : _items.isEmpty

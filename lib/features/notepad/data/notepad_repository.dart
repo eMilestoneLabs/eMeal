@@ -19,19 +19,74 @@ import 'package:smart_meal_management/features/notepad/models/note.dart';
 ///
 /// All methods fail soft: a corrupt or unreadable record is skipped rather than
 /// throwing, so a single bad entry can never break the notepad.
+///
+/// ## Per-account privacy (bug fix)
+/// Keys are namespaced by the logged-in user id (`notepad.u.<uid>.…`) so two
+/// accounts using the same device can NEVER see each other's notes. Notes
+/// written before namespacing existed (legacy `notepad.index.v1` keys) are
+/// migrated once into the namespace of the first account that opens the
+/// notepad after the upgrade — the device owner in practice — and the legacy
+/// keys are removed so they cannot leak to any later account.
 class NotepadRepository {
-  static const String _indexKey = 'notepad.index.v1';
-  static const String _notePrefix = 'notepad.note.v1.';
+  NotepadRepository({String? namespace})
+      : _ns = (namespace == null || namespace.trim().isEmpty)
+            ? null
+            : namespace.trim();
+
+  /// Logged-in user id owning this store; `null` = legacy shared store
+  /// (kept only as a fallback when no user is available).
+  final String? _ns;
+
+  static const String _legacyIndexKey = 'notepad.index.v1';
+  static const String _legacyNotePrefix = 'notepad.note.v1.';
+  static const String _legacyLayoutKey = 'notepad.layout.v1';
+
+  String get _indexKey =>
+      _ns == null ? _legacyIndexKey : 'notepad.u.$_ns.index.v1';
+  String get _notePrefix =>
+      _ns == null ? _legacyNotePrefix : 'notepad.u.$_ns.note.v1.';
+  String get _layoutKey =>
+      _ns == null ? _legacyLayoutKey : 'notepad.u.$_ns.layout.v1';
 
   Future<SharedPreferences> get _prefs => SharedPreferences.getInstance();
 
   String _key(String id) => '$_notePrefix$id';
+
+  /// One-time claim of pre-namespacing notes by the first user store that
+  /// loads after the upgrade. Legacy keys are deleted afterwards so no other
+  /// account on the device can ever read them again.
+  Future<void> _migrateLegacyIfAny(SharedPreferences prefs) async {
+    if (_ns == null) return;
+    try {
+      final legacyIds = prefs.getStringList(_legacyIndexKey);
+      if (legacyIds == null) return;
+      final ids = prefs.getStringList(_indexKey) ?? <String>[];
+      for (final id in legacyIds) {
+        final raw = prefs.getString('$_legacyNotePrefix$id');
+        if (raw != null) {
+          await prefs.setString(_key(id), raw);
+          if (!ids.contains(id)) ids.add(id);
+        }
+        await prefs.remove('$_legacyNotePrefix$id');
+      }
+      await prefs.setStringList(_indexKey, ids);
+      final legacyLayout = prefs.getString(_legacyLayoutKey);
+      if (legacyLayout != null && prefs.getString(_layoutKey) == null) {
+        await prefs.setString(_layoutKey, legacyLayout);
+      }
+      await prefs.remove(_legacyLayoutKey);
+      await prefs.remove(_legacyIndexKey);
+    } catch (_) {
+      // Fail soft — worst case the migration retries on the next load.
+    }
+  }
 
   /// Loads every stored note. Malformed entries are dropped silently and their
   /// ids pruned from the index so they do not accumulate.
   Future<List<Note>> loadAll() async {
     try {
       final prefs = await _prefs;
+      await _migrateLegacyIfAny(prefs);
       final ids = prefs.getStringList(_indexKey) ?? const [];
       if (ids.isEmpty) return [];
 
@@ -79,6 +134,28 @@ class NotepadRepository {
       if (ids != null && ids.remove(id)) {
         await prefs.setStringList(_indexKey, ids);
       }
+    } catch (_) {
+      // Non-fatal.
+    }
+  }
+
+  /// Restores the saved home layout preference (defaults to grid — the
+  /// premium masonry view — when nothing was saved yet).
+  Future<NoteLayout> loadLayout() async {
+    try {
+      final prefs = await _prefs;
+      final raw = prefs.getString(_layoutKey);
+      return raw == NoteLayout.list.name ? NoteLayout.list : NoteLayout.grid;
+    } catch (_) {
+      return NoteLayout.grid;
+    }
+  }
+
+  /// Persists the home layout preference.
+  Future<void> saveLayout(NoteLayout layout) async {
+    try {
+      final prefs = await _prefs;
+      await prefs.setString(_layoutKey, layout.name);
     } catch (_) {
       // Non-fatal.
     }

@@ -6,6 +6,7 @@ import 'package:smart_meal_management/data/repositories/attendance_repository.da
 import 'package:smart_meal_management/data/repositories/group_repository.dart';
 import 'package:smart_meal_management/data/repositories/meal_repository.dart';
 import 'package:smart_meal_management/data/services/billing_service.dart';
+import 'package:smart_meal_management/data/services/export_service.dart';
 import 'package:smart_meal_management/features/admin/exports/providers/export_provider.dart';
 import 'package:smart_meal_management/features/admin/exports/screens/export_preview_screen.dart';
 import 'package:smart_meal_management/shared/models/attendance_model.dart';
@@ -15,6 +16,7 @@ import 'package:smart_meal_management/shared/models/paginated_response.dart';
 import 'package:smart_meal_management/shared/models/result.dart';
 import 'package:smart_meal_management/shared/widgets/app_primary_button.dart';
 import 'package:smart_meal_management/features/auth/providers/auth_provider.dart';
+import 'package:smart_meal_management/shared/widgets/app_skeleton.dart';
 
 /// Export screen — PDF / Excel / CSV attendance reports.
 class ExportScreen extends StatefulWidget {
@@ -153,6 +155,27 @@ class _ExportScreenState extends State<ExportScreen> {
           .map((u) => u.id)
           .toSet();
     }
+    // Guests + adjustments per member from the billing engine so the exported
+    // summary carries the SAME host-inclusive net bill as the billing screens
+    // (hosted guests always bill to their host, never separately).
+    var financialsByUser = <String, MemberExportFinancials>{};
+    final billingRes = await AttendanceRepository().getBillingSummaryV2(
+      organizationId: orgId,
+      groupId: groupId,
+      from: _startDate,
+      to: _endDate,
+    );
+    if (billingRes case Ok(:final value)) {
+      financialsByUser = {
+        for (final m in value.members)
+          if (m.guestAmount != 0 || m.adjustmentsTotal != 0)
+            m.userId: MemberExportFinancials(
+              guestCount: m.guestCount,
+              guestAmount: m.guestAmount,
+              adjustmentsTotal: m.adjustmentsTotal,
+            ),
+      };
+    }
     if (!mounted) return;
     setState(() => _loadingRecords = false);
 
@@ -179,6 +202,7 @@ class _ExportScreenState extends State<ExportScreen> {
           pricingEnabled: pricingEnabled,
           dateRangeLabel: rangeLabel,
           isExporting: _exporting,
+          financialsByUser: financialsByUser,
           onExport: (format) => _export(
             format: format,
             records: records,
@@ -187,6 +211,7 @@ class _ExportScreenState extends State<ExportScreen> {
             pricingEnabled: pricingEnabled,
             rangeLabel: rangeLabel,
             vacationUserIds: vacationUserIds,
+            financialsByUser: financialsByUser,
           ),
         ),
       ),
@@ -202,6 +227,7 @@ class _ExportScreenState extends State<ExportScreen> {
     required bool pricingEnabled,
     required String rangeLabel,
     required Set<String> vacationUserIds,
+    Map<String, MemberExportFinancials> financialsByUser = const {},
   }) async {
     _provider.setFormat(format);
     _exporting.value = true;
@@ -215,6 +241,7 @@ class _ExportScreenState extends State<ExportScreen> {
         to: _endDate,
         dateRangeLabel: rangeLabel,
         vacationUserIds: vacationUserIds,
+        financialsByUser: financialsByUser,
       );
     } finally {
       _exporting.value = false;
@@ -250,7 +277,7 @@ class _ExportScreenState extends State<ExportScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            if (_loadingGroups) const LinearProgressIndicator()
+            if (_loadingGroups) const AppSheetSkeleton(rows: 1, rowHeight: 52, padding: EdgeInsets.only(bottom: 24))
             else if (_groups.isNotEmpty) ...[
               Text('Group', style: AppTypography.titleSmall),
               const SizedBox(height: AppConstants.space12),

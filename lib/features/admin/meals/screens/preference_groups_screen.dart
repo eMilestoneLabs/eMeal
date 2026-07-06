@@ -5,6 +5,7 @@ import 'package:smart_meal_management/data/repositories/preference_repository.da
 import 'package:smart_meal_management/shared/models/meal_model.dart';
 import 'package:smart_meal_management/shared/models/preference_group_model.dart';
 import 'package:smart_meal_management/shared/models/result.dart';
+import 'package:smart_meal_management/shared/widgets/app_skeleton.dart';
 
 /// Module 36 (FR-PG-080): per-meal preference-group builder.
 ///
@@ -200,7 +201,7 @@ class _PreferenceGroupsScreenState extends State<PreferenceGroupsScreen> {
             const Text('Add group', style: TextStyle(color: Colors.white)),
       ),
       body: _loading
-          ? const Center(child: CircularProgressIndicator())
+          ? const AppListSkeleton(rows: 4, rowHeight: 96)
           : _error != null
               ? Center(
                   child: Padding(

@@ -12,6 +12,7 @@ import 'package:smart_meal_management/shared/models/meal_model.dart';
 import 'package:smart_meal_management/shared/models/paginated_response.dart';
 import 'package:smart_meal_management/shared/models/result.dart';
 import 'package:smart_meal_management/shared/models/user_model.dart';
+import 'package:smart_meal_management/shared/widgets/app_skeleton.dart';
 
 /// Module 22 (Pass 9) — admin hosted-guest management (FR-HG-042/062).
 ///
@@ -265,13 +266,7 @@ class _AdminGuestsSheetState extends State<_AdminGuestsSheet> {
           ),
           Flexible(
             child: _loading
-                ? const Padding(
-                    padding: EdgeInsets.all(AppConstants.space32),
-                    child: Center(
-                      child: CircularProgressIndicator(
-                          color: AppColors.primary, strokeWidth: 2.5),
-                    ),
-                  )
+                ? const AppSheetSkeleton(rows: 2, rowHeight: 72)
                 : SingleChildScrollView(
                     padding: const EdgeInsets.fromLTRB(
                       AppConstants.space20,

@@ -18,8 +18,8 @@ import 'package:smart_meal_management/shared/models/group_model.dart';
 import 'package:smart_meal_management/shared/models/result.dart';
 import 'package:smart_meal_management/data/services/response_cache_service.dart';
 import 'package:smart_meal_management/shared/widgets/app_empty_state.dart';
-import 'package:smart_meal_management/shared/widgets/app_loading_indicator.dart';
 import 'package:smart_meal_management/features/auth/providers/auth_provider.dart';
+import 'package:smart_meal_management/shared/widgets/app_skeleton.dart';
 
 /// Admin screen for viewing group attendance on a specific date.
 ///
@@ -302,7 +302,7 @@ class _AdminAttendanceScreenState extends State<AdminAttendanceScreen> {
         children: [
           // ── Group selector ──────────────────────────────────────────────────
           if (_loadingGroups)
-            const LinearProgressIndicator()
+            const AppChipRowSkeleton()
           else if (_groups.isNotEmpty)
             _GroupSelectorBar(
               groups: _groups,
@@ -380,7 +380,7 @@ class _AdminAttendanceScreenState extends State<AdminAttendanceScreen> {
                     '${_provider.filterStatus}:'
                     '${_provider.filteredRecords.length}'),
                 child: _loadingGroups
-                ? const AppLoadingIndicator()
+                ? const AppTableSkeleton(rows: 7)
                 : _selectedGroupId == null
                 ? const AppEmptyState(
                     icon: Icons.group_outlined,
@@ -388,7 +388,7 @@ class _AdminAttendanceScreenState extends State<AdminAttendanceScreen> {
                     subtitle: 'Create a group first to view attendance.',
                   )
                 : _provider.isLoading
-                    ? const AppLoadingIndicator()
+                    ? const AppTableSkeleton(rows: 7)
                     : _provider.error != null
                         ? AppEmptyState(
                             icon: Icons.error_outline_rounded,

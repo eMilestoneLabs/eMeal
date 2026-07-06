@@ -3,6 +3,7 @@ import 'package:smart_meal_management/core/theme/app_colors.dart';
 import 'package:smart_meal_management/core/theme/app_typography.dart';
 import 'package:smart_meal_management/data/repositories/attendance_repository.dart';
 import 'package:smart_meal_management/shared/models/result.dart';
+import 'package:smart_meal_management/shared/widgets/app_skeleton.dart';
 
 /// SRS FR-TRUST-010 (Pass 7) — member-visible change history for one
 /// attendance record: WHO set/changed it (you / an admin by name / group
@@ -103,12 +104,7 @@ class _RecordHistorySheetState extends State<RecordHistorySheet> {
           ),
           const SizedBox(height: 16),
           if (_loading)
-            const Center(
-              child: Padding(
-                padding: EdgeInsets.all(24),
-                child: CircularProgressIndicator(),
-              ),
-            )
+            const AppSheetSkeleton(rows: 3, rowHeight: 56)
           else if (_error != null)
             Padding(
               padding: const EdgeInsets.symmetric(vertical: 24),

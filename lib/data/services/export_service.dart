@@ -12,6 +12,32 @@ import 'package:smart_meal_management/shared/models/meal_model.dart';
 
 /// Builds PDF / CSV / Excel exports of attendance + billing and shares them via
 /// the platform share sheet (share_plus).
+/// Host-inclusive financial extras for one member, so export summaries carry
+/// the SAME money story as the billing screens: hosted-guest charges are
+/// billed to the host, adjustments are the signed ledger total, and
+/// **Net Total = meals + guests + adjustments**.
+class MemberExportFinancials {
+  const MemberExportFinancials({
+    this.guestCount = 0,
+    this.guestAmount = 0,
+    this.adjustmentsTotal = 0,
+  });
+
+  final int guestCount;
+  final int guestAmount;
+  final int adjustmentsTotal;
+
+  bool get hasAny => guestAmount != 0 || adjustmentsTotal != 0;
+
+  int netFor(int mealsBill) => mealsBill + guestAmount + adjustmentsTotal;
+
+  String adjustmentsLabel(String currency) =>
+      '${adjustmentsTotal > 0 ? '+' : '-'}$currency${adjustmentsTotal.abs()}';
+
+  static String net(String currency, int v) =>
+      v < 0 ? '-$currency${-v}' : '$currency$v';
+}
+
 class ExportService {
   ExportService._();
 
@@ -128,6 +154,10 @@ class ExportService {
     String? dateRangeLabel,
     List<MealModel> todayMeals = const [],
     Set<String> vacationUserIds = const {},
+    // Guest + adjustment figures per userId — when provided, each member's
+    // summary block itemises Meals / Hosted guests / Adjustments / Net Total,
+    // reconciling exactly with the billing screens.
+    Map<String, MemberExportFinancials> financialsByUser = const {},
   }) async {
     // Issue 3 & 7: pass today's published overlay + vacation members so exported
     // billing matches the on-screen figures (per-day window auto-skip + vacation
@@ -174,7 +204,8 @@ class ExportService {
             style: pw.TextStyle(fontSize: 14, fontWeight: pw.FontWeight.bold),
           ),
           pw.SizedBox(height: 8),
-          ...summaries.map((s) => _pdfSummaryBlock(s, pricingEnabled)),
+          ...summaries.map((s) =>
+              _pdfSummaryBlock(s, pricingEnabled, financialsByUser[s.userId])),
           pw.SizedBox(height: 18),
           pw.Text(
             'Detailed Records',
@@ -207,7 +238,11 @@ class ExportService {
     );
   }
 
-  pw.Widget _pdfSummaryBlock(BillingSummary s, bool pricingEnabled) {
+  pw.Widget _pdfSummaryBlock(
+    BillingSummary s,
+    bool pricingEnabled,
+    MemberExportFinancials? fin,
+  ) {
     final consumed = s.consumedByMeal.entries
         .map((e) => '${e.key}: ${e.value}')
         .join('   ·   ');
@@ -233,12 +268,33 @@ class ExportService {
           ),
           if (pricingEnabled) ...[
             pw.SizedBox(height: 2),
-            pw.Text(
-              // PDF font lacks ₹ — use 'Rs '.
-              'Total Bill: Rs ${s.totalBill}',
-              style:
-                  pw.TextStyle(fontSize: 11, fontWeight: pw.FontWeight.bold),
-            ),
+            if (fin == null || !fin.hasAny)
+              pw.Text(
+                // PDF font lacks ₹ — use 'Rs '.
+                'Total Bill: Rs ${s.totalBill}',
+                style:
+                    pw.TextStyle(fontSize: 11, fontWeight: pw.FontWeight.bold),
+              )
+            else ...[
+              // Host-inclusive breakdown — identical to the billing screens.
+              pw.Text('Meals: Rs ${s.totalBill}',
+                  style: const pw.TextStyle(fontSize: 9)),
+              if (fin.guestAmount != 0)
+                pw.Text(
+                  'Hosted guests (${fin.guestCount}) — billed to this host: Rs ${fin.guestAmount}',
+                  style: const pw.TextStyle(fontSize: 9),
+                ),
+              if (fin.adjustmentsTotal != 0)
+                pw.Text(
+                  'Adjustments (credits / refunds): ${fin.adjustmentsLabel('Rs ')}',
+                  style: const pw.TextStyle(fontSize: 9),
+                ),
+              pw.Text(
+                'Net Total: ${MemberExportFinancials.net('Rs ', fin.netFor(s.totalBill))}',
+                style:
+                    pw.TextStyle(fontSize: 11, fontWeight: pw.FontWeight.bold),
+              ),
+            ],
           ],
         ],
       ),
@@ -257,6 +313,7 @@ class ExportService {
     String? dateRangeLabel,
     List<MealModel> todayMeals = const [],
     Set<String> vacationUserIds = const {},
+    Map<String, MemberExportFinancials> financialsByUser = const {},
   }) async {
     final rows = BillingService.buildRows(
         records: records,
@@ -285,7 +342,25 @@ class ExportService {
       }
       buffer.writeln(
           ',Present: ${s.present},Skipped: ${s.skipped},Absent: ${s.absent},Total meals: ${s.totalMeals}');
-      if (pricingEnabled) buffer.writeln(',Total Bill: ₹${s.totalBill}');
+      if (pricingEnabled) {
+        final fin = financialsByUser[s.userId];
+        if (fin == null || !fin.hasAny) {
+          buffer.writeln(',Total Bill: ₹${s.totalBill}');
+        } else {
+          // Host-inclusive breakdown — reconciles with the billing screens.
+          buffer.writeln(',Meals: ₹${s.totalBill}');
+          if (fin.guestAmount != 0) {
+            buffer.writeln(
+                ',${_csvEscape('Hosted guests (${fin.guestCount}) — billed to this host: ₹${fin.guestAmount}')}');
+          }
+          if (fin.adjustmentsTotal != 0) {
+            buffer.writeln(
+                ',${_csvEscape('Adjustments (credits / refunds): ${fin.adjustmentsLabel('₹')}')}');
+          }
+          buffer.writeln(
+              ',Net Total: ${MemberExportFinancials.net('₹', fin.netFor(s.totalBill))}');
+        }
+      }
     }
 
     buffer.writeln();
@@ -317,6 +392,7 @@ class ExportService {
     String? dateRangeLabel,
     List<MealModel> todayMeals = const [],
     Set<String> vacationUserIds = const {},
+    Map<String, MemberExportFinancials> financialsByUser = const {},
   }) async {
     final rows = BillingService.buildRows(
         records: records,
@@ -343,6 +419,12 @@ class ExportService {
 
     // FR-EXP-041 (ISSUE-14): the Billing Summary sheet comes FIRST and is the
     // default sheet the workbook opens on; detailed rows are secondary.
+    // With per-member financials the money columns split into the full
+    // host-inclusive breakdown (Meals / Guests / Adjustments / Net Total) so
+    // the sheet reconciles with the billing screens; otherwise the legacy
+    // single "Total Bill" column is preserved exactly.
+    final withFinancials =
+        pricingEnabled && financialsByUser.values.any((f) => f.hasAny);
     final sum = book['Billing Summary'];
     brandBand(sum);
     sum.appendRow([
@@ -351,16 +433,30 @@ class ExportService {
       xls.TextCellValue('Skipped'),
       xls.TextCellValue('Absent'),
       xls.TextCellValue('Total Meals'),
-      if (pricingEnabled) xls.TextCellValue('Total Bill'),
+      if (pricingEnabled && !withFinancials) xls.TextCellValue('Total Bill'),
+      if (withFinancials) ...[
+        xls.TextCellValue('Meals (₹)'),
+        xls.TextCellValue('Hosted Guests (billed to host) (₹)'),
+        xls.TextCellValue('Adjustments (₹)'),
+        xls.TextCellValue('Net Total (₹)'),
+      ],
     ]);
     for (final s in summaries) {
+      final fin = financialsByUser[s.userId] ?? const MemberExportFinancials();
       sum.appendRow([
         xls.TextCellValue(s.userName),
         xls.TextCellValue('${s.present}'),
         xls.TextCellValue('${s.skipped}'),
         xls.TextCellValue('${s.absent}'),
         xls.TextCellValue('${s.totalMeals}'),
-        if (pricingEnabled) xls.TextCellValue('₹${s.totalBill}'),
+        if (pricingEnabled && !withFinancials)
+          xls.TextCellValue('₹${s.totalBill}'),
+        if (withFinancials) ...[
+          xls.TextCellValue('${s.totalBill}'),
+          xls.TextCellValue('${fin.guestAmount}'),
+          xls.TextCellValue('${fin.adjustmentsTotal}'),
+          xls.TextCellValue('${fin.netFor(s.totalBill)}'),
+        ],
       ]);
     }
 

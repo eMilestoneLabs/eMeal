@@ -12,8 +12,8 @@ import 'package:smart_meal_management/shared/models/meal_model.dart';
 import 'package:smart_meal_management/shared/models/meal_schedule_model.dart';
 import 'package:smart_meal_management/shared/widgets/app_empty_state.dart';
 import 'package:smart_meal_management/shared/widgets/app_screen_states.dart';
-import 'package:smart_meal_management/shared/widgets/app_loading_indicator.dart';
 import 'package:smart_meal_management/shared/widgets/cached_photo.dart';
+import 'package:smart_meal_management/shared/widgets/app_skeleton.dart';
 
 /// Student "Weekly Menu" screen — 7-day horizontal scroll with today highlighted.
 ///
@@ -69,7 +69,7 @@ class _WeeklyMenuScreenState extends State<WeeklyMenuScreen> {
     final provider = _provider;
     if (provider == null) {
       return const Scaffold(
-        body: Center(child: AppLoadingIndicator()),
+        body: AppListSkeleton(rows: 4, rowHeight: 120, headerHeight: 44),
       );
     }
 
@@ -113,7 +113,7 @@ class _WeeklyMenuScreenState extends State<WeeklyMenuScreen> {
     bool isDark,
   ) {
     if (provider.isLoading) {
-      return const Center(child: AppLoadingIndicator());
+      return const AppListSkeleton(rows: 4, rowHeight: 120, headerHeight: 44);
     }
 
     if (provider.error != null) {

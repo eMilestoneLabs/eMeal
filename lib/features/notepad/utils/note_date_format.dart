@@ -60,6 +60,13 @@ abstract final class NoteDateFormat {
   static String stamp(DateTime when) =>
       DateFormat('d MMM yyyy, h:mm a').format(when);
 
+  /// Date-only stamp for the editor "insert date" action, e.g. `12 Jun 2025`.
+  static String dateStamp(DateTime when) =>
+      DateFormat('d MMM yyyy').format(when);
+
+  /// Time-only stamp for the editor "insert time" action, e.g. `3:04 PM`.
+  static String timeStamp(DateTime when) => DateFormat.jm().format(when);
+
   /// Groups an already-sorted list into day sections, preserving order.
   static Map<NoteDaySection, List<Note>> groupByDay(
     List<Note> notes, {

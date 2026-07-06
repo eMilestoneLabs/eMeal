@@ -5,8 +5,8 @@ import 'package:smart_meal_management/features/groups/screens/group_join_screen.
 import 'package:smart_meal_management/features/groups/widgets/qr_display_card.dart';
 import 'package:smart_meal_management/shared/models/group_model.dart';
 import 'package:smart_meal_management/shared/widgets/app_empty_state.dart';
-import 'package:smart_meal_management/shared/widgets/app_loading_indicator.dart';
 import 'package:smart_meal_management/features/auth/providers/auth_provider.dart';
+import 'package:smart_meal_management/shared/widgets/app_skeleton.dart';
 
 /// Group detail screen — header, stats, meal config summary, leave action.
 ///
@@ -94,7 +94,7 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
 
   Widget _buildBody(BuildContext context) {
     if (_provider.isLoading && _group == null) {
-      return const Center(child: AppLoadingIndicator());
+      return const AppDetailSkeleton();
     }
 
     if (_provider.error != null && _group == null) {

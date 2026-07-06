@@ -7,6 +7,7 @@ import 'package:smart_meal_management/core/theme/app_typography.dart';
 import 'package:smart_meal_management/features/admin/settings/providers/admin_settings_provider.dart';
 import 'package:smart_meal_management/features/auth/providers/auth_provider.dart';
 import 'package:smart_meal_management/shared/providers/theme_provider.dart';
+import 'package:smart_meal_management/shared/widgets/app_skeleton.dart';
 
 /// Admin settings screen.
 ///
@@ -67,7 +68,7 @@ class _AdminSettingsScreenState extends State<AdminSettingsScreen> {
           backgroundColor: colorScheme.surface,
           surfaceTintColor: Colors.transparent,
         ),
-        body: const Center(child: CircularProgressIndicator()),
+        body: const AppListSkeleton(rows: 8, rowHeight: 56, headerHeight: 96),
       );
     }
 

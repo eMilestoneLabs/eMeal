@@ -6,6 +6,7 @@ import 'package:smart_meal_management/features/student/attendance/widgets/correc
 import 'package:smart_meal_management/shared/models/correction_request_model.dart';
 import 'package:smart_meal_management/shared/models/meal_model.dart';
 import 'package:smart_meal_management/shared/models/result.dart';
+import 'package:smart_meal_management/shared/widgets/app_skeleton.dart';
 
 /// Module 33 — Student "My Corrections" screen (FR-ACR-001/011, FR-OVR-020).
 ///
@@ -131,7 +132,7 @@ class _MyCorrectionsScreenState extends State<MyCorrectionsScreen> {
               label: const Text('New request'),
             ),
       body: _loading
-          ? const Center(child: CircularProgressIndicator())
+          ? const AppListSkeleton(rows: 5, rowHeight: 92)
           : _error != null
               ? _info(_error!, AppColors.error, onRetry: _load)
               : _items.isEmpty

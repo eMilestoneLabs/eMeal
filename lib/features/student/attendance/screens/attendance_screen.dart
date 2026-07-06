@@ -15,6 +15,7 @@ import 'package:smart_meal_management/shared/models/attendance_model.dart';
 import 'package:smart_meal_management/shared/models/group_model.dart';
 import 'package:smart_meal_management/shared/models/meal_model.dart';
 import 'package:smart_meal_management/shared/models/preference_group_model.dart';
+import 'package:smart_meal_management/shared/widgets/app_skeleton.dart';
 
 /// Student attendance screen — today's meals with per-meal action cards.
 ///
@@ -160,10 +161,7 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
     final dashProvider = StudentDashboardScope.maybeOf(context);
     if (dashProvider == null) {
       return const Scaffold(
-        body: Center(
-          child: CircularProgressIndicator(
-              color: AppColors.primary, strokeWidth: 2.5),
-        ),
+        body: AppListSkeleton(rows: 3, rowHeight: 150, headerHeight: 64),
       );
     }
 
@@ -750,11 +748,6 @@ class _LoadingView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const Center(
-      child: CircularProgressIndicator(
-        color: AppColors.primary,
-        strokeWidth: 2.5,
-      ),
-    );
+    return const AppListSkeleton(rows: 3, rowHeight: 150, headerHeight: 64);
   }
 }

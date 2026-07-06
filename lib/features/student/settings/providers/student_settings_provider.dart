@@ -56,10 +56,11 @@ class StudentSettingsProvider extends ChangeNotifier {
       return _auth.lastProfileError ??
           'Could not update vacation mode — please try again';
     }
-    // Cancel all local notifications when vacation starts;
-    // reminders will be rescheduled on next dashboard load when vacation ends.
+    // Cancel meal reminders when vacation starts (notepad reminders are
+    // personal and unrelated to vacation); rescheduled on next dashboard
+    // load when vacation ends.
     if (value) {
-      NotificationService.instance.cancelAll();
+      NotificationService.instance.cancelMealReminders();
     }
     // Note: rescheduling on vacation-off is handled by StudentDashboardProvider
     // on next load, so no action needed here.
@@ -75,10 +76,11 @@ class StudentSettingsProvider extends ChangeNotifier {
   void setReminders(bool value) {
     if (_remindersEnabled == value) return;
     _remindersEnabled = value;
-    // Cancel all scheduled reminders immediately when the user turns them off.
-    // Re-scheduling happens the next time the dashboard loads (or vacation ends).
+    // Cancel scheduled meal reminders immediately when the user turns them off
+    // (notepad reminders have their own per-note control). Re-scheduling
+    // happens the next time the dashboard loads (or vacation ends).
     if (!value) {
-      NotificationService.instance.cancelAll();
+      NotificationService.instance.cancelMealReminders();
     }
     notifyListeners();
   }

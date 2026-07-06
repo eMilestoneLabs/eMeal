@@ -17,6 +17,7 @@ import 'package:smart_meal_management/features/notices/screens/notice_composer_s
 import 'package:smart_meal_management/shared/models/notice_model.dart';
 import 'package:smart_meal_management/shared/models/notification_diagnostics_model.dart';
 import 'package:smart_meal_management/shared/models/result.dart';
+import 'package:smart_meal_management/shared/widgets/app_skeleton.dart';
 
 /// Notice board feed (Phase B) — bell center for students + admins.
 ///
@@ -330,7 +331,7 @@ class _NoticeFeedScreenState extends State<NoticeFeedScreen> {
       body: RefreshIndicator(
         onRefresh: _load,
         child: _loading
-            ? const Center(child: CircularProgressIndicator())
+            ? const AppListSkeleton(rows: 4, rowHeight: 110)
             : _error != null
                 ? _ErrorState(message: _error!, onRetry: _load)
                 : _notices.isEmpty

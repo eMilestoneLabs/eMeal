@@ -37,6 +37,21 @@ class NotepadEmptyState extends StatelessWidget {
         title: 'No favorites yet',
         subtitle: 'Mark notes as favorite for quick access.',
       ),
+      NoteFilter.today => (
+        icon: Icons.today_rounded,
+        title: 'Nothing written today',
+        subtitle: 'Today is a blank page — capture your first thought.',
+      ),
+      NoteFilter.week => (
+        icon: Icons.date_range_rounded,
+        title: 'A quiet week so far',
+        subtitle: 'Notes you touch this week will gather here.',
+      ),
+      NoteFilter.checklists => (
+        icon: Icons.checklist_rounded,
+        title: 'No checklists yet',
+        subtitle: 'Turn plans into ticked boxes — create your first list.',
+      ),
       NoteFilter.archived => (
         icon: Icons.archive_outlined,
         title: 'Archive is empty',
@@ -44,10 +59,10 @@ class NotepadEmptyState extends StatelessWidget {
       ),
       NoteFilter.all => (
         icon: Icons.edit_note_rounded,
-        title: 'Your notepad is empty',
+        title: 'Ideas begin with a single thought',
         subtitle:
-            'Capture reminders, lists, and ideas — all stored privately '
-            'on this device.',
+            'Write your first note. Capture memories, create lists, '
+            'organize your life — all stored privately on this device.',
       ),
     };
   }
@@ -66,8 +81,8 @@ class NotepadEmptyState extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             Container(
-                  width: 92,
-                  height: 92,
+                  width: 108,
+                  height: 108,
                   decoration: BoxDecoration(
                     gradient: LinearGradient(
                       colors: [
@@ -82,12 +97,30 @@ class NotepadEmptyState extends StatelessWidget {
                       end: Alignment.bottomRight,
                     ),
                     shape: BoxShape.circle,
+                    boxShadow: [
+                      BoxShadow(
+                        color: AppColors.primary.withValues(
+                          alpha: isDark ? 0.20 : 0.12,
+                        ),
+                        blurRadius: 28,
+                        offset: const Offset(0, 8),
+                      ),
+                    ],
                   ),
-                  child: Icon(c.icon, size: 42, color: AppColors.primary),
+                  child: Icon(c.icon, size: 48, color: AppColors.primary),
                 )
                 .animate()
                 .fadeIn(duration: AppConstants.animNormal)
-                .scale(begin: const Offset(0.85, 0.85)),
+                .scale(begin: const Offset(0.85, 0.85))
+                // Gentle perpetual float so the empty state feels alive.
+                .then()
+                .animate(onPlay: (c) => c.repeat(reverse: true))
+                .moveY(
+                  begin: 0,
+                  end: -8,
+                  duration: const Duration(milliseconds: 1600),
+                  curve: Curves.easeInOut,
+                ),
             const SizedBox(height: AppConstants.space20),
             Text(
               c.title,

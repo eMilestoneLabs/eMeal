@@ -6,6 +6,7 @@ import 'package:smart_meal_management/core/theme/app_colors.dart';
 import 'package:smart_meal_management/core/theme/app_typography.dart';
 import 'package:smart_meal_management/features/admin/dashboard/providers/admin_dashboard_provider.dart';
 import 'package:smart_meal_management/features/admin/attendance/screens/correction_requests_screen.dart';
+import 'package:smart_meal_management/features/admin/attendance/screens/vacation_requests_screen.dart';
 import 'package:smart_meal_management/features/admin/dashboard/widgets/admin_greeting_card.dart';
 import 'package:smart_meal_management/features/notices/screens/notice_composer_screen.dart';
 import 'package:smart_meal_management/features/notices/widgets/notice_bell.dart';
@@ -18,6 +19,7 @@ import 'package:smart_meal_management/shared/models/meal_model.dart';
 import 'package:smart_meal_management/shared/widgets/app_section_title.dart';
 import 'package:smart_meal_management/shared/widgets/app_screen_states.dart';
 import 'package:smart_meal_management/features/auth/providers/auth_provider.dart';
+import 'package:smart_meal_management/shared/widgets/app_skeleton.dart';
 
 /// Admin home dashboard — greeting, KPI stats, quick actions, group list.
 ///
@@ -118,6 +120,12 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
         backgroundColor: isDark ? AppColors.surfaceDark : AppColors.surface,
         surfaceTintColor: Colors.transparent,
         actions: [
+          // command_3: always-visible Notepad entry in the dashboard header.
+          IconButton(
+            tooltip: 'Notepad',
+            icon: const Icon(Icons.edit_note_rounded),
+            onPressed: () => context.push(RouteNames.notepad),
+          ),
           if (auth.currentUser != null)
             NoticeBell(
               organizationId: auth.currentUser!.organizationId,
@@ -144,7 +152,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
         listenable: _provider,
         builder: (context, _) {
           if (_provider.isLoading) {
-            return const Center(child: CircularProgressIndicator());
+            return const AppDashboardSkeleton();
           }
           if (_provider.error != null) {
             return _ErrorView(
@@ -213,6 +221,11 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                   onReviewCorrections: () => Navigator.of(context).push(
                     MaterialPageRoute(
                         builder: (_) => const CorrectionRequestsScreen()),
+                  ),
+                  // command_3: vacation approvals one tap from the dashboard.
+                  onVacationRequests: () => Navigator.of(context).push(
+                    MaterialPageRoute(
+                        builder: (_) => const VacationRequestsScreen()),
                   ),
                 ),
 

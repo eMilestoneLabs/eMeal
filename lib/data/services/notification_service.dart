@@ -151,9 +151,10 @@ class NotificationService {
   }) async {
     if (!_initialized) return;
 
-    // Cancel all pending notifications in a single call.
-    // Replaces the previous O(150) sequential-await loop (1000–1149 range).
-    await _plugin.cancelAll();
+    // Cancel only the MEAL reminder slots (ids 1000–1149) — never wipes
+    // notifications owned by other features (notepad reminders live in their
+    // own id range).
+    await _cancelMealReminderRange();
 
     // No reminders during vacation mode.
     if (isVacationMode) return;
@@ -161,7 +162,7 @@ class NotificationService {
     if (meals.isEmpty) return;
 
     final now = DateTime.now();
-    int notifId = 1000;
+    int notifId = _mealReminderBaseId;
 
     for (final meal in meals) {
       if (!meal.isActive) continue;
@@ -260,6 +261,101 @@ class NotificationService {
           UILocalNotificationDateInterpretation.absoluteTime,
       payload: payload,
     );
+  }
+
+  // ── Notification id ranges (one range per owning feature) ──────────────────
+
+  /// Meal reminders: 1000–1149 (50 meals × 3 slots) — see [syncReminders].
+  static const int _mealReminderBaseId = 1000;
+  static const int _mealReminderEndId = 1150;
+
+  /// Personal-notepad reminders: 200000–299999. Ids are derived
+  /// deterministically from the note id so re-scheduling the same note
+  /// replaces its previous alarm instead of stacking a duplicate.
+  static const int _noteReminderBaseId = 200000;
+  static const int _noteReminderSpan = 100000;
+
+  /// Cancels every pending notification in the meal-reminder id range.
+  /// Listing pending requests first keeps this O(actually-scheduled) instead
+  /// of O(150); the range loop is only the fallback.
+  Future<void> _cancelMealReminderRange() async {
+    try {
+      final pending = await _plugin.pendingNotificationRequests();
+      for (final p in pending) {
+        if (p.id >= _mealReminderBaseId && p.id < _mealReminderEndId) {
+          await _plugin.cancel(p.id);
+        }
+      }
+    } catch (_) {
+      for (var id = _mealReminderBaseId; id < _mealReminderEndId; id++) {
+        await _plugin.cancel(id);
+      }
+    }
+  }
+
+  /// Cancels only meal reminders (settings toggle / vacation mode) — leaves
+  /// notifications owned by other features (personal notepad) untouched.
+  Future<void> cancelMealReminders() async {
+    if (!_initialized) return;
+    await _cancelMealReminderRange();
+  }
+
+  static int _noteNotificationId(String noteId) {
+    // FNV-1a — stable across launches (String.hashCode is not guaranteed to be).
+    var h = 0x811C9DC5;
+    for (final c in noteId.codeUnits) {
+      h = ((h ^ c) * 0x01000193) & 0x7FFFFFFF;
+    }
+    return _noteReminderBaseId + (h % _noteReminderSpan);
+  }
+
+  // ── Notepad reminders ───────────────────────────────────────────────────────
+
+  /// Schedules (or replaces) the device-local reminder for a personal note.
+  /// No-op when the service is not initialised or [when] is already past.
+  /// The note's content stays on-device — only the title is shown.
+  Future<void> scheduleNoteReminder({
+    required String noteId,
+    required String title,
+    required DateTime when,
+  }) async {
+    if (!_initialized) return;
+    if (!when.isAfter(DateTime.now())) return;
+    try {
+      await _plugin.zonedSchedule(
+        _noteNotificationId(noteId),
+        title.trim().isEmpty ? 'Note reminder' : title.trim(),
+        'Tap to open your note.',
+        tz.TZDateTime.from(when, tz.local),
+        const NotificationDetails(
+          android: AndroidNotificationDetails(
+            'note_reminders',
+            'Notepad Reminders',
+            channelDescription: 'Reminders you set on personal notes.',
+            importance: Importance.high,
+            priority: Priority.high,
+          ),
+          iOS: DarwinNotificationDetails(),
+        ),
+        androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
+        uiLocalNotificationDateInterpretation:
+            UILocalNotificationDateInterpretation.absoluteTime,
+        payload: RouteNames.notepad,
+      );
+    } catch (_) {
+      // Fail soft — a reminder that cannot be scheduled must never crash the
+      // notepad (e.g. exact-alarm permission revoked on Android 14).
+    }
+  }
+
+  /// Cancels the reminder for a personal note (no-op when none is pending).
+  Future<void> cancelNoteReminder(String noteId) async {
+    if (!_initialized) return;
+    try {
+      await _plugin.cancel(_noteNotificationId(noteId));
+    } catch (_) {
+      // Fail soft.
+    }
   }
 
   // ── Public helpers ─────────────────────────────────────────────────────────

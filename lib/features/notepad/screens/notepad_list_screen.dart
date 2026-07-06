@@ -1,16 +1,22 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:smart_meal_management/core/constants/app_constants.dart';
 import 'package:smart_meal_management/core/theme/app_colors.dart';
 import 'package:smart_meal_management/core/theme/app_typography.dart';
+import 'package:smart_meal_management/features/notepad/data/notepad_repository.dart';
 import 'package:smart_meal_management/features/notepad/models/note.dart';
 import 'package:smart_meal_management/features/notepad/providers/notepad_provider.dart';
 import 'package:smart_meal_management/features/notepad/screens/note_editor_screen.dart';
 import 'package:smart_meal_management/features/notepad/utils/note_date_format.dart';
 import 'package:smart_meal_management/features/notepad/utils/note_share.dart';
 import 'package:smart_meal_management/features/notepad/widgets/note_actions_sheet.dart';
+import 'package:smart_meal_management/features/auth/providers/auth_provider.dart';
 import 'package:smart_meal_management/features/notepad/widgets/note_card.dart';
 import 'package:smart_meal_management/features/notepad/widgets/notepad_empty_state.dart';
+import 'package:smart_meal_management/features/notepad/widgets/notepad_hero.dart';
+import 'package:smart_meal_management/shared/widgets/app_skeleton.dart';
 
 /// Personal Notepad — offline, device-local note manager.
 ///
@@ -27,11 +33,27 @@ class _NotepadListScreenState extends State<NotepadListScreen> {
   late final NotepadProvider _provider;
   final TextEditingController _searchController = TextEditingController();
   bool _searching = false;
+  bool _providerReady = false;
+
+  // Undo snackbar bookkeeping: capture the messenger once (safe to use in
+  // dispose) and force-hide on a deterministic timer so the Undo bar can never
+  // linger past its window or follow the user onto other screens.
+  ScaffoldMessengerState? _messenger;
+  Timer? _undoTimer;
+  static const Duration _undoWindow = Duration(seconds: 4);
 
   @override
-  void initState() {
-    super.initState();
-    _provider = NotepadProvider();
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _messenger = ScaffoldMessenger.of(context);
+    if (_providerReady) return;
+    _providerReady = true;
+    // Privacy fix: notes are stored per logged-in account, so two users on
+    // the same device can never see each other's notepad.
+    final userId = AuthProviderScope.of(context).currentUser?.id;
+    _provider = NotepadProvider(
+      repository: NotepadRepository(namespace: userId),
+    );
     _provider.load();
     _searchController.addListener(
       () => _provider.setQuery(_searchController.text),
@@ -40,6 +62,9 @@ class _NotepadListScreenState extends State<NotepadListScreen> {
 
   @override
   void dispose() {
+    _undoTimer?.cancel();
+    // Never let a "Note deleted — Undo" bar outlive the notepad itself.
+    _messenger?.clearSnackBars();
     _searchController.dispose();
     _provider.dispose();
     super.dispose();
@@ -179,13 +204,14 @@ class _NotepadListScreenState extends State<NotepadListScreen> {
       SnackBar(
         content: const Text('Note deleted'),
         behavior: SnackBarBehavior.floating,
-        duration: const Duration(seconds: 4),
+        duration: _undoWindow,
         action: SnackBarAction(
           label: 'Undo',
           onPressed: () => _provider.restore(removed),
         ),
       ),
     );
+    _armUndoDismiss(messenger);
   }
 
   // ── Multi-select bulk actions ─────────────────────────────────────────────────
@@ -210,13 +236,29 @@ class _NotepadListScreenState extends State<NotepadListScreen> {
           '${removed.length} note${removed.length == 1 ? '' : 's'} deleted',
         ),
         behavior: SnackBarBehavior.floating,
-        duration: const Duration(seconds: 4),
+        duration: _undoWindow,
         action: SnackBarAction(
           label: 'Undo',
           onPressed: () => _provider.restoreMany(removed),
         ),
       ),
     );
+    _armUndoDismiss(messenger);
+  }
+
+  /// Guarantees the Undo bar disappears after [_undoWindow] even in
+  /// environments where SnackBar auto-dismiss is suspended (e.g. accessibility
+  /// services set `accessibleNavigation`, which makes action snackbars
+  /// persistent by default).
+  void _armUndoDismiss(ScaffoldMessengerState messenger) {
+    _undoTimer?.cancel();
+    _undoTimer = Timer(_undoWindow + const Duration(milliseconds: 300), () {
+      try {
+        messenger.hideCurrentSnackBar();
+      } catch (_) {
+        // Messenger already disposed — nothing to hide.
+      }
+    });
   }
 
   void _snack(String message) {
@@ -265,9 +307,7 @@ class _NotepadListScreenState extends State<NotepadListScreen> {
 
   Widget _buildBody(bool isDark, bool selecting) {
     if (_provider.isLoading) {
-      return const Center(
-        child: CircularProgressIndicator(color: AppColors.primary),
-      );
+      return const AppListSkeleton(rows: 5, rowHeight: 92);
     }
     final notes = _provider.visibleNotes;
     return Column(
@@ -285,6 +325,25 @@ class _NotepadListScreenState extends State<NotepadListScreen> {
         ),
       ],
     );
+  }
+
+  /// Premium home header (greeting + live stats). Shown only on the default
+  /// "All" view when not searching/selecting so focused views stay compact.
+  List<Widget> _heroSection(bool isDark) {
+    final user =
+        context
+            .dependOnInheritedWidgetOfExactType<AuthProviderScope>()
+            ?.notifier
+            ?.currentUser;
+    return [
+      Padding(
+        padding: const EdgeInsets.only(top: AppConstants.space8),
+        child: NotepadHero(isDark: isDark, userName: user?.name),
+      ),
+      const SizedBox(height: AppConstants.space16),
+      NotepadStatsCard(provider: _provider, isDark: isDark),
+      const SizedBox(height: AppConstants.space20),
+    ];
   }
 
   PreferredSizeWidget _buildAppBar(bool isDark) {
@@ -318,6 +377,17 @@ class _NotepadListScreenState extends State<NotepadListScreen> {
                 ),
               ),
       actions: [
+        if (!_searching)
+          IconButton(
+            tooltip:
+                _provider.layout == NoteLayout.grid ? 'List view' : 'Grid view',
+            icon: Icon(
+              _provider.layout == NoteLayout.grid
+                  ? Icons.view_agenda_outlined
+                  : Icons.grid_view_rounded,
+            ),
+            onPressed: _provider.toggleLayout,
+          ),
         if (!_searching)
           IconButton(
             tooltip: 'Select',
@@ -405,7 +475,12 @@ class _NotepadListScreenState extends State<NotepadListScreen> {
 
   Widget _buildList(List<Note> notes, bool isDark, bool selecting) {
     final grouped = _provider.sort != NoteSort.alphabetical;
+    final showHero =
+        !selecting &&
+        _provider.query.trim().isEmpty &&
+        _provider.filter == NoteFilter.all;
     final children = <Widget>[];
+    if (showHero) children.addAll(_heroSection(isDark));
 
     void addCard(Note note) {
       final selected = _provider.isSelected(note.id);
@@ -458,7 +533,26 @@ class _NotepadListScreenState extends State<NotepadListScreen> {
       }
     }
 
-    if (grouped) {
+    if (_provider.layout == NoteLayout.grid) {
+      // Masonry mode: two balanced columns, pinned rail first. Swipe-to-delete
+      // is list-mode only; grid deletes go through the long-press sheet.
+      final splitPinned =
+          grouped &&
+          (_provider.filter == NoteFilter.all ||
+              _provider.filter == NoteFilter.favorites);
+      if (splitPinned && notes.any((n) => n.pinned)) {
+        final pinned = notes.where((n) => n.pinned).toList();
+        final rest = notes.where((n) => !n.pinned).toList();
+        children.add(_SectionHeader(label: 'Pinned', isDark: isDark));
+        children.add(_buildMasonry(pinned, isDark, selecting));
+        if (rest.isNotEmpty) {
+          children.add(_SectionHeader(label: 'Notes', isDark: isDark));
+          children.add(_buildMasonry(rest, isDark, selecting));
+        }
+      } else {
+        children.add(_buildMasonry(notes, isDark, selecting));
+      }
+    } else if (grouped) {
       final splitPinned =
           _provider.filter == NoteFilter.all ||
           _provider.filter == NoteFilter.favorites;
@@ -493,6 +587,72 @@ class _NotepadListScreenState extends State<NotepadListScreen> {
     );
   }
 
+  /// Two-column masonry: cards are dealt to the currently shorter column
+  /// using a cheap height estimate, so tall and short notes interleave the
+  /// way premium note apps do — no extra layout passes, no new dependency.
+  Widget _buildMasonry(List<Note> notes, bool isDark, bool selecting) {
+    final left = <Widget>[];
+    final right = <Widget>[];
+    double leftH = 0, rightH = 0;
+
+    for (final note in notes) {
+      final selected = _provider.isSelected(note.id);
+      final card = Padding(
+        padding: const EdgeInsets.only(bottom: AppConstants.space12),
+        child: NoteCard(
+              note: note,
+              selectionMode: selecting,
+              selected: selected,
+              onTap:
+                  selecting
+                      ? () => _provider.toggleSelection(note.id)
+                      : () => _openEditor(note.id),
+              onLongPress:
+                  selecting
+                      ? () => _provider.toggleSelection(note.id)
+                      : () => _openSheet(note),
+              onTogglePin:
+                  selecting ? () {} : () => _provider.togglePin(note.id),
+            )
+            .animate(key: ValueKey('anim_${note.id}'))
+            .fadeIn(duration: AppConstants.animFast)
+            .slideY(begin: 0.06, end: 0, curve: Curves.easeOut),
+      );
+      final h = _estimateCardHeight(note);
+      if (leftH <= rightH) {
+        left.add(card);
+        leftH += h;
+      } else {
+        right.add(card);
+        rightH += h;
+      }
+    }
+
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Expanded(child: Column(children: left)),
+        const SizedBox(width: AppConstants.space12),
+        Expanded(child: Column(children: right)),
+      ],
+    );
+  }
+
+  /// Rough card-height estimate used only to balance the masonry columns.
+  double _estimateCardHeight(Note note) {
+    double h = 84; // frame + title + footer
+    if (note.isChecklist) {
+      final visible = note.checklist.where((i) => i.text.trim().isNotEmpty);
+      h += (visible.length > 4 ? 4 : visible.length) * 22;
+      if (note.checklistTotal > 0) h += 18; // progress bar
+    } else if (note.body.trim().isNotEmpty) {
+      final lines = (note.body.trim().length / 26).ceil();
+      h += (lines > 4 ? 4 : lines) * 18;
+    }
+    if (note.tags.isNotEmpty) h += 26;
+    return h;
+  }
+
   Widget _swipeBackground(bool isDark) {
     return Container(
       alignment: Alignment.centerRight,
@@ -520,6 +680,9 @@ class _FilterBar extends StatelessWidget {
       NoteFilter.all => provider.totalCount,
       NoteFilter.pinned => provider.pinnedCount,
       NoteFilter.favorites => provider.favoriteCount,
+      NoteFilter.today => provider.todayCount,
+      NoteFilter.week => provider.weekCount,
+      NoteFilter.checklists => provider.checklistCount,
       NoteFilter.archived => provider.archivedCount,
     };
 
@@ -538,6 +701,16 @@ class _FilterBar extends StatelessWidget {
               return Padding(
                 padding: const EdgeInsets.only(right: AppConstants.space8),
                 child: ChoiceChip(
+                  avatar: Icon(
+                    f.icon,
+                    size: 15,
+                    color:
+                        selected
+                            ? Colors.white
+                            : (isDark
+                                ? AppColors.textTertiaryDark
+                                : AppColors.textTertiary),
+                  ),
                   label: Text(count > 0 ? '${f.label} · $count' : f.label),
                   selected: selected,
                   onSelected: (_) => provider.setFilter(f),

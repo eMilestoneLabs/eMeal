@@ -24,6 +24,7 @@ import 'package:smart_meal_management/shared/models/user_model.dart';
 import 'package:smart_meal_management/shared/models/vacation_request_model.dart';
 import 'package:smart_meal_management/shared/widgets/app_glass_card.dart';
 import 'package:smart_meal_management/shared/widgets/app_screen_states.dart';
+import 'package:smart_meal_management/shared/widgets/app_skeleton.dart';
 
 /// Formats an approved vacation as "22 Jun → 30 Jun" for the dashboard badge.
 /// Returns null when there is no active vacation.
@@ -266,14 +267,7 @@ class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
   Widget build(BuildContext context) {
     final provider = StudentDashboardScope.maybeOf(context);
     if (provider == null) {
-      return const Scaffold(
-        body: Center(
-          child: CircularProgressIndicator(
-            color: AppColors.primary,
-            strokeWidth: 2.5,
-          ),
-        ),
-      );
+      return const Scaffold(body: AppDashboardSkeleton());
     }
 
     return ListenableBuilder(
@@ -322,6 +316,14 @@ class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
                               child: FreshnessBadge(
                                   lastUpdated: provider.lastUpdated),
                             ),
+                          ),
+                          // command_3: always-visible Notepad entry in the
+                          // dashboard header (also in Quick Actions + Settings).
+                          IconButton(
+                            tooltip: 'Notepad',
+                            icon: const Icon(Icons.edit_note_rounded),
+                            onPressed: () =>
+                                context.push(RouteNames.notepad),
                           ),
                           // ISSUE 2: always-visible entry point to the read-only
                           // group details page (info, admin, role, QR, Leave).
@@ -572,6 +574,10 @@ class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
                                   provider.weeklyMenuEnabled
                               ? () => context.go(RouteNames.studentWeeklyMenu)
                               : null,
+                          // command_3: billing summary + notepad one tap away.
+                          onBilling: () =>
+                              context.push(RouteNames.studentBilling),
+                          onNotepad: () => context.push(RouteNames.notepad),
                         ),
                       ),
                     ),
@@ -969,65 +975,95 @@ class _NoMealTodayCard extends StatelessWidget {
 
 /// SRS FR-MODE-013 — mode-adaptive quick actions:
 /// Attendance-Only shows {Attendance, History}; Meal Mode adds {Meals} and
-/// {Menu} (the latter only when the Weekly Menu is enabled).
+/// {Menu} (the latter only when the Weekly Menu is enabled). command_3 adds
+/// {Billing} and {Notepad}. Tiles flow onto extra rows of three so every
+/// action keeps a comfortable tap target regardless of how many are enabled.
 class _QuickActionsRow extends StatelessWidget {
   const _QuickActionsRow({
     this.onAttendance,
     this.onHistory,
     this.onMeals,
     this.onMenu,
+    this.onBilling,
+    this.onNotepad,
   });
 
   final VoidCallback? onAttendance;
   final VoidCallback? onHistory;
   final VoidCallback? onMeals;
   final VoidCallback? onMenu;
+  final VoidCallback? onBilling;
+  final VoidCallback? onNotepad;
 
   @override
   Widget build(BuildContext context) {
-    return Row(
-      children: [
-        Expanded(
-          child: _QuickActionTile(
-            icon: Icons.how_to_reg_rounded,
-            label: 'Attendance',
-            color: AppColors.primary,
-            onTap: onAttendance,
-          ),
+    final tiles = <Widget>[
+      _QuickActionTile(
+        icon: Icons.how_to_reg_rounded,
+        label: 'Attendance',
+        color: AppColors.primary,
+        onTap: onAttendance,
+      ),
+      _QuickActionTile(
+        icon: Icons.history_rounded,
+        label: 'History',
+        color: AppColors.secondary,
+        onTap: onHistory,
+      ),
+      if (onMeals != null)
+        _QuickActionTile(
+          icon: Icons.restaurant_rounded,
+          label: 'Meals',
+          color: AppColors.info,
+          onTap: onMeals,
         ),
-        const SizedBox(width: AppConstants.space12),
-        Expanded(
-          child: _QuickActionTile(
-            icon: Icons.history_rounded,
-            label: 'History',
-            color: AppColors.secondary,
-            onTap: onHistory,
-          ),
+      if (onMenu != null)
+        _QuickActionTile(
+          icon: Icons.menu_book_rounded,
+          label: 'Menu',
+          color: AppColors.warning,
+          onTap: onMenu,
         ),
-        if (onMeals != null) ...[
-          const SizedBox(width: AppConstants.space12),
+      if (onBilling != null)
+        _QuickActionTile(
+          icon: Icons.receipt_long_rounded,
+          label: 'Billing',
+          color: AppColors.error,
+          onTap: onBilling,
+        ),
+      if (onNotepad != null)
+        _QuickActionTile(
+          icon: Icons.edit_note_rounded,
+          label: 'Notepad',
+          color: AppColors.violet,
+          onTap: onNotepad,
+        ),
+    ];
+
+    // Chunk into rows of three; short rows are padded with spacers so tile
+    // widths stay identical across rows.
+    const perRow = 3;
+    final rows = <Widget>[];
+    for (var i = 0; i < tiles.length; i += perRow) {
+      final slice = tiles.sublist(
+        i,
+        i + perRow > tiles.length ? tiles.length : i + perRow,
+      );
+      final cells = <Widget>[];
+      for (var j = 0; j < perRow; j++) {
+        if (j > 0) cells.add(const SizedBox(width: AppConstants.space12));
+        cells.add(
           Expanded(
-            child: _QuickActionTile(
-              icon: Icons.restaurant_rounded,
-              label: 'Meals',
-              color: AppColors.info,
-              onTap: onMeals,
-            ),
+            child: j < slice.length ? slice[j] : const SizedBox.shrink(),
           ),
-        ],
-        if (onMenu != null) ...[
-          const SizedBox(width: AppConstants.space12),
-          Expanded(
-            child: _QuickActionTile(
-              icon: Icons.menu_book_rounded,
-              label: 'Menu',
-              color: AppColors.warning,
-              onTap: onMenu,
-            ),
-          ),
-        ],
-      ],
-    );
+        );
+      }
+      if (rows.isNotEmpty) {
+        rows.add(const SizedBox(height: AppConstants.space12));
+      }
+      rows.add(Row(children: cells));
+    }
+    return Column(children: rows);
   }
 }
 
@@ -1083,24 +1119,7 @@ class _LoadingView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          const CircularProgressIndicator(
-            color: AppColors.primary,
-            strokeWidth: 2.5,
-          ),
-          const SizedBox(height: AppConstants.space16),
-          Text(
-            'Loading dashboard…',
-            style: AppTypography.bodySmall.copyWith(
-              color: AppColors.textSecondary,
-            ),
-          ),
-        ],
-      ),
-    );
+    return const AppDashboardSkeleton();
   }
 }
 

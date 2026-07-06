@@ -18,6 +18,7 @@ import 'package:smart_meal_management/shared/widgets/app_glass_card.dart';
 import 'package:smart_meal_management/shared/widgets/app_primary_button.dart';
 import 'package:smart_meal_management/shared/widgets/app_status_chip.dart';
 import 'package:smart_meal_management/features/auth/providers/auth_provider.dart';
+import 'package:smart_meal_management/shared/widgets/app_skeleton.dart';
 
 /// Admin group detail screen with Members / Meals / Settings tabs.
 class AdminGroupDetailScreen extends StatefulWidget {
@@ -82,7 +83,7 @@ class _AdminGroupDetailScreenState extends State<AdminGroupDetailScreen>
     return Scaffold(
       backgroundColor: Theme.of(context).colorScheme.surfaceContainerLowest,
       body: group == null && _provider.isLoading
-          ? const Center(child: CircularProgressIndicator())
+          ? const AppDetailSkeleton()
           : group == null
               ? const Center(child: Text('Group not found'))
               : _GroupDetailBody(
@@ -551,7 +552,7 @@ class _MembersTab extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (provider.isLoadingMembers) {
-      return const Center(child: CircularProgressIndicator());
+      return const AppListSkeleton(rows: 6, rowHeight: 64, withAvatar: true);
     }
 
     final members = provider.selectedGroupMembers;
@@ -799,10 +800,7 @@ class _MealsTab extends StatelessWidget {
         // ── Dynamic meal list ──────────────────────────────────────────────
         if (config.mealsEnabled) ...[
           if (provider.isLoadingMeals)
-            const Padding(
-              padding: EdgeInsets.symmetric(vertical: 24),
-              child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
-            )
+            const AppSheetSkeleton(rows: 2, rowHeight: 56, padding: EdgeInsets.symmetric(vertical: 12))
           else if (meals.isEmpty)
             AppGlassCard(
               glassEnabled: false,

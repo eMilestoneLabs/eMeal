@@ -88,9 +88,10 @@ class MemberBillingProvider extends ChangeNotifier {
 
     switch (sort) {
       case BillingSort.highestBill:
-        list.sort((a, b) => b.totalBill.compareTo(a.totalBill));
+        // Consistency fix: sort by the same NET figure the rows headline.
+        list.sort((a, b) => b.netBill.compareTo(a.netBill));
       case BillingSort.lowestBill:
-        list.sort((a, b) => a.totalBill.compareTo(b.totalBill));
+        list.sort((a, b) => a.netBill.compareTo(b.netBill));
       case BillingSort.mostMeals:
         list.sort((a, b) => b.presentCount.compareTo(a.presentCount));
       case BillingSort.leastMeals:

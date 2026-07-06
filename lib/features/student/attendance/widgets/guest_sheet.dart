@@ -6,6 +6,7 @@ import 'package:smart_meal_management/data/repositories/guest_repository.dart';
 import 'package:smart_meal_management/shared/models/group_model.dart';
 import 'package:smart_meal_management/shared/models/guest_model.dart';
 import 'package:smart_meal_management/shared/models/result.dart';
+import 'package:smart_meal_management/shared/widgets/app_skeleton.dart';
 
 /// Module 22 (Pass 9) — hosted-guest management sheet (FR-HG-031/033/034/062).
 ///
@@ -253,13 +254,7 @@ class _GuestSheetState extends State<_GuestSheet> {
             _header(isDark),
             Flexible(
               child: _loading
-                  ? const Padding(
-                      padding: EdgeInsets.all(AppConstants.space32),
-                      child: Center(
-                        child: CircularProgressIndicator(
-                            color: AppColors.primary, strokeWidth: 2.5),
-                      ),
-                    )
+                  ? const AppSheetSkeleton(rows: 2, rowHeight: 72)
                   : SingleChildScrollView(
                       padding: const EdgeInsets.fromLTRB(
                         AppConstants.space20,

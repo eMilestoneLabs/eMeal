@@ -15,6 +15,7 @@ import 'package:smart_meal_management/shared/models/meal_model.dart';
 import 'package:smart_meal_management/shared/models/preference_group_model.dart';
 import 'package:smart_meal_management/shared/widgets/preference_group_selector.dart';
 import 'package:smart_meal_management/shared/widgets/cached_photo.dart';
+import 'package:smart_meal_management/shared/widgets/app_skeleton.dart';
 
 /// Student "Meals" tab screen — today's meal cards with attendance marking.
 ///
@@ -88,7 +89,7 @@ class _TodayMealsScreenState extends State<TodayMealsScreen> {
     final dashboardProvider = StudentDashboardScope.maybeOf(context);
     if (dashboardProvider == null) {
       return const Scaffold(
-        body: Center(child: CircularProgressIndicator(color: AppColors.primary, strokeWidth: 2.5)),
+        body: AppListSkeleton(rows: 3, rowHeight: 168, headerHeight: 56),
       );
     }
 
@@ -1528,12 +1529,7 @@ class _LoadingView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const Center(
-      child: CircularProgressIndicator(
-        color: AppColors.primary,
-        strokeWidth: 2.5,
-      ),
-    );
+    return const AppListSkeleton(rows: 3, rowHeight: 168, headerHeight: 56);
   }
 }
 

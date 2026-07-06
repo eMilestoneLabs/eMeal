@@ -8,6 +8,7 @@ import 'package:smart_meal_management/features/auth/providers/auth_provider.dart
 import 'package:smart_meal_management/features/student/settings/providers/student_settings_provider.dart';
 import 'package:smart_meal_management/features/student/settings/screens/student_vacation_request_screen.dart';
 import 'package:smart_meal_management/shared/providers/theme_provider.dart';
+import 'package:smart_meal_management/shared/widgets/app_skeleton.dart';
 
 /// Student settings screen.
 ///
@@ -94,7 +95,7 @@ class _StudentSettingsScreenState extends State<StudentSettingsScreen> {
     final provider = _provider;
     if (provider == null) {
       return const Scaffold(
-          body: Center(child: CircularProgressIndicator(color: AppColors.primary)));
+          body: AppListSkeleton(rows: 7, rowHeight: 56, headerHeight: 120));
     }
 
     final isDark = Theme.of(context).brightness == Brightness.dark;

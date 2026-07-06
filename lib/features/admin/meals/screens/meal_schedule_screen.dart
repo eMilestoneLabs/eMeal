@@ -13,8 +13,8 @@ import 'package:smart_meal_management/shared/models/preference_group_model.dart'
 import 'package:smart_meal_management/shared/models/group_model.dart';
 import 'package:smart_meal_management/shared/models/meal_schedule_model.dart';
 import 'package:smart_meal_management/shared/widgets/app_empty_state.dart';
-import 'package:smart_meal_management/shared/widgets/app_loading_indicator.dart';
 import 'package:smart_meal_management/features/auth/providers/auth_provider.dart';
+import 'package:smart_meal_management/shared/widgets/app_skeleton.dart';
 
 /// Admin Weekly Meal Planner.
 ///
@@ -574,7 +574,7 @@ class _MealScheduleScreenState extends State<MealScheduleScreen>
         ),
       ),
       body: (_provider.isLoading || _bootstrapping)
-          ? const AppLoadingIndicator()
+          ? const AppListSkeleton(rows: 5, rowHeight: 112)
           : _provider.weekSchedule == null
               ? AppEmptyState(
                   icon: Icons.calendar_month_outlined,
