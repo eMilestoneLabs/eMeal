@@ -48,6 +48,9 @@ class _GroupJoinScreenState extends State<GroupJoinScreen> {
     _codeCtrl = TextEditingController(text: widget.prefillCode ?? '');
     _provider = GroupProvider();
     _provider.addListener(_rebuild);
+    // Issue 4: surface any existing pending join requests so the student can
+    // re-open "Waiting for approval" (and Cancel) after tapping Done earlier.
+    _provider.loadPendingRequests();
     // Auto-submit when a code arrives via deep-link / QR URL.
     if (widget.prefillCode != null && widget.prefillCode!.isNotEmpty) {
       WidgetsBinding.instance.addPostFrameCallback(
@@ -98,6 +101,8 @@ class _GroupJoinScreenState extends State<GroupJoinScreen> {
     // sync / session refresh until an admin approves.
     if (ok && (_provider.lastJoined?.isPendingApproval ?? false)) {
       setState(() => _pendingGroup = _provider.lastJoined);
+      // Issue 4: keep the re-accessible pending list current for both places.
+      _provider.loadPendingRequests();
       return;
     }
 
@@ -327,6 +332,15 @@ class _GroupJoinScreenState extends State<GroupJoinScreen> {
                         color: isDark ? AppColors.textSecondaryDark : AppColors.textSecondary,
                       ),
                     ),
+                    // Issue 4: re-accessible pending requests (both places — this
+                    // screen + the student groups switcher deep-link here).
+                    if (_provider.pendingRequests.isNotEmpty) ...[
+                      const SizedBox(height: 20),
+                      _PendingRequestsSection(
+                        groups: _provider.pendingRequests,
+                        onReopen: (g) => setState(() => _pendingGroup = g),
+                      ),
+                    ],
                     const SizedBox(height: 28),
                     GroupJoinCard(
                       controller: _codeCtrl,
@@ -433,6 +447,104 @@ class _PendingView extends StatelessWidget {
         const SizedBox(height: 12),
         TextButton(onPressed: onDone, child: const Text('Done')),
       ],
+    );
+  }
+}
+
+// ── Pending requests section (Issue 4) ──────────────────────────────────────
+
+/// Re-accessible list of the student's own pending join requests. Tapping a row
+/// re-opens the "Waiting for approval" view (with Cancel). Shown on the Join a
+/// Group screen and reachable from the student groups switcher.
+class _PendingRequestsSection extends StatelessWidget {
+  const _PendingRequestsSection({required this.groups, required this.onReopen});
+
+  final List<GroupModel> groups;
+  final ValueChanged<GroupModel> onReopen;
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [
+            AppColors.warning.withValues(alpha: 0.14),
+            AppColors.warning.withValues(alpha: 0.05),
+          ],
+        ),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: AppColors.warning.withValues(alpha: 0.4)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.hourglass_top_rounded,
+                  size: 18, color: AppColors.warning),
+              const SizedBox(width: 8),
+              Text(
+                groups.length == 1
+                    ? 'Pending request'
+                    : '${groups.length} pending requests',
+                style: AppTypography.labelLarge.copyWith(
+                  fontWeight: FontWeight.w800,
+                  color: AppColors.warning,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          ...groups.map(
+            (g) => Padding(
+              padding: const EdgeInsets.only(bottom: 6),
+              child: Material(
+                color: isDark ? AppColors.surfaceDark : AppColors.surface,
+                borderRadius: BorderRadius.circular(12),
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(12),
+                  onTap: () => onReopen(g),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 12, vertical: 12),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                g.name,
+                                style: AppTypography.labelLarge
+                                    .copyWith(fontWeight: FontWeight.w700),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                'Waiting for approval',
+                                style: AppTypography.bodySmall.copyWith(
+                                  color: isDark
+                                      ? AppColors.textSecondaryDark
+                                      : AppColors.textSecondary,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const Icon(Icons.chevron_right_rounded,
+                            color: AppColors.warning),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

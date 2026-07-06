@@ -318,7 +318,12 @@ GoRouter buildRouter(AuthProvider auth) {
           ),
           GoRoute(
             path: RouteNames.adminGroups,
-            builder: (context, state) => const AdminGroupsScreen(),
+            // Issue 6: ?archived=true opens straight into the archived view
+            // (from the "Archived Groups" quick action).
+            builder: (context, state) => AdminGroupsScreen(
+              initialArchived:
+                  state.uri.queryParameters['archived'] == 'true',
+            ),
             routes: [
               GoRoute(
                 path: ':groupId',

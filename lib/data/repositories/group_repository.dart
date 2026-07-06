@@ -87,6 +87,7 @@ class GroupRepository implements IGroupRepository {
     String? country,
     String? state,
     String? city,
+    String? pin,
     String? address,
     String? timezone,
     String? currency,
@@ -108,6 +109,7 @@ class GroupRepository implements IGroupRepository {
         if (country != null) 'country': country,
         if (state != null) 'state': state,
         if (city != null) 'city': city,
+        if (pin != null) 'pin': pin,
         if (address != null) 'address': address,
         if (timezone != null) 'timezone': timezone,
         if (currency != null) 'currency': currency,
@@ -345,6 +347,22 @@ class GroupRepository implements IGroupRepository {
     return switch (result) {
       Err(:final failure) => Err(failure),
       Ok() => const Ok(Unit.instance),
+    };
+  }
+
+  /// GET /groups/my-join-requests — MEM-004/005 (Issue 4): the current user's
+  /// own pending join requests, so the "Waiting for approval" state can be
+  /// re-opened and cancelled after the inline flow is dismissed.
+  Future<Result<List<GroupModel>>> getMyJoinRequests() async {
+    final result = await DioApiService.instance
+        .get<Map<String, dynamic>>('/groups/my-join-requests');
+    return switch (result) {
+      Err(:final failure) => Err(failure),
+      Ok(:final value) => Ok(
+          ((value['data'] as List?) ?? [])
+              .map((e) => GroupModel.fromJson((e as Map).cast<String, dynamic>()))
+              .toList(),
+        ),
     };
   }
 

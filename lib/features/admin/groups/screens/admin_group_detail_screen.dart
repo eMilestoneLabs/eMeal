@@ -7,7 +7,7 @@ import 'package:smart_meal_management/core/theme/app_colors.dart';
 import 'package:smart_meal_management/core/theme/app_typography.dart';
 import 'package:smart_meal_management/core/utils/time_format.dart';
 import 'package:smart_meal_management/core/utils/qr_payload_parser.dart';
-import 'package:smart_meal_management/core/utils/widget_image_share.dart';
+import 'package:smart_meal_management/core/utils/qr_share.dart';
 import 'package:smart_meal_management/features/admin/groups/providers/admin_group_provider.dart';
 import 'package:smart_meal_management/features/admin/groups/screens/group_join_requests_screen.dart';
 import 'package:smart_meal_management/features/admin/groups/widgets/group_member_tile.dart';
@@ -381,9 +381,16 @@ class _QrBottomSheetState extends State<_QrBottomSheet> {
     if (_sharing) return;
     setState(() => _sharing = true);
     try {
-      await WidgetImageShare.shareAsImage(
-        boundaryKey: _qrCardKey,
-        filename: 'mealattend-group-qr-$code.png',
+      // Issue 3: render the branded QR straight to PNG (no widget-capture race)
+      // so admins can share the premium QR image to WhatsApp — not just text.
+      final qrData = QrPayloadParser.encodeGroupQr(
+        groupId: group.id,
+        joinToken: code,
+      );
+      await QrShare.shareGroupQr(
+        qrData: qrData,
+        joinCode: code,
+        groupName: group.name,
         text: 'Join "${group.name}" on MealAttend!\n\n'
             'Use code: $code\n\n'
             'Open the app → Scan QR or enter code to join.',

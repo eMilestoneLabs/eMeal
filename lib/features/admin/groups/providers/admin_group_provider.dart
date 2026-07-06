@@ -28,6 +28,12 @@ class AdminGroupProvider extends ChangeNotifier {
   bool _isLoadingMembers = false;
   bool _isLoadingMeals = false;
   String? _error;
+  // Bug (command_3 live test): the create/update flows must NOT write to the
+  // shared list [_error] — otherwise a failed create (e.g. 409 GROUP_LIMIT_REACHED
+  // at 5 groups) blanked the whole Groups list with "Could not load groups",
+  // hiding the successfully-loaded groups. Mutation errors live here instead and
+  // surface only in the create sheet's snackbar.
+  String? _createError;
 
   List<GroupModel> _groups = [];
   GroupModel? _selectedGroup;
@@ -53,6 +59,9 @@ class AdminGroupProvider extends ChangeNotifier {
   bool get isLoadingMembers => _isLoadingMembers;
   bool get isLoadingMeals => _isLoadingMeals;
   String? get error => _error;
+  /// Error from the last create/mutation attempt — surfaced only in the create
+  /// sheet, never as the full-screen Groups-list error state.
+  String? get createError => _createError;
   List<GroupModel> get groups => _groups;
   GroupModel? get selectedGroup => _selectedGroup;
   List<UserModel> get selectedGroupMembers => _selectedGroupMembers;
@@ -266,6 +275,7 @@ class AdminGroupProvider extends ChangeNotifier {
     String? country,
     String? state,
     String? city,
+    String? pin, // command_3 Issue 8 — postal/PIN code
     String? address,
     String? timezone,
     String? currency,
@@ -273,7 +283,7 @@ class AdminGroupProvider extends ChangeNotifier {
     int? qrExpiryDays,
   }) async {
     _isCreating = true;
-    _error = null;
+    _createError = null;
     notifyListeners();
 
     final result = await _groupRepo.createGroup(
@@ -287,6 +297,7 @@ class AdminGroupProvider extends ChangeNotifier {
       country: country,
       state: state,
       city: city,
+      pin: pin,
       address: address,
       timezone: timezone,
       currency: currency,
@@ -301,7 +312,7 @@ class AdminGroupProvider extends ChangeNotifier {
         notifyListeners();
         return value;
       case Err(:final failure):
-        _error = failure.message;
+        _createError = failure.message;
         _isCreating = false;
         notifyListeners();
         return null;

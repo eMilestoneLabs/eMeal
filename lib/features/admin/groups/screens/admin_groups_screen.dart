@@ -11,7 +11,6 @@ import 'package:smart_meal_management/shared/enums/user_role.dart';
 import 'package:smart_meal_management/shared/widgets/app_empty_state.dart';
 import 'package:smart_meal_management/features/auth/providers/auth_provider.dart';
 import 'package:smart_meal_management/shared/widgets/app_skeleton.dart';
-import 'package:smart_meal_management/features/admin/groups/screens/group_join_requests_screen.dart';
 import 'package:smart_meal_management/data/services/group_order_service.dart';
 
 /// Admin groups list screen.
@@ -19,7 +18,11 @@ import 'package:smart_meal_management/data/services/group_order_service.dart';
 /// Lists all groups for the admin's organisation. The FAB opens a creation
 /// bottom sheet — never navigates to a non-existent `:groupId` route.
 class AdminGroupsScreen extends StatefulWidget {
-  const AdminGroupsScreen({super.key});
+  const AdminGroupsScreen({super.key, this.initialArchived = false});
+
+  /// Issue 6: when opened from the "Archived Groups" quick action the screen
+  /// starts directly in the archived view (GRP-016/018) — no extra tap.
+  final bool initialArchived;
 
   @override
   State<AdminGroupsScreen> createState() => _AdminGroupsScreenState();
@@ -45,8 +48,11 @@ class _AdminGroupsScreenState extends State<AdminGroupsScreen> {
       final user = auth.currentUser;
       if (user == null) return;
       _userId = user.id;
+      // Issue 6: honor the archived-groups quick action deep-link.
+      _showArchived = widget.initialArchived;
       _provider.loadGroups(
         organizationId: user.organizationId,
+        includeInactive: _showArchived,
       );
       // GRP-007: load the saved drag order (device-local).
       GroupOrderService.instance.load(_userId).then((o) {
@@ -150,16 +156,9 @@ class _AdminGroupsScreenState extends State<AdminGroupsScreen> {
                     onPressed: _toggleArchived,
                   ),
           ),
-          // MODULE_02 (MEM-006/007): open the pending join-request approvals.
-          IconButton(
-            tooltip: 'Join requests',
-            icon: const Icon(Icons.how_to_reg_rounded),
-            onPressed: () => Navigator.of(context).push(
-              MaterialPageRoute(
-                builder: (_) => const GroupJoinRequestsScreen(),
-              ),
-            ),
-          ),
+          // Issue 5: join requests are a GROUP-scoped feature — the entry lives
+          // in each group's header + Settings (admin_group_detail_screen). The
+          // org-level shortcut here was removed to avoid mixing org/group scope.
         ],
       ),
       floatingActionButton: FloatingActionButton.extended(
@@ -331,14 +330,16 @@ class _CreateGroupSheet extends StatefulWidget {
 class _CreateGroupSheetState extends State<_CreateGroupSheet> {
   final _nameCtrl = TextEditingController();
   final _maxMembersCtrl = TextEditingController();
-  // GRP-003: extended metadata captured at creation (immutable afterward).
-  final _countryCtrl = TextEditingController();
+  // GRP-003 (Issue 8): location + join-code policy captured at creation.
+  // Country defaults to India and currency to INR (India-only release), so the
+  // form only collects State, City, PIN and QR expiry (all mandatory) plus an
+  // optional Address (≤30 chars). These are always visible — no longer hidden
+  // behind a "More options" toggle since they are required.
   final _stateCtrl = TextEditingController();
   final _cityCtrl = TextEditingController();
+  final _pinCtrl = TextEditingController();
   final _addressCtrl = TextEditingController();
-  final _currencyCtrl = TextEditingController();
   final _qrExpiryCtrl = TextEditingController();
-  bool _showMoreOptions = false;
   GroupType _type = GroupType.hostel;
   bool _mealsEnabled = true;
   // MODULE_02 (GRP-003/MEM-004): require admin approval for join requests.
@@ -392,7 +393,17 @@ class _CreateGroupSheetState extends State<_CreateGroupSheet> {
     widget.provider.loadLimits().then((_) {
       if (mounted) setState(() {});
     });
-    _maxMembersCtrl.addListener(_rebuild);
+    // Issue 8: keep validation + Create-enabled state live as the admin types
+    // any mandatory field.
+    for (final c in [
+      _maxMembersCtrl,
+      _stateCtrl,
+      _cityCtrl,
+      _pinCtrl,
+      _qrExpiryCtrl,
+    ]) {
+      c.addListener(_rebuild);
+    }
   }
 
   void _rebuild() {
@@ -417,21 +428,53 @@ class _CreateGroupSheetState extends State<_CreateGroupSheet> {
     return null;
   }
 
+  // Issue 8: mandatory State / City / PIN / QR-expiry validation (null = valid).
+  String? get _stateError =>
+      _stateCtrl.text.trim().isEmpty ? 'Required' : null;
+  String? get _cityError => _cityCtrl.text.trim().isEmpty ? 'Required' : null;
+  String? get _pinError {
+    final v = _pinCtrl.text.trim();
+    if (v.isEmpty) return 'Required';
+    if (!RegExp(r'^\d{6}$').hasMatch(v)) return 'Enter a 6-digit PIN';
+    return null;
+  }
+
+  /// QR expiry is mandatory but 0 is valid and means "Never expires". Only new
+  /// joins are gated by expiry — existing members are never affected.
+  String? get _qrExpiryError {
+    final v = _qrExpiryCtrl.text.trim();
+    if (v.isEmpty) return 'Required (0 = never)';
+    final n = int.tryParse(v);
+    if (n == null || n < 0) return 'Enter 0 or more days';
+    return null;
+  }
+
   bool get _canSubmit =>
       !_saving &&
       _nameCtrl.text.trim().isNotEmpty &&
-      _maxMembersError == null;
+      _maxMembersError == null &&
+      _stateError == null &&
+      _cityError == null &&
+      _pinError == null &&
+      _qrExpiryError == null;
 
   @override
   void dispose() {
-    _maxMembersCtrl.removeListener(_rebuild);
+    for (final c in [
+      _maxMembersCtrl,
+      _stateCtrl,
+      _cityCtrl,
+      _pinCtrl,
+      _qrExpiryCtrl,
+    ]) {
+      c.removeListener(_rebuild);
+    }
     _nameCtrl.dispose();
     _maxMembersCtrl.dispose();
-    _countryCtrl.dispose();
     _stateCtrl.dispose();
     _cityCtrl.dispose();
+    _pinCtrl.dispose();
     _addressCtrl.dispose();
-    _currencyCtrl.dispose();
     _qrExpiryCtrl.dispose();
     super.dispose();
   }
@@ -441,20 +484,32 @@ class _CreateGroupSheetState extends State<_CreateGroupSheet> {
     return v.isEmpty ? null : v;
   }
 
-  Widget _metaField(
+  /// Issue 8: metadata field with optional live [error] + [helper] text and a
+  /// digits-only / length cap. Used for the always-visible Location & Join Code
+  /// section (State/City/PIN/QR-expiry mandatory, Address optional ≤30).
+  Widget _reqField(
     TextEditingController ctrl,
     String label,
     ColorScheme colorScheme, {
     bool number = false,
+    int? maxLen,
+    String? error,
+    String? helper,
   }) {
     return TextField(
       controller: ctrl,
       keyboardType: number ? TextInputType.number : TextInputType.text,
       textCapitalization:
           number ? TextCapitalization.none : TextCapitalization.words,
+      inputFormatters: [
+        if (number) FilteringTextInputFormatter.digitsOnly,
+        if (maxLen != null) LengthLimitingTextInputFormatter(maxLen),
+      ],
       decoration: InputDecoration(
         labelText: label,
         isDense: true,
+        errorText: error,
+        helperText: helper,
         filled: true,
         fillColor: colorScheme.surfaceContainerLowest,
         border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
@@ -463,15 +518,17 @@ class _CreateGroupSheetState extends State<_CreateGroupSheet> {
   }
 
   Future<void> _save() async {
+    // Issue 8: name + Max Members + State + City + PIN + QR-expiry are all
+    // mandatory and validated live (_canSubmit).
+    if (!_canSubmit) return;
     final name = _nameCtrl.text.trim();
-    // GRP-004: name + a valid role-capped Maximum Members are both mandatory.
-    if (name.isEmpty || _maxMembersError != null) return;
 
     setState(() => _saving = true);
 
     final maxMembers = int.parse(_maxMembersCtrl.text.trim());
-
-    final qrExpiry = int.tryParse(_qrExpiryCtrl.text.trim());
+    // 0 = Never expires (backend maps <=0 → no expiry). Only NEW joins are
+    // gated by expiry; existing members are never affected.
+    final qrExpiry = int.parse(_qrExpiryCtrl.text.trim());
 
     final group = await widget.provider.createGroup(
       organizationId: widget.organizationId,
@@ -481,13 +538,15 @@ class _CreateGroupSheetState extends State<_CreateGroupSheet> {
       mealConfig: GroupMealConfig(mealsEnabled: _mealsEnabled),
       maxMembers: maxMembers,
       joinApprovalRequired: _requireApproval,
-      // GRP-003: extended metadata (immutable after creation).
-      country: _trimOrNull(_countryCtrl),
+      // GRP-003 (Issue 8): India-only release — country/currency are fixed; the
+      // admin supplies State, City, PIN (mandatory) + optional Address (≤30).
+      country: 'India',
       state: _trimOrNull(_stateCtrl),
       city: _trimOrNull(_cityCtrl),
+      pin: _trimOrNull(_pinCtrl),
       address: _trimOrNull(_addressCtrl),
-      currency: _trimOrNull(_currencyCtrl),
-      qrExpiryDays: (qrExpiry != null && qrExpiry > 0) ? qrExpiry : null,
+      currency: 'INR',
+      qrExpiryDays: qrExpiry,
     );
 
     if (!mounted) return;
@@ -499,7 +558,8 @@ class _CreateGroupSheetState extends State<_CreateGroupSheet> {
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(widget.provider.error ?? 'Failed to create group'),
+          content:
+              Text(widget.provider.createError ?? 'Failed to create group'),
           behavior: SnackBarBehavior.floating,
         ),
       );
@@ -512,6 +572,14 @@ class _CreateGroupSheetState extends State<_CreateGroupSheet> {
     final bottom = MediaQuery.viewInsetsOf(context).bottom;
 
     return Container(
+      // Issue 2: bound the sheet to ~92% of the screen height. Without a max
+      // height the sheet grew to its full content height and pushed the top off
+      // screen, so the inner SingleChildScrollView never got a bounded viewport
+      // to scroll within. Constraining it makes the internal scroll engage and
+      // the whole form (incl. the Create button) reachable on every device.
+      constraints: BoxConstraints(
+        maxHeight: MediaQuery.sizeOf(context).height * 0.92,
+      ),
       decoration: BoxDecoration(
         color: colorScheme.surface,
         borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
@@ -733,55 +801,72 @@ class _CreateGroupSheetState extends State<_CreateGroupSheet> {
           ),
           const SizedBox(height: 8),
 
-          // ── More options (GRP-003 location/currency/QR expiry) ────────────
-          InkWell(
-            onTap: () => setState(() => _showMoreOptions = !_showMoreOptions),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(vertical: 8),
-              child: Row(
-                children: [
-                  Icon(
-                    _showMoreOptions
-                        ? Icons.expand_less_rounded
-                        : Icons.expand_more_rounded,
-                    size: 20,
-                    color: colorScheme.onSurfaceVariant,
-                  ),
-                  const SizedBox(width: 6),
-                  Text(
-                    'More options (location, currency, QR expiry)',
-                    style: AppTypography.labelMedium
-                        .copyWith(color: colorScheme.onSurfaceVariant),
-                  ),
-                ],
+          // ── Location & Join Code (GRP-003 / Issue 8) — India only ─────────
+          Text(
+            'Location & Join Code',
+            style: AppTypography.labelMedium
+                .copyWith(fontWeight: FontWeight.w600),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            'India only (currency ₹ INR). State, City, PIN and QR expiry are '
+            'required.',
+            style: AppTypography.bodySmall
+                .copyWith(color: colorScheme.onSurfaceVariant),
+          ),
+          const SizedBox(height: 12),
+          Row(children: [
+            Expanded(
+              child: _reqField(
+                _stateCtrl,
+                'State *',
+                colorScheme,
+                error: _stateCtrl.text.isEmpty ? null : _stateError,
               ),
             ),
-          ),
-          if (_showMoreOptions) ...[
-            const SizedBox(height: 8),
-            Row(children: [
-              Expanded(child: _metaField(_countryCtrl, 'Country', colorScheme)),
-              const SizedBox(width: 10),
-              Expanded(child: _metaField(_stateCtrl, 'State', colorScheme)),
-            ]),
-            const SizedBox(height: 10),
-            Row(children: [
-              Expanded(child: _metaField(_cityCtrl, 'City', colorScheme)),
-              const SizedBox(width: 10),
-              Expanded(
-                  child: _metaField(_currencyCtrl, 'Currency (e.g. INR)',
-                      colorScheme)),
-            ]),
-            const SizedBox(height: 10),
-            _metaField(_addressCtrl, 'Address', colorScheme),
-            const SizedBox(height: 10),
-            _metaField(
-              _qrExpiryCtrl,
-              'QR expiry in days (blank = never)',
-              colorScheme,
-              number: true,
+            const SizedBox(width: 10),
+            Expanded(
+              child: _reqField(
+                _cityCtrl,
+                'City *',
+                colorScheme,
+                error: _cityCtrl.text.isEmpty ? null : _cityError,
+              ),
             ),
-          ],
+          ]),
+          const SizedBox(height: 10),
+          Row(children: [
+            Expanded(
+              child: _reqField(
+                _pinCtrl,
+                'PIN Code *',
+                colorScheme,
+                number: true,
+                maxLen: 6,
+                error: _pinCtrl.text.isEmpty ? null : _pinError,
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: _reqField(
+                _qrExpiryCtrl,
+                'QR expiry (days) *',
+                colorScheme,
+                number: true,
+                maxLen: 4,
+                error: _qrExpiryCtrl.text.isEmpty ? null : _qrExpiryError,
+                helper: '0 = never',
+              ),
+            ),
+          ]),
+          const SizedBox(height: 10),
+          _reqField(
+            _addressCtrl,
+            'Address (optional)',
+            colorScheme,
+            maxLen: 30,
+            helper: 'Up to 30 characters',
+          ),
           const SizedBox(height: 24),
 
           // ── Save ───────────────────────────────────────────────────────

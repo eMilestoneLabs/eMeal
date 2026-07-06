@@ -22,10 +22,15 @@ class GroupProvider extends ChangeNotifier {
   String? _error;
   String? _joinError;
   GroupModel? _lastJoined; // Shown in success state after joining
+  // Issue 4: the user's own pending join requests (server-truth), so the
+  // "Waiting for approval" state is re-accessible after the inline flow closes.
+  List<GroupModel> _pendingRequests = [];
 
   // ── Public getters ─────────────────────────────────────────────────────────
 
   List<GroupModel> get myGroups => _myGroups;
+  List<GroupModel> get pendingRequests => _pendingRequests;
+  bool get hasPendingRequests => _pendingRequests.isNotEmpty;
   GroupModel? get selectedGroup => _selectedGroup;
   bool get isLoading => _isLoading;
   bool get isJoining => _isJoining;
@@ -211,6 +216,18 @@ class GroupProvider extends ChangeNotifier {
     }
   }
 
+  // ── Pending join requests (MEM-004/005, Issue 4) ────────────────────────────
+
+  /// Load the user's own pending join requests (server-truth). Silent refresh:
+  /// a request an admin has since acted on simply drops off the list.
+  Future<void> loadPendingRequests() async {
+    final result = await _repo.getMyJoinRequests();
+    if (result case Ok(:final value)) {
+      _pendingRequests = value;
+      notifyListeners();
+    }
+  }
+
   // ── Cancel pending request (MEM-005) ────────────────────────────────────────
 
   /// Cancel the member's own pending join request.
@@ -219,6 +236,8 @@ class GroupProvider extends ChangeNotifier {
     switch (result) {
       case Ok():
         if (_lastJoined?.id == groupId) _lastJoined = null;
+        // Issue 4: keep the re-accessible pending list in sync after a cancel.
+        _pendingRequests.removeWhere((g) => g.id == groupId);
         notifyListeners();
         return true;
       case Err(:final failure):

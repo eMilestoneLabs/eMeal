@@ -60,6 +60,13 @@ class QuickActionGrid extends StatelessWidget {
         color: AppColors.info,
         route: RouteNames.adminBilling,
       ),
+      // Issue 6: quick access to archived groups (restore / permanent delete).
+      const _ActionItem(
+        icon: Icons.inventory_2_rounded,
+        label: 'Archived Groups',
+        color: AppColors.warning,
+        route: '${RouteNames.adminGroups}?archived=true',
+      ),
       if (onPublishNotice != null)
         _ActionItem(
           icon: Icons.campaign_rounded,

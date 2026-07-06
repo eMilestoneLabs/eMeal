@@ -489,6 +489,7 @@ class GroupModel extends Equatable {
     this.country,
     this.state,
     this.city,
+    this.pin,
     this.address,
     this.timezone,
     this.currency,
@@ -541,6 +542,9 @@ class GroupModel extends Equatable {
   final String? country;
   final String? state;
   final String? city;
+
+  /// GRP-003 (command_3 Issue 8): postal / PIN code captured at creation.
+  final String? pin;
   final String? address;
   final String? timezone;
   final String? currency;
@@ -590,6 +594,7 @@ class GroupModel extends Equatable {
         country: j['country'] as String?,
         state: j['state'] as String?,
         city: j['city'] as String?,
+        pin: j['pin'] as String?,
         address: j['address'] as String?,
         timezone: j['timezone'] as String?,
         currency: j['currency'] as String?,
@@ -626,6 +631,7 @@ class GroupModel extends Equatable {
         'country': country,
         'state': state,
         'city': city,
+        'pin': pin,
         'address': address,
         'timezone': timezone,
         'currency': currency,
@@ -678,6 +684,7 @@ class GroupModel extends Equatable {
         country: country,
         state: state,
         city: city,
+        pin: pin,
         address: address,
         timezone: timezone,
         currency: currency,

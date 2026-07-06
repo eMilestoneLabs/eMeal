@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import 'package:smart_meal_management/core/utils/qr_payload_parser.dart';
-import 'package:smart_meal_management/core/utils/widget_image_share.dart';
+import 'package:smart_meal_management/core/utils/qr_share.dart';
 
 /// Real scannable QR display card for group joining.
 ///
@@ -36,9 +36,16 @@ class _QrDisplayCardState extends State<QrDisplayCard> {
     if (_sharing) return;
     setState(() => _sharing = true);
     try {
-      await WidgetImageShare.shareAsImage(
-        boundaryKey: _qrKey,
-        filename: 'mealattend-group-qr-${widget.joinCode}.png',
+      // Issue 3: render the branded QR straight to PNG (no widget-capture race),
+      // so WhatsApp receives the premium QR image — not just the text fallback.
+      final qrData = QrPayloadParser.encodeGroupQr(
+        groupId: widget.groupId,
+        joinToken: widget.joinCode,
+      );
+      await QrShare.shareGroupQr(
+        qrData: qrData,
+        joinCode: widget.joinCode,
+        groupName: widget.groupName,
         text: 'Join "${widget.groupName}" on MealAttend!\n\n'
             'Use code: ${widget.joinCode}\n\n'
             'Open the app → Scan QR or enter code to join.',

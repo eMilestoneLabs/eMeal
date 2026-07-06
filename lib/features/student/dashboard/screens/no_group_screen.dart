@@ -5,6 +5,7 @@ import 'package:smart_meal_management/app/router/route_names.dart';
 import 'package:smart_meal_management/core/constants/app_constants.dart';
 import 'package:smart_meal_management/core/theme/app_colors.dart';
 import 'package:smart_meal_management/core/theme/app_typography.dart';
+import 'package:smart_meal_management/features/groups/providers/group_provider.dart';
 
 /// Premium no-group onboarding screen.
 ///
@@ -28,9 +29,16 @@ class _NoGroupScreenState extends State<NoGroupScreen>
   late final Animation<double> _fade;
   late final Animation<Offset> _slide;
 
+  // Issue 4: second place to re-access a "Waiting for approval" request. A
+  // student who only has a pending request (no active group) lands here after
+  // tapping Done, so surface it with a tappable entry back into the join flow.
+  final _groupProvider = GroupProvider();
+
   @override
   void initState() {
     super.initState();
+    _groupProvider.addListener(_onPendingChanged);
+    _groupProvider.loadPendingRequests();
     _ctrl = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 900),
@@ -49,15 +57,31 @@ class _NoGroupScreenState extends State<NoGroupScreen>
     _ctrl.forward();
   }
 
+  void _onPendingChanged() {
+    if (mounted) setState(() {});
+  }
+
   @override
   void dispose() {
+    _groupProvider.removeListener(_onPendingChanged);
+    _groupProvider.dispose();
     _ctrl.dispose();
     super.dispose();
   }
 
   /// Push instead of go so the Android back button returns to the student
   /// home tab (via the shell's bottom nav history) rather than exiting the app.
-  void _scanQr() => context.push(RouteNames.groupJoin);
+  Future<void> _scanQr() async {
+    await context.push(RouteNames.groupJoin);
+    if (mounted) _groupProvider.loadPendingRequests(); // reflect any change
+  }
+
+  /// Issue 4: re-open the join screen (which shows the full "Waiting for
+  /// approval" state + Cancel) from the pending banner.
+  Future<void> _openPending() async {
+    await context.push(RouteNames.groupJoin);
+    if (mounted) _groupProvider.loadPendingRequests();
+  }
 
   void _enterCode() {
     showModalBottomSheet(
@@ -154,6 +178,18 @@ class _NoGroupScreenState extends State<NoGroupScreen>
                           ),
                           textAlign: TextAlign.center,
                         ),
+
+                        // ── Pending request banner (Issue 4) ─────────
+                        if (_groupProvider.pendingRequests.isNotEmpty) ...[
+                          const SizedBox(height: AppConstants.space24),
+                          _PendingBanner(
+                            count: _groupProvider.pendingRequests.length,
+                            groupName:
+                                _groupProvider.pendingRequests.first.name,
+                            isDark: isDark,
+                            onTap: _openPending,
+                          ),
+                        ],
 
                         const Spacer(flex: 2),
 
@@ -284,6 +320,92 @@ class _InfoChip extends StatelessWidget {
                   fontWeight: FontWeight.w500,
                 ),
               ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ── Pending request banner (Issue 4) ────────────────────────────────────────
+
+class _PendingBanner extends StatelessWidget {
+  const _PendingBanner({
+    required this.count,
+    required this.groupName,
+    required this.isDark,
+    required this.onTap,
+  });
+
+  final int count;
+  final String groupName;
+  final bool isDark;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(16),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              colors: [
+                AppColors.warning.withValues(alpha: 0.16),
+                AppColors.warning.withValues(alpha: 0.06),
+              ],
+            ),
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: AppColors.warning.withValues(alpha: 0.4)),
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(
+                  color: AppColors.warning.withValues(alpha: 0.2),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: const Icon(Icons.hourglass_top_rounded,
+                    color: AppColors.warning, size: 22),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      count == 1
+                          ? 'Waiting for approval'
+                          : '$count requests waiting',
+                      style: AppTypography.labelLarge.copyWith(
+                        fontWeight: FontWeight.w800,
+                        color: AppColors.warning,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      count == 1
+                          ? '$groupName · tap to view or cancel'
+                          : 'Tap to view or cancel your requests',
+                      style: AppTypography.bodySmall.copyWith(
+                        color: isDark
+                            ? AppColors.textSecondaryDark
+                            : AppColors.textSecondary,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
+                ),
+              ),
+              const Icon(Icons.chevron_right_rounded,
+                  color: AppColors.warning),
             ],
           ),
         ),

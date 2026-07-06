@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:smart_meal_management/core/theme/app_colors.dart';
 import 'package:smart_meal_management/core/utils/qr_payload_parser.dart';
@@ -45,6 +46,7 @@ class _QrScannerViewState extends State<QrScannerView>
   late final MobileScannerController _controller;
   bool _flashOn = false;
   bool _scanned = false; // Guard: only fire onCodeScanned once
+  bool _picking = false; // Issue 9: gallery pick in progress
   String? _errorMessage;
 
   @override
@@ -80,21 +82,26 @@ class _QrScannerViewState extends State<QrScannerView>
 
   void _onDetect(BarcodeCapture capture) {
     if (_scanned) return;
-    final rawValue = capture.barcodes.firstOrNull?.rawValue;
-    if (rawValue == null) return;
+    _processRawValue(capture.barcodes.firstOrNull?.rawValue);
+  }
+
+  /// Shared decode path for BOTH the live camera and a gallery-picked image
+  /// (Issue 9). [notFoundMessage] tailors the error when nothing decodes.
+  void _processRawValue(
+    String? rawValue, {
+    String notFoundMessage = 'Not a valid MealAttend group QR. Try again.',
+  }) {
+    if (_scanned) return;
+    if (rawValue == null) {
+      _flashError(notFoundMessage);
+      return;
+    }
 
     // Use QrPayloadParser to support structured `group:{id}:{token}` format
-    // as well as legacy plain 6-char codes and deep-link URLs.
+    // as well as legacy plain codes and deep-link URLs.
     final payload = QrPayloadParser.parseGroupQr(rawValue);
     if (payload == null) {
-      // Not a valid group QR — show user-friendly error and resume scanning
-      if (mounted) {
-        setState(() =>
-            _errorMessage = 'Not a valid MealAttend group QR. Try again.');
-      }
-      Future.delayed(const Duration(seconds: 2), () {
-        if (mounted) setState(() => _errorMessage = null);
-      });
+      _flashError('Not a valid MealAttend group QR. Try again.');
       return;
     }
 
@@ -102,6 +109,36 @@ class _QrScannerViewState extends State<QrScannerView>
     _scanned = true;
     _controller.stop();
     widget.onCodeScanned(payload.joinToken);
+  }
+
+  void _flashError(String message) {
+    if (!mounted) return;
+    setState(() => _errorMessage = message);
+    Future.delayed(const Duration(seconds: 2), () {
+      if (mounted) setState(() => _errorMessage = null);
+    });
+  }
+
+  /// Issue 9: pick a saved QR image from the gallery and decode it — for users
+  /// who received the invite QR as a photo/screenshot rather than in person.
+  Future<void> _pickFromGallery() async {
+    if (_scanned || _picking) return;
+    setState(() => _picking = true);
+    try {
+      final picked =
+          await ImagePicker().pickImage(source: ImageSource.gallery);
+      if (picked == null) return; // user cancelled
+      final result = await _controller.analyzeImage(picked.path);
+      if (!mounted) return;
+      _processRawValue(
+        result?.barcodes.firstOrNull?.rawValue,
+        notFoundMessage: 'No QR code found in that image. Try another.',
+      );
+    } catch (_) {
+      _flashError('Could not read that image. Try another.');
+    } finally {
+      if (mounted) setState(() => _picking = false);
+    }
   }
 
   Future<void> _toggleFlash() async {
@@ -124,6 +161,20 @@ class _QrScannerViewState extends State<QrScannerView>
         ),
         centerTitle: false,
         actions: [
+          // Issue 9: pick a QR image from the gallery (received as a photo).
+          IconButton(
+            onPressed: _picking ? null : _pickFromGallery,
+            tooltip: 'Pick QR from gallery',
+            icon: _picking
+                ? const SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(
+                        strokeWidth: 2, color: Colors.white),
+                  )
+                : const Icon(Icons.photo_library_outlined,
+                    color: Colors.white),
+          ),
           // Flash toggle
           IconButton(
             onPressed: _toggleFlash,
@@ -164,6 +215,7 @@ class _QrScannerViewState extends State<QrScannerView>
             child: _BottomBanner(
               errorMessage: _errorMessage,
               colorScheme: colorScheme,
+              onPickFromGallery: _picking ? null : _pickFromGallery,
             ),
           ),
         ],
@@ -284,10 +336,12 @@ class _BottomBanner extends StatelessWidget {
   const _BottomBanner({
     required this.errorMessage,
     required this.colorScheme,
+    this.onPickFromGallery,
   });
 
   final String? errorMessage;
   final ColorScheme colorScheme;
+  final VoidCallback? onPickFromGallery;
 
   @override
   Widget build(BuildContext context) {
@@ -295,13 +349,18 @@ class _BottomBanner extends StatelessWidget {
       duration: const Duration(milliseconds: 250),
       child: errorMessage != null
           ? _ErrorBanner(message: errorMessage!, key: const ValueKey('err'))
-          : const _HintBanner(key: ValueKey('hint')),
+          : _HintBanner(
+              key: const ValueKey('hint'),
+              onPickFromGallery: onPickFromGallery,
+            ),
     );
   }
 }
 
 class _HintBanner extends StatelessWidget {
-  const _HintBanner({super.key});
+  const _HintBanner({super.key, this.onPickFromGallery});
+
+  final VoidCallback? onPickFromGallery;
 
   @override
   Widget build(BuildContext context) {
@@ -317,12 +376,13 @@ class _HintBanner extends StatelessWidget {
           ],
         ),
       ),
-      child: const Column(
+      child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(Icons.qr_code_scanner_rounded, color: Colors.white, size: 28),
-          SizedBox(height: 10),
-          Text(
+          const Icon(Icons.qr_code_scanner_rounded,
+              color: Colors.white, size: 28),
+          const SizedBox(height: 10),
+          const Text(
             'Point your camera at the group QR code',
             textAlign: TextAlign.center,
             style: TextStyle(
@@ -331,8 +391,8 @@ class _HintBanner extends StatelessWidget {
               fontWeight: FontWeight.w500,
             ),
           ),
-          SizedBox(height: 4),
-          Text(
+          const SizedBox(height: 4),
+          const Text(
             'The code will be detected automatically',
             textAlign: TextAlign.center,
             style: TextStyle(
@@ -340,6 +400,21 @@ class _HintBanner extends StatelessWidget {
               fontSize: 12,
             ),
           ),
+          // Issue 9: obvious gallery entry for QR photos/screenshots.
+          if (onPickFromGallery != null) ...[
+            const SizedBox(height: 16),
+            OutlinedButton.icon(
+              onPressed: onPickFromGallery,
+              icon: const Icon(Icons.photo_library_outlined, size: 18),
+              label: const Text('Choose from gallery'),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: Colors.white,
+                side: const BorderSide(color: Colors.white54),
+                padding: const EdgeInsets.symmetric(
+                    horizontal: 18, vertical: 10),
+              ),
+            ),
+          ],
         ],
       ),
     );
