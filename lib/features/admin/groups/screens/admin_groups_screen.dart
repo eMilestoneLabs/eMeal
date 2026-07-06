@@ -65,19 +65,33 @@ class _AdminGroupsScreenState extends State<AdminGroupsScreen> {
     if (mounted) setState(() {});
   }
 
-  /// GRP-007: groups in the user's saved drag order (new groups first).
+  /// GRP-007: ALL groups in the user's saved drag order (used for reorder math).
   List<GroupModel> get _orderedGroups =>
       GroupOrderService.instance.applyToGroups(_provider.groups, _order);
 
-  /// GRP-007: persist a new drag order after a reorder gesture.
+  /// Groups for the CURRENT view only. The archived view shows ONLY archived
+  /// groups and the active view shows ONLY active ones, so the two never mix in
+  /// the same list (live-test bug: archived toggle was showing active groups too).
+  List<GroupModel> get _visibleGroups => _orderedGroups
+      .where((g) => _showArchived ? !g.isActive : g.isActive)
+      .toList();
+
+  /// GRP-007: persist a new drag order after a reorder gesture. Reorder happens
+  /// within the VISIBLE subset; hidden groups keep their positions in the full
+  /// saved order (so reordering in one view never scrambles the other).
   Future<void> _onReorder(int oldIndex, int newIndex) async {
-    final list = _orderedGroups;
+    final visible = _visibleGroups;
     if (newIndex > oldIndex) newIndex -= 1;
-    final ids = list.map((g) => g.id).toList();
-    final moved = ids.removeAt(oldIndex);
-    ids.insert(newIndex, moved);
-    setState(() => _order = ids);
-    await GroupOrderService.instance.save(_userId, ids);
+    final visibleIds = visible.map((g) => g.id).toList();
+    final moved = visibleIds.removeAt(oldIndex);
+    visibleIds.insert(newIndex, moved);
+    final visibleSet = visible.map((g) => g.id).toSet();
+    var vi = 0;
+    final merged = _orderedGroups
+        .map((g) => visibleSet.contains(g.id) ? visibleIds[vi++] : g.id)
+        .toList();
+    setState(() => _order = merged);
+    await GroupOrderService.instance.save(_userId, merged);
   }
 
   @override
@@ -110,6 +124,12 @@ class _AdminGroupsScreenState extends State<AdminGroupsScreen> {
     await showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
+      // Issue 2 (follow-up): the sheet's own drag-to-dismiss was claiming every
+      // DOWNWARD drag, so the inner form scrolled up but never back down. Disable
+      // the sheet drag → the inner SingleChildScrollView owns all vertical
+      // gestures (scrolls both ways). Dismiss still works via tap-outside / the
+      // Create button / the system back gesture.
+      enableDrag: false,
       backgroundColor: Colors.transparent,
       builder: (_) => _CreateGroupSheet(
         provider: _provider,
@@ -190,16 +210,26 @@ class _AdminGroupsScreenState extends State<AdminGroupsScreen> {
                     child: const Text('Retry'),
                   ),
                 )
-              : _provider.groups.isEmpty
+              : _visibleGroups.isEmpty
                   ? AppEmptyState(
-                      icon: Icons.group_outlined,
-                      title: 'No groups yet',
-                      subtitle: 'Create your first group to get started.',
-                      action: FilledButton.icon(
-                        onPressed: _showCreateSheet,
-                        icon: const Icon(Icons.add_rounded),
-                        label: const Text('Create Group'),
-                      ),
+                      icon: _showArchived
+                          ? Icons.inventory_2_outlined
+                          : Icons.group_outlined,
+                      title:
+                          _showArchived ? 'No archived groups' : 'No groups yet',
+                      subtitle: _showArchived
+                          ? 'Groups you archive will appear here.'
+                          : 'Create your first group to get started.',
+                      action: _showArchived
+                          ? TextButton(
+                              onPressed: _toggleArchived,
+                              child: const Text('Show active groups'),
+                            )
+                          : FilledButton.icon(
+                              onPressed: _showCreateSheet,
+                              icon: const Icon(Icons.add_rounded),
+                              label: const Text('Create Group'),
+                            ),
                     )
                   : RefreshIndicator(
                       onRefresh: () async {
@@ -212,7 +242,7 @@ class _AdminGroupsScreenState extends State<AdminGroupsScreen> {
                       // GRP-007: drag-and-drop reordering (persisted per user).
                       child: ReorderableListView.builder(
                         padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),
-                        itemCount: _orderedGroups.length,
+                        itemCount: _visibleGroups.length,
                         onReorder: _onReorder,
                         proxyDecorator: (child, index, animation) => Material(
                           color: Colors.transparent,
@@ -221,7 +251,7 @@ class _AdminGroupsScreenState extends State<AdminGroupsScreen> {
                           child: child,
                         ),
                         itemBuilder: (context, i) {
-                          final group = _orderedGroups[i];
+                          final group = _visibleGroups[i];
                           return Padding(
                             key: ValueKey(group.id),
                             padding: const EdgeInsets.only(bottom: 12),
