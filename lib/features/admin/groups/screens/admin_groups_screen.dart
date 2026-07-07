@@ -479,9 +479,18 @@ class _CreateGroupSheetState extends State<_CreateGroupSheet> {
     return null;
   }
 
+  // SRS GRP-003: Group Name is 2–50 characters (max enforced by the input
+  // limiter; min surfaced here once the admin starts typing).
+  String? get _nameError {
+    final v = _nameCtrl.text.trim();
+    if (v.isEmpty) return 'Required';
+    if (v.length < 2) return 'At least 2 characters';
+    return null;
+  }
+
   bool get _canSubmit =>
       !_saving &&
-      _nameCtrl.text.trim().isNotEmpty &&
+      _nameError == null &&
       _maxMembersError == null &&
       _stateError == null &&
       _cityError == null &&
@@ -653,10 +662,14 @@ class _CreateGroupSheetState extends State<_CreateGroupSheet> {
             controller: _nameCtrl,
             autofocus: true,
             textCapitalization: TextCapitalization.words,
+            // SRS GRP-003: cap at 50 characters.
+            inputFormatters: [LengthLimitingTextInputFormatter(50)],
             onChanged: (_) => setState(() {}),
             decoration: InputDecoration(
               labelText: 'Group Name *',
               hintText: 'e.g. Hostel Block A, Office Cafeteria',
+              helperText: '2–50 characters',
+              errorText: _nameCtrl.text.isEmpty ? null : _nameError,
               filled: true,
               fillColor: colorScheme.surfaceContainerLowest,
               border: OutlineInputBorder(

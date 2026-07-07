@@ -198,10 +198,11 @@ class _GroupAppBar extends StatelessWidget {
           controller: controller,
           autofocus: true,
           textCapitalization: TextCapitalization.words,
-          maxLength: 100,
+          maxLength: 50, // SRS GRP-003: Group Name 2–50 characters.
           decoration: const InputDecoration(
             labelText: 'Group name',
             hintText: 'e.g. Hostel Block A',
+            helperText: '2–50 characters',
           ),
           onSubmitted: (v) => Navigator.of(ctx).pop(v.trim()),
         ),
@@ -220,6 +221,17 @@ class _GroupAppBar extends StatelessWidget {
     controller.dispose();
     // No change / cancelled / cleared → nothing to do.
     if (newName == null || newName.isEmpty || newName == group.name) return;
+    // SRS GRP-003: enforce the 2-char floor client-side (max capped at 50 by
+    // the field) so a too-short rename fails fast with a clear message.
+    if (newName.length < 2) {
+      messenger.showSnackBar(
+        const SnackBar(
+          content: Text('Group name must be 2–50 characters'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      return;
+    }
 
     final ok = await provider.updateGroup(
       organizationId: organizationId,
