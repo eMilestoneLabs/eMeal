@@ -48,14 +48,26 @@ class _GroupJoinScreenState extends State<GroupJoinScreen> {
     _codeCtrl = TextEditingController(text: widget.prefillCode ?? '');
     _provider = GroupProvider();
     _provider.addListener(_rebuild);
-    // Issue 4: surface any existing pending join requests so the student can
-    // re-open "Waiting for approval" (and Cancel) after tapping Done earlier.
-    _provider.loadPendingRequests();
     // Auto-submit when a code arrives via deep-link / QR URL.
     if (widget.prefillCode != null && widget.prefillCode!.isNotEmpty) {
       WidgetsBinding.instance.addPostFrameCallback(
         (_) => _onJoin(widget.prefillCode!, preview: false),
       );
+    }
+  }
+
+  bool _loadedPending = false;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (!_loadedPending) {
+      _loadedPending = true;
+      // Issue 4: surface existing pending requests so the student can re-open
+      // "Waiting for approval" (and Cancel). Cache-first (per user) so the
+      // banner paints instantly instead of popping in after the network call.
+      final user = AuthProviderScope.of(context).currentUser;
+      _provider.loadPendingRequests(userId: user?.id);
     }
   }
 
@@ -102,7 +114,7 @@ class _GroupJoinScreenState extends State<GroupJoinScreen> {
     if (ok && (_provider.lastJoined?.isPendingApproval ?? false)) {
       setState(() => _pendingGroup = _provider.lastJoined);
       // Issue 4: keep the re-accessible pending list current for both places.
-      _provider.loadPendingRequests();
+      _provider.loadPendingRequests(userId: userId);
       return;
     }
 

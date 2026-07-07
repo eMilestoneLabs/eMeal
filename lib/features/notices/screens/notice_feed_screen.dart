@@ -440,7 +440,9 @@ String _relativeTime(DateTime t) {
 bool _isReviewLink(String linkType) =>
     linkType == 'vacationRequests' ||
     linkType == 'correctionRequests' ||
-    linkType == 'guestRequests';
+    linkType == 'guestRequests' ||
+    // Module 02 (MEM-006/007): a join request is an admin review action too.
+    linkType == 'groupJoinRequests';
 
 // ── Day section header (category grouping) ───────────────────────────────────
 

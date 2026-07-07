@@ -220,10 +220,26 @@ class GroupProvider extends ChangeNotifier {
 
   /// Load the user's own pending join requests (server-truth). Silent refresh:
   /// a request an admin has since acted on simply drops off the list.
-  Future<void> loadPendingRequests() async {
+  ///
+  /// Issue 4: cache-first (SWR). The "Pending request" banner paints INSTANTLY
+  /// from the last-known list on entering the Join screen, then reconciles with
+  /// the server — instead of popping in after the network round-trip. Keyed per
+  /// user so a shared device never shows another account's pending requests.
+  Future<void> loadPendingRequests({String? userId}) async {
+    final cacheKey = 'pending_requests:${userId ?? 'me'}';
+    if (_pendingRequests.isEmpty) {
+      final cached = await ResponseCacheService.instance.readList(
+          cacheKey, GroupModel.fromJson, maxAge: const Duration(hours: 12));
+      if (cached.isNotEmpty) {
+        _pendingRequests = cached;
+        notifyListeners();
+      }
+    }
     final result = await _repo.getMyJoinRequests();
     if (result case Ok(:final value)) {
       _pendingRequests = value;
+      ResponseCacheService.instance
+          .writeList(cacheKey, value, (g) => g.toJson());
       notifyListeners();
     }
   }

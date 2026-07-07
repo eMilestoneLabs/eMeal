@@ -52,6 +52,12 @@ class AdminGroupProvider extends ChangeNotifier {
   int _minMembers = 2;
   bool _limitsLoaded = false;
 
+  // Issue 5: the scope (active vs archived) currently held in [_groups]. Used so
+  // switching to the archived view NEVER paints the active list filtered to
+  // empty ("No archived groups" flash) before the archived fetch returns — the
+  // scoped cache (or a loader) is shown instead.
+  bool? _loadedIncludeInactive;
+
   // ── Getters ───────────────────────────────────────────────────────────────
 
   bool get isLoading => _isLoading;
@@ -117,11 +123,16 @@ class AdminGroupProvider extends ChangeNotifier {
     // views use a separate cache key so they never overwrite the active list.
     final cacheKey =
         'admin_groups:$organizationId${includeInactive ? ':all' : ''}';
-    if (_groups.isEmpty) {
+    // Issue 5: on a SCOPE SWITCH (active↔archived) the current [_groups] belong
+    // to the other scope; showing them (filtered to empty) flashes the wrong
+    // empty state. Repaint from THIS scope's cache — or a loader when it's cold.
+    final scopeChanged = _loadedIncludeInactive != includeInactive;
+    if (_groups.isEmpty || scopeChanged) {
       _isLoading = true; // sync: first build shows the loader, never empty state
       _groups = await ResponseCacheService.instance.readList(
           cacheKey, GroupModel.fromJson, maxAge: const Duration(hours: 12));
     }
+    _loadedIncludeInactive = includeInactive;
     _isLoading = _groups.isEmpty;
     _error = null;
     notifyListeners();
@@ -360,6 +371,15 @@ class AdminGroupProvider extends ChangeNotifier {
     String groupId, {
     required String organizationId,
   }) async {
+    // Ultra-smooth (additive): flip to archived INSTANTLY so it drops out of the
+    // active list with no wait, then confirm with the server; roll back on error.
+    final idx = _groups.indexWhere((g) => g.id == groupId);
+    final prev = idx != -1 ? _groups[idx] : null;
+    if (idx != -1) {
+      _groups = List.of(_groups)..[idx] = _groups[idx].copyWith(isActive: false);
+      notifyListeners();
+    }
+
     final result = await _groupRepo.archiveGroup(
       organizationId: organizationId,
       groupId: groupId,
@@ -367,15 +387,17 @@ class AdminGroupProvider extends ChangeNotifier {
 
     switch (result) {
       case Ok():
-        final idx = _groups.indexWhere((g) => g.id == groupId);
-        if (idx != -1) {
-          _groups = List.of(_groups)
-            ..[idx] = _groups[idx].copyWith(isActive: false);
-        }
-        notifyListeners();
         return true;
       case Err(:final failure):
-        _error = failure.message;
+        // Roll back the optimistic archive so the list stays truthful. Mutation
+        // errors go to [_createError], never the list [_error] (which would
+        // blank the whole Groups screen).
+        if (prev != null && idx != -1) {
+          final restored = List.of(_groups);
+          if (idx < restored.length) restored[idx] = prev;
+          _groups = restored;
+        }
+        _createError = failure.message;
         notifyListeners();
         return false;
     }
@@ -398,26 +420,44 @@ class AdminGroupProvider extends ChangeNotifier {
         notifyListeners();
         return true;
       case Err(:final failure):
-        _error = failure.message;
+        // Mutation error → [_createError], never the list [_error].
+        _createError = failure.message;
         notifyListeners();
         return false;
     }
   }
 
   /// GRP-019: permanently delete a group and all its data (irreversible).
+  ///
+  /// Ultra-smooth (additive): the backend runs a transactional cascade (members,
+  /// meals, attendance, billing) that can take several seconds. We remove the
+  /// group from the list INSTANTLY (optimistic) so the UI never lags, then let
+  /// the cascade finish in the background — rolling back only if it fails.
   Future<bool> permanentDeleteGroup(
     String groupId, {
     required String organizationId,
   }) async {
+    final idx = _groups.indexWhere((g) => g.id == groupId);
+    final removed = idx != -1 ? _groups[idx] : null;
+    if (idx != -1) {
+      _groups = List.of(_groups)..removeAt(idx);
+      if (_selectedGroup?.id == groupId) _selectedGroup = null;
+      notifyListeners();
+    }
+
     final result = await _groupRepo.permanentDeleteGroup(groupId: groupId);
     switch (result) {
       case Ok():
-        _groups = _groups.where((g) => g.id != groupId).toList();
-        if (_selectedGroup?.id == groupId) _selectedGroup = null;
-        notifyListeners();
         return true;
       case Err(:final failure):
-        _error = failure.message;
+        // Roll back so a failed delete re-appears (the visible failure signal).
+        // Mutation error → [_createError], never the list [_error].
+        if (removed != null) {
+          final restored = List.of(_groups);
+          restored.insert(idx.clamp(0, restored.length), removed);
+          _groups = restored;
+        }
+        _createError = failure.message;
         notifyListeners();
         return false;
     }

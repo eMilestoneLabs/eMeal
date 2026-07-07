@@ -184,6 +184,56 @@ class _GroupAppBar extends StatelessWidget {
   final String organizationId;
   final bool forceElevated;
 
+  /// GRP-009: rename the group (Name is editable; Country/Timezone/Currency/
+  /// MaxMembers/JoinApprovalMode remain immutable). The provider updates
+  /// selectedGroup on success, so the header reflects the new name live.
+  Future<void> _rename(BuildContext context) async {
+    final messenger = ScaffoldMessenger.of(context);
+    final controller = TextEditingController(text: group.name);
+    final newName = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Rename group'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          textCapitalization: TextCapitalization.words,
+          maxLength: 100,
+          decoration: const InputDecoration(
+            labelText: 'Group name',
+            hintText: 'e.g. Hostel Block A',
+          ),
+          onSubmitted: (v) => Navigator.of(ctx).pop(v.trim()),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(controller.text.trim()),
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+    controller.dispose();
+    // No change / cancelled / cleared → nothing to do.
+    if (newName == null || newName.isEmpty || newName == group.name) return;
+
+    final ok = await provider.updateGroup(
+      organizationId: organizationId,
+      groupId: group.id,
+      name: newName,
+    );
+    messenger.showSnackBar(
+      SnackBar(
+        content: Text(ok ? 'Group renamed' : 'Could not rename group'),
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
@@ -243,7 +293,7 @@ class _GroupAppBar extends StatelessWidget {
                 children: [
                   Row(
                     children: [
-                      Expanded(
+                      Flexible(
                         child: Text(
                           group.name,
                           style: const TextStyle(
@@ -255,6 +305,19 @@ class _GroupAppBar extends StatelessWidget {
                           overflow: TextOverflow.ellipsis,
                         ),
                       ),
+                      // GRP: rename the group (Name is editable per SRS GRP-009).
+                      // Shown for active groups; hidden while archived.
+                      if (group.isActive)
+                        IconButton(
+                          tooltip: 'Rename group',
+                          visualDensity: VisualDensity.compact,
+                          padding: const EdgeInsets.symmetric(horizontal: 6),
+                          constraints: const BoxConstraints(),
+                          icon: const Icon(Icons.edit_rounded,
+                              size: 18, color: AppColors.textSecondary),
+                          onPressed: () => _rename(context),
+                        ),
+                      const Spacer(),
                       AppStatusChip.label(
                         label: group.isActive ? 'Active' : 'Archived',
                         color: group.isActive
@@ -1103,7 +1166,6 @@ class _SettingsTabState extends State<_SettingsTab> {
   bool _archiving = false;
   // GRP-018/019: restore + permanent-delete busy flags.
   bool _restoring = false;
-  bool _deleting = false;
 
   Future<void> _toggleMeals(bool newValue) async {
     setState(() => _togglingMeals = true);
@@ -1298,7 +1360,7 @@ class _SettingsTabState extends State<_SettingsTab> {
       Navigator.of(context).pop();
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(widget.provider.error ?? 'Failed to restore')),
+        SnackBar(content: Text(widget.provider.createError ?? 'Failed to restore')),
       );
     }
   }
@@ -1353,21 +1415,28 @@ class _SettingsTabState extends State<_SettingsTab> {
 
     if (confirmed != true || !mounted) return;
 
-    setState(() => _deleting = true);
-    final ok = await widget.provider.permanentDeleteGroup(
+    // Ultra-smooth (additive): the provider removes the group from the list
+    // synchronously, so we return to the list IMMEDIATELY — no 5–6s spinner —
+    // while the backend cascade finishes in the background. On the rare failure
+    // the provider rolls back (the group re-appears) and we surface the error.
+    final nav = Navigator.of(context);
+    final messenger = ScaffoldMessenger.of(context);
+    final future = widget.provider.permanentDeleteGroup(
       widget.group.id,
       organizationId: widget.organizationId,
     );
-    if (!mounted) return;
-    setState(() => _deleting = false);
-    if (ok) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Group permanently deleted')),
-      );
-      Navigator.of(context).pop();
-    } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(widget.provider.error ?? 'Failed to delete')),
+    messenger.showSnackBar(
+      const SnackBar(content: Text('Group permanently deleted')),
+    );
+    nav.pop();
+    final ok = await future;
+    if (!ok) {
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(
+            widget.provider.createError ?? 'Delete failed — group restored',
+          ),
+        ),
       );
     }
   }
@@ -1657,8 +1726,10 @@ class _SettingsTabState extends State<_SettingsTab> {
           color: colorScheme.error,
           title: 'Delete Permanently',
           subtitle: 'Remove the group and ALL its data. Cannot be undone.',
-          busy: _deleting,
-          onTap: _deleting ? null : _confirmPermanentDelete,
+          // Ultra-smooth: delete returns to the list instantly (optimistic),
+          // so no busy/disabled state is needed here.
+          busy: false,
+          onTap: _confirmPermanentDelete,
         ),
       ],
     );

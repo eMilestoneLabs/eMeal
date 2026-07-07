@@ -95,7 +95,8 @@ class GroupRepository implements IGroupRepository {
     int? qrExpiryDays,
   }) async {
     // POST /groups — CreateGroupDto whitelist only.
-    // type.name serializes factory_ as "factory_" (locked API contract).
+    // type.name serializes factory_ as "factory_"; the backend DTO normalizes
+    // "factory_" → "factory" before validation + storage (locked API contract).
     final result = await DioApiService.instance.post<Map<String, dynamic>>(
       '/groups',
       body: {

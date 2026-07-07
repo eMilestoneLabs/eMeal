@@ -127,6 +127,10 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
           const SizedBox(height: 20),
           _AboutCard(group: group),
           const SizedBox(height: 20),
+          // Issue 6: premium location card — State / City / PIN / Address as set
+          // by the admin. Self-hides (incl. its trailing gap) when none are set,
+          // so it never leaves an empty block. Reads richly in light + dark.
+          _LocationCard(group: group),
           _MealConfigCard(config: group.mealConfig),
           const SizedBox(height: 20),
           if (group.joinCode != null) ...[
@@ -538,6 +542,149 @@ class _InfoRow extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+// ── Location card (Issue 6: admin-set location, premium, both themes) ───────────
+
+/// Premium location card shown to members after they join. Surfaces the
+/// State / City / PIN / Address the admin captured at group creation (GRP-003).
+/// Renders nothing (and consumes no vertical space) when none are set, so
+/// attendance-only / location-less groups are unaffected.
+class _LocationCard extends StatelessWidget {
+  const _LocationCard({required this.group});
+  final GroupModel group;
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final textTheme = Theme.of(context).textTheme;
+
+    final state = (group.state ?? '').trim();
+    final city = (group.city ?? '').trim();
+    final pin = (group.pin ?? '').trim();
+    final address = (group.address ?? '').trim();
+
+    // Compose "City, State" for the headline; fall back to whichever is present.
+    final locality = [city, state].where((s) => s.isNotEmpty).join(', ');
+
+    final chips = <Widget>[
+      if (pin.isNotEmpty)
+        _LocationChip(icon: Icons.markunread_mailbox_rounded, label: 'PIN $pin'),
+      if (address.isNotEmpty)
+        _LocationChip(icon: Icons.home_rounded, label: address),
+    ];
+
+    // Nothing set → render nothing (and no trailing gap).
+    if (locality.isEmpty && chips.isEmpty) return const SizedBox.shrink();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(16),
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [
+                AppColors.primary.withValues(alpha: 0.14),
+                AppColors.secondary.withValues(alpha: 0.08),
+              ],
+            ),
+            border:
+                Border.all(color: AppColors.primary.withValues(alpha: 0.30)),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Container(
+                    width: 38,
+                    height: 38,
+                    decoration: BoxDecoration(
+                      color: AppColors.primary.withValues(alpha: 0.18),
+                      borderRadius: BorderRadius.circular(11),
+                    ),
+                    child: const Icon(Icons.location_on_rounded,
+                        color: AppColors.primary, size: 20),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Location',
+                          style: textTheme.labelMedium?.copyWith(
+                            fontWeight: FontWeight.w700,
+                            color: AppColors.primary,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          locality.isNotEmpty ? locality : 'Address on file',
+                          style: textTheme.titleSmall?.copyWith(
+                            fontWeight: FontWeight.w800,
+                            color: colorScheme.onSurface,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              if (chips.isNotEmpty) ...[
+                const SizedBox(height: 12),
+                Wrap(spacing: 8, runSpacing: 8, children: chips),
+              ],
+            ],
+          ),
+        ),
+        const SizedBox(height: 20),
+      ],
+    );
+  }
+}
+
+class _LocationChip extends StatelessWidget {
+  const _LocationChip({required this.icon, required this.label});
+  final IconData icon;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: colorScheme.surface.withValues(alpha: 0.6),
+        borderRadius: BorderRadius.circular(10),
+        border:
+            Border.all(color: colorScheme.outlineVariant.withValues(alpha: 0.5)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 14, color: colorScheme.onSurfaceVariant),
+          const SizedBox(width: 6),
+          Flexible(
+            child: Text(
+              label,
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: colorScheme.onSurface,
+              ),
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
