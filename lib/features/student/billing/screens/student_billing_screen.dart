@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:smart_meal_management/core/theme/app_colors.dart';
 import 'package:smart_meal_management/core/theme/app_typography.dart';
@@ -100,7 +102,10 @@ class _StudentBillingScreenState extends State<StudentBillingScreen> {
       _error = null;
     });
 
-    final recRes = await _attendanceRepo.getAttendanceHistory(
+    // ONE parallel wave (was 5 sequential round-trips — the whole screen
+    // waited ~5× a single RTT). All five reads are independent; the my-billing
+    // result is simply ignored below when the group turns out to be unpriced.
+    final recF = _attendanceRepo.getAttendanceHistory(
       userId: _userId,
       groupId: _groupId,
       organizationId: _orgId,
@@ -108,18 +113,27 @@ class _StudentBillingScreenState extends State<StudentBillingScreen> {
       to: _to,
       params: const PaginationParams(page: 1, limit: 100),
     );
-    final mealRes = await _mealRepo.getGroupMeals(
+    final mealF = _mealRepo.getGroupMeals(
       organizationId: _orgId,
       groupId: _groupId,
     );
-    final todayRes = await _mealRepo.getTodayMeals(
+    final todayF = _mealRepo.getTodayMeals(
       organizationId: _orgId,
       groupId: _groupId,
     );
-    final groupRes = await _groupRepo.getGroup(
+    final groupF = _groupRepo.getGroup(
       organizationId: _orgId,
       groupId: _groupId,
     );
+    final mbF = _attendanceRepo.getMyBilling(
+      groupId: _groupId,
+      from: _from,
+      to: _to,
+    );
+    final recRes = await recF;
+    final mealRes = await mealF;
+    final todayRes = await todayF;
+    final groupRes = await groupF;
     if (!mounted) return;
 
     List<AttendanceModel> records = [];
@@ -157,13 +171,14 @@ class _StudentBillingScreenState extends State<StudentBillingScreen> {
     // subtotal rather than breaking (the per-day history is unaffected).
     MyBilling? serverBilling;
     if (_pricingEnabled) {
-      final mbRes = await _attendanceRepo.getMyBilling(
-        groupId: _groupId,
-        from: _from,
-        to: _to,
-      );
+      // Already in flight since the parallel wave above — no extra wait here.
+      final mbRes = await mbF;
       if (!mounted) return;
       if (mbRes case Ok(:final value)) serverBilling = value;
+    } else {
+      // Unpriced group: silence the unused in-flight future (Result API —
+      // never throws), preserving the old "only fetched when priced" shape.
+      unawaited(mbF.then((_) {}));
     }
 
     setState(() {

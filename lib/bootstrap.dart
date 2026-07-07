@@ -42,6 +42,13 @@ Future<void> bootstrap() async {
   );
 
   // ── Synchronous wiring only — NO I/O before the first frame ────────────────
+
+  // RAM: cap the decoded-image cache (framework default is 100 MiB). All list
+  // images are decode-capped + thumbnailed, so this ceiling is never felt in
+  // UX — evictions re-decode from the DISK cache, never re-download.
+  PaintingBinding.instance.imageCache.maximumSizeBytes =
+      EnvConfig.current.imageCacheMaxBytes;
+
   final authProvider = AuthProvider(); // starts in AuthUnknown
   final themeProvider = ThemeProvider();
   final router = buildRouter(authProvider);

@@ -91,29 +91,14 @@ class _MealScheduleScreenState extends State<MealScheduleScreen>
         return;
       }
       final orgId = user.organizationId;
-      _provider.loadGroups(organizationId: orgId).then((_) async {
-        // Issue 1: edit the SAME group selected in Meal Config (carried as
-        // ?groupId=). Fall back to the auto-selected first group otherwise.
-        final wanted = widget.initialGroupId;
-        if (wanted != null &&
-            wanted.isNotEmpty &&
-            _provider.selectedGroup?.id != wanted) {
-          GroupModel? target;
-          for (final g in _provider.groups) {
-            if (g.id == wanted) {
-              target = g;
-              break;
-            }
-          }
-          if (target != null) {
-            await _provider.selectGroup(target, organizationId: orgId);
-          }
-        }
-        final sel = _provider.selectedGroup;
-        if (sel != null) {
-          await _provider.loadSchedule(organizationId: orgId, groupId: sel.id);
-        }
-      }).whenComplete(() {
+      // One parallel wave (groups ∥ schedule) instead of the old 3-round-trip
+      // sequential chain; Issue-1 preferred-group behaviour preserved inside.
+      _provider
+          .bootstrapPlanner(
+            organizationId: orgId,
+            preferredGroupId: widget.initialGroupId,
+          )
+          .whenComplete(() {
         // Initial load chain finished (or failed) — drop the bootstrap loader.
         if (mounted) setState(() => _bootstrapping = false);
       });

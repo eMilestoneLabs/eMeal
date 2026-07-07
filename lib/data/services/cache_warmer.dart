@@ -124,11 +124,19 @@ class CacheWarmer {
         } finally {
           a.dispose();
         }
-        // Member directory (write-through cache inside the provider).
-        await p.loadGroupMembers(
-          groupId: target.id,
-          organizationId: orgId,
-        );
+        // Member directory + configured meals (write-through caches inside
+        // the provider; the meals cache is SHARED with Meal Config and the
+        // group-detail Meals tab, so all three open instantly) — one wave.
+        await Future.wait([
+          p.loadGroupMembers(
+            groupId: target.id,
+            organizationId: orgId,
+          ),
+          p.loadGroupMeals(
+            groupId: target.id,
+            organizationId: orgId,
+          ),
+        ]);
         // Prefetch the members' avatars into the image disk cache (the one
         // CachedNetworkImage reads) so the directory's photos render instantly
         // on first open — not just the names. Bounded + best-effort: each

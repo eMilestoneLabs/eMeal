@@ -85,8 +85,11 @@ class MealConfigProvider extends ChangeNotifier {
 
   Future<void> loadGroups({required String organizationId}) async {
     if (_isLoading) return;
-    // Cache-first: paint last-known groups instantly, then refresh.
-    final cacheKey = 'meal_config_groups:$organizationId';
+    // Cache-first: paint last-known groups instantly, then refresh. Uses the
+    // SHARED org-groups key (same endpoint + model as Groups/Attendance/
+    // Billing) so ONE fetch from any admin tab warms them all — the old
+    // 'meal_config_groups' key duplicated the identical list.
+    final cacheKey = 'admin_groups:$organizationId';
     if (_groups.isEmpty) {
       _isLoading = true; // sync: first build shows the loader, never empty state
       _groups = await ResponseCacheService.instance.readList(
@@ -136,6 +139,88 @@ class MealConfigProvider extends ChangeNotifier {
 
     _isLoading = false;
     notifyListeners();
+  }
+
+  /// Weekly-Planner boot in ONE parallel network wave (additive; the classic
+  /// loadGroups→loadSchedule chain cost 3 sequential round-trips: groups →
+  /// meals → schedule — the "planner feels slow" root cause).
+  ///
+  /// Order of operations is chosen so draft auto-population stays correct:
+  /// 1. LOCAL, awaited (all ~ms): cached groups + selection resolve (honouring
+  ///    [preferredGroupId] from Meal Config) + cached meals + recurring flag —
+  ///    so [_meals] and [_autoContinueLastWeek] are populated BEFORE any
+  ///    schedule response can reach [_ensureWeekdaysPopulated].
+  /// 2. PARALLEL network: loadGroups (refreshes groups + selected meals) and
+  ///    loadSchedule for the resolved group ride the same wave.
+  /// 3. RECONCILE: if the network moved the selection (deleted group /
+  ///    late-arriving preferred group), reload the schedule for the final one.
+  /// Cold cache (no known group) falls back to today's sequential behaviour.
+  Future<void> bootstrapPlanner({
+    required String organizationId,
+    String? preferredGroupId,
+  }) async {
+    // 1 — local paint.
+    if (_groups.isEmpty) {
+      _groups = await ResponseCacheService.instance.readList(
+          'admin_groups:$organizationId', GroupModel.fromJson,
+          maxAge: const Duration(hours: 12));
+    }
+    GroupModel? sel;
+    if (preferredGroupId != null && preferredGroupId.isNotEmpty) {
+      for (final g in _groups) {
+        if (g.id == preferredGroupId) {
+          sel = g;
+          break;
+        }
+      }
+    }
+    sel ??= _selectedGroup;
+    if (sel == null && _groups.isNotEmpty) sel = _groups.first;
+    if (sel != null) {
+      _selectedGroup = sel;
+      _mealsEnabled = sel.mealConfig.mealsEnabled;
+      _preferencesEnabled = sel.mealConfig.preferencesEnabled;
+      _mealPricingEnabled = sel.mealConfig.mealPricingEnabled;
+      if (_meals.isEmpty) {
+        _meals = await ResponseCacheService.instance.readList(
+            _mealsCacheKey(organizationId, sel.id), MealModel.fromJson,
+            maxAge: const Duration(hours: 12));
+      }
+      await _loadRecurringFlag(sel.id); // local prefs, ~ms
+    }
+    notifyListeners();
+
+    // 2 — one parallel network wave.
+    final selId = sel?.id;
+    await Future.wait(<Future<void>>[
+      loadGroups(organizationId: organizationId),
+      if (selId != null)
+        loadSchedule(organizationId: organizationId, groupId: selId),
+    ]);
+
+    // 3 — reconcile. Prefer the Meal-Config group if it only arrived with the
+    // network list (Issue 1 parity with the old chain), else follow loadGroups'
+    // still-exists selection.
+    if (preferredGroupId != null &&
+        preferredGroupId.isNotEmpty &&
+        _selectedGroup?.id != preferredGroupId) {
+      for (final g in _groups) {
+        if (g.id == preferredGroupId) {
+          await _loadForGroup(g, organizationId: organizationId);
+          break;
+        }
+      }
+    }
+    final finalId = _selectedGroup?.id;
+    if (finalId != null && finalId != selId) {
+      await loadSchedule(organizationId: organizationId, groupId: finalId);
+    } else if (finalId != null) {
+      // Late-meals guard: on a cold meals cache the schedule can land before
+      // loadGroups fills [_meals], skipping draft auto-population. Re-run it —
+      // it's a strict no-op when published or already populated.
+      await _ensureWeekdaysPopulated(finalId);
+      notifyListeners();
+    }
   }
 
   Future<void> selectGroup(

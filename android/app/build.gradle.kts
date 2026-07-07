@@ -61,8 +61,19 @@ android {
             } else {
                 signingConfigs.getByName("debug")
             }
-            isMinifyEnabled = false
-            isShrinkResources = false
+            // APK size: R8 code shrinking + resource shrinking (the previous
+            // `false` shipped every unused class/resource). Reflection-using
+            // plugins are kept alive via proguard-rules.pro. For the truly
+            // small install build per-ABI APKs:
+            //   flutter build apk --release --split-per-abi --dart-define=ENV=production
+            // (arm64-v8a APK is the one for modern phones — roughly a third
+            // of the universal APK's size.)
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro",
+            )
         }
     }
 }

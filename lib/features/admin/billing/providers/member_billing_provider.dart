@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:smart_meal_management/data/repositories/attendance_repository.dart';
 import 'package:smart_meal_management/data/repositories/group_repository.dart';
@@ -126,7 +128,12 @@ class MemberBillingProvider extends ChangeNotifier {
       // loader, never the empty "No data for this range", until figures arrive.
       loading = true;
       notifyListeners();
+      // Start the LIVE financial fetch NOW, in parallel with the groups
+      // refresh below — the screen is fully fresh after one round-trip wave
+      // instead of groups-then-figures sequentially.
+      unawaited(compute());
     }
+    final computedFor = groupId;
 
     final res =
         await _groupRepo.getOrganisationGroups(organizationId: _organizationId);
@@ -140,9 +147,11 @@ class MemberBillingProvider extends ChangeNotifier {
     // Issue 3: if a group is selected, compute() is about to run — set loading
     // now so the frame between here and compute()'s own notify never paints the
     // empty "No data for this range" state.
-    if (groupId != null) loading = true;
+    if (groupId != null && groupId != computedFor) loading = true;
     notifyListeners();
-    if (groupId != null) await compute();
+    // Only compute here when the cached path didn't already start it for the
+    // SAME group (cold cache, or the refresh changed the selection).
+    if (groupId != null && groupId != computedFor) await compute();
   }
 
   /// Shared org-groups cache key (same one admin Groups/Meals use), so the
@@ -229,12 +238,16 @@ class MemberBillingProvider extends ChangeNotifier {
     error = null;
     notifyListeners();
 
-    final res = await _attendanceRepo.getBillingSummaryV2(
+    // Summary + chart series are independent live reads — one parallel wave
+    // (was sequential: figures RTT then series RTT).
+    final resF = _attendanceRepo.getBillingSummaryV2(
       organizationId: _organizationId,
       groupId: groupId!,
       from: from,
       to: to,
     );
+    final seriesF = _loadSeries();
+    final res = await resF;
     switch (res) {
       case Ok(:final value):
         summary = value;
@@ -242,7 +255,7 @@ class MemberBillingProvider extends ChangeNotifier {
         error = failure.message;
         summary = BillingSummaryV2.empty;
     }
-    await _loadSeries();
+    await seriesF;
     loading = false;
     notifyListeners();
   }

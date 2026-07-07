@@ -103,9 +103,13 @@ class _GroupJoinRequestsScreenState extends State<GroupJoinRequestsScreen> {
         final items = <_PendingItem>[];
         final candidates =
             value.data.where((g) => g.isActive && g.pendingCount > 0).toList();
-        for (final g in candidates) {
-          final reqRes = await _repo.getJoinRequests(groupId: g.id);
-          if (reqRes case Ok(:final value)) {
+        // All per-group fetches ride ONE parallel wave (HTTP/2-multiplexed)
+        // instead of a sequential round-trip per group.
+        final results = await Future.wait(
+            candidates.map((g) => _repo.getJoinRequests(groupId: g.id)));
+        for (var i = 0; i < candidates.length; i++) {
+          final g = candidates[i];
+          if (results[i] case Ok(:final value)) {
             for (final u in value.data) {
               items.add(_PendingItem(g.id, g.name, u));
             }

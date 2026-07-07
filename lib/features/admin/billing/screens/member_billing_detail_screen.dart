@@ -83,7 +83,9 @@ class _MemberBillingDetailScreenState extends State<MemberBillingDetailScreen> {
       _loading = true;
       _error = null;
     });
-    final recRes = await _attendanceRepo.getAttendanceHistory(
+    // ONE parallel wave (was 4 sequential round-trips): all four reads are
+    // independent — start them together, then await in order.
+    final recF = _attendanceRepo.getAttendanceHistory(
       userId: widget.userId,
       groupId: widget.groupId,
       organizationId: widget.organizationId,
@@ -91,22 +93,26 @@ class _MemberBillingDetailScreenState extends State<MemberBillingDetailScreen> {
       to: widget.to,
       params: const PaginationParams(page: 1, limit: 100),
     );
-    final mealRes = await _mealRepo.getGroupMeals(
+    final mealF = _mealRepo.getGroupMeals(
       organizationId: widget.organizationId,
       groupId: widget.groupId,
     );
     // Issue 3: today's effective (published per-day) windows/prices so the
     // virtual auto-skip never fires while today's real window is still open.
-    final todayRes = await _mealRepo.getTodayMeals(
+    final todayF = _mealRepo.getTodayMeals(
       organizationId: widget.organizationId,
       groupId: widget.groupId,
     );
     // Issue 7: members currently in Vacation Mode are excluded from attendance
     // calculations — never synthesise a virtual auto-skip for them.
-    final membersRes = await _groupRepo.getGroupMembers(
+    final membersF = _groupRepo.getGroupMembers(
       organizationId: widget.organizationId,
       groupId: widget.groupId,
     );
+    final recRes = await recF;
+    final mealRes = await mealF;
+    final todayRes = await todayF;
+    final membersRes = await membersF;
 
     List<AttendanceModel> records = [];
     String? err;

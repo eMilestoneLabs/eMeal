@@ -1335,23 +1335,27 @@ class _SettingsTabState extends State<_SettingsTab> {
 
     if (confirmed != true || !mounted) return;
 
+    // Ultra-smooth (same pattern as permanent delete): the provider updates the
+    // shared list caches optimistically, so return to the list IMMEDIATELY —
+    // no blocking spinner — while the server confirms in the background. On the
+    // rare failure the snackbar surfaces it and the list's silent network
+    // refresh restores the group.
+    final nav = Navigator.of(context);
+    final messenger = ScaffoldMessenger.of(context);
     setState(() => _archiving = true);
-    final ok = await widget.provider.archiveGroup(
+    final future = widget.provider.archiveGroup(
       widget.group.id,
       organizationId: widget.organizationId,
     );
-    if (!mounted) return;
-    setState(() => _archiving = false);
-
-    if (ok) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Group archived')),
-      );
-      // Return to groups list
-      Navigator.of(context).pop();
-    } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Failed to archive group')),
+    messenger.showSnackBar(
+      const SnackBar(content: Text('Group archived')),
+    );
+    nav.pop();
+    final ok = await future;
+    if (!ok) {
+      messenger.showSnackBar(
+        const SnackBar(
+            content: Text('Failed to archive — the group is still active')),
       );
     }
   }

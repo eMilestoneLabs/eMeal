@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:smart_meal_management/shared/enums/user_role.dart';
 import 'package:smart_meal_management/data/repositories/group_repository.dart';
@@ -20,6 +22,17 @@ class AdminGroupProvider extends ChangeNotifier {
 
   final GroupRepository _groupRepo;
   final MealRepository _mealRepo;
+
+  /// Crash-safety for the fire-and-forget refreshes below: a background
+  /// response landing after the owning screen disposed this provider must
+  /// never call notifyListeners() on a disposed ChangeNotifier.
+  bool _disposed = false;
+
+  @override
+  void dispose() {
+    _disposed = true;
+    super.dispose();
+  }
 
   // ── State ─────────────────────────────────────────────────────────────────
 
@@ -172,6 +185,29 @@ class AdminGroupProvider extends ChangeNotifier {
         break;
       }
     }
+    // Ultra-fast tap-to-detail: the detail screen owns a FRESH provider, so
+    // [_groups] is empty and the old path ALWAYS blocked on a network getGroup
+    // behind a loader. The tapped group is almost always in the shared groups
+    // SWR cache the list screen just painted from — resolve it there first
+    // (local, ~ms) and paint instantly; a silent background refresh below
+    // keeps it fresh. Cold cache falls back to the awaited fetch unchanged.
+    if (local == null) {
+      for (final key in [
+        'admin_groups:$organizationId',
+        'admin_groups:$organizationId:all',
+      ]) {
+        final cached = await ResponseCacheService.instance.readList(
+            key, GroupModel.fromJson,
+            maxAge: const Duration(hours: 12));
+        for (final g in cached) {
+          if (g.id == groupId) {
+            local = g;
+            break;
+          }
+        }
+        if (local != null) break;
+      }
+    }
     _selectedGroup = local;
     // Clear stale meal/member lists immediately so UI shows loading state
     _selectedGroupMeals = [];
@@ -189,6 +225,20 @@ class AdminGroupProvider extends ChangeNotifier {
         case Err():
           break; // leave null → detail screen shows its empty state
       }
+    } else {
+      // Painted from list/cache — refresh silently (SWR): the live group
+      // overwrites in place when it lands; failures keep the painted data.
+      unawaited(_groupRepo
+          .getGroup(organizationId: organizationId, groupId: groupId)
+          .then((result) {
+        if (_disposed) return; // screen closed before the refresh landed
+        if (result case Ok(:final value)) {
+          if (_selectedGroup?.id == groupId) {
+            _selectedGroup = value;
+            notifyListeners();
+          }
+        }
+      }).catchError((_) {}));
     }
 
     _isLoading = false;
@@ -209,7 +259,17 @@ class AdminGroupProvider extends ChangeNotifier {
     required String groupId,
     required String organizationId,
   }) async {
-    _isLoadingMeals = true;
+    // Cache-first (SWR): the Meal Config screen maintains this exact list under
+    // the SAME repo call — reuse its cache so the detail Meals tab paints
+    // instantly instead of spinning for a network round-trip every open.
+    if (_selectedGroupMeals.isEmpty) {
+      _isLoadingMeals = true; // sync: loader, never an empty flash
+      final cached = await ResponseCacheService.instance.readList(
+          'meal_config_meals:$organizationId:$groupId', MealModel.fromJson,
+          maxAge: const Duration(hours: 12));
+      if (cached.isNotEmpty) _selectedGroupMeals = cached;
+    }
+    _isLoadingMeals = _selectedGroupMeals.isEmpty;
     notifyListeners();
 
     final result = await _mealRepo.getGroupMeals(
@@ -219,7 +279,13 @@ class AdminGroupProvider extends ChangeNotifier {
 
     switch (result) {
       case Ok(:final value):
-        _selectedGroupMeals = value;
+        // Chronological order — the invariant Meal Config keeps in this cache.
+        _selectedGroupMeals = List.of(value)
+          ..sort(MealModel.compareChronological);
+        ResponseCacheService.instance.writeList(
+            'meal_config_meals:$organizationId:$groupId',
+            _selectedGroupMeals,
+            (m) => m.toJson());
       case Err(:final failure):
         _error = failure.message;
     }
@@ -367,6 +433,60 @@ class AdminGroupProvider extends ChangeNotifier {
     }
   }
 
+  // ── Shared groups-cache write-through ───────────────────────────────────────
+  // Archive/restore/delete run from the DETAIL screen's own provider instance,
+  // whose in-memory list is empty — so the shared 'admin_groups' SWR caches the
+  // LIST screen repaints from must be updated here, or the list shows the old
+  // state (a "deleted" group still visible = feels broken/slow).
+
+  static String _activeGroupsKey(String orgId) => 'admin_groups:$orgId';
+  static String _allGroupsKey(String orgId) => 'admin_groups:$orgId:all';
+
+  /// Applies [mutate] to every entry of the cached list at [key]; a null return
+  /// removes the entry. Missing/empty caches are left untouched. Best-effort.
+  Future<void> _mutateGroupsCache(
+    String key,
+    GroupModel? Function(GroupModel g) mutate,
+  ) async {
+    try {
+      final cached = await ResponseCacheService.instance.readList(
+          key, GroupModel.fromJson,
+          maxAge: const Duration(hours: 12));
+      if (cached.isEmpty) return;
+      var changed = false;
+      final next = <GroupModel>[];
+      for (final g in cached) {
+        final m = mutate(g);
+        if (!identical(m, g)) changed = true;
+        if (m != null) next.add(m);
+      }
+      if (changed) {
+        ResponseCacheService.instance.writeList(key, next, (g) => g.toJson());
+      }
+    } catch (_) {
+      // Cache repair is best-effort; the network refresh remains the truth.
+    }
+  }
+
+  /// Re-paints [_groups] from the shared SWR cache — instant + local. Used by
+  /// the list screen on return from a detail screen whose mutations wrote
+  /// through the cache above. Only overwrites when the cache has data.
+  Future<void> repaintFromCache({
+    required String organizationId,
+    bool includeInactive = false,
+  }) async {
+    final key = includeInactive
+        ? _allGroupsKey(organizationId)
+        : _activeGroupsKey(organizationId);
+    final cached = await ResponseCacheService.instance.readList(
+        key, GroupModel.fromJson,
+        maxAge: const Duration(hours: 12));
+    if (cached.isNotEmpty) {
+      _groups = cached;
+      notifyListeners();
+    }
+  }
+
   Future<bool> archiveGroup(
     String groupId, {
     required String organizationId,
@@ -379,6 +499,14 @@ class AdminGroupProvider extends ChangeNotifier {
       _groups = List.of(_groups)..[idx] = _groups[idx].copyWith(isActive: false);
       notifyListeners();
     }
+    // Optimistic shared-cache write-through (local, ~ms) so the groups LIST —
+    // repainted from this cache on return — drops the group instantly. On the
+    // rare server failure the failure snackbar + the list's silent network
+    // refresh restore the truth within one round-trip.
+    unawaited(_mutateGroupsCache(
+        _activeGroupsKey(organizationId), (g) => g.id == groupId ? null : g));
+    unawaited(_mutateGroupsCache(_allGroupsKey(organizationId),
+        (g) => g.id == groupId ? g.copyWith(isActive: false) : g));
 
     final result = await _groupRepo.archiveGroup(
       organizationId: organizationId,
@@ -417,6 +545,20 @@ class AdminGroupProvider extends ChangeNotifier {
         } else {
           _groups = [value, ..._groups];
         }
+        // Shared-cache write-through: reflect the restore in both list caches
+        // so the active list shows it instantly on next repaint.
+        unawaited(_mutateGroupsCache(
+            _allGroupsKey(organizationId), (g) => g.id == groupId ? value : g));
+        unawaited(() async {
+          final key = _activeGroupsKey(organizationId);
+          final cached = await ResponseCacheService.instance.readList(
+              key, GroupModel.fromJson,
+              maxAge: const Duration(hours: 12));
+          if (cached.isNotEmpty && !cached.any((g) => g.id == groupId)) {
+            ResponseCacheService.instance
+                .writeList(key, [value, ...cached], (g) => g.toJson());
+          }
+        }());
         notifyListeners();
         return true;
       case Err(:final failure):
@@ -444,6 +586,13 @@ class AdminGroupProvider extends ChangeNotifier {
       if (_selectedGroup?.id == groupId) _selectedGroup = null;
       notifyListeners();
     }
+    // Optimistic shared-cache write-through — the list repaint on return must
+    // not show a permanently-deleted group (rare failure self-heals via the
+    // list's silent network refresh + rollback snackbar).
+    unawaited(_mutateGroupsCache(
+        _activeGroupsKey(organizationId), (g) => g.id == groupId ? null : g));
+    unawaited(_mutateGroupsCache(
+        _allGroupsKey(organizationId), (g) => g.id == groupId ? null : g));
 
     final result = await _groupRepo.permanentDeleteGroup(groupId: groupId);
     switch (result) {

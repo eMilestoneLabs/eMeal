@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:smart_meal_management/core/constants/app_constants.dart';
 import 'package:smart_meal_management/core/theme/app_colors.dart';
@@ -84,7 +86,11 @@ class _AdminAttendanceScreenState extends State<AdminAttendanceScreen> {
           _groups = cached;
           _selectedGroupId = resolveSelected(cached);
         });
-        if (_selectedGroupId != null) await _loadAttendance(orgId);
+        // Start attendance WITHOUT awaiting so the groups refresh below runs in
+        // the SAME network wave — tap-to-fully-fresh costs one round-trip, not
+        // two sequential ones. The prevSel check below still prevents a
+        // duplicate attendance fetch when the resolved group is unchanged.
+        if (_selectedGroupId != null) unawaited(_loadAttendance(orgId));
       } else {
         setState(() => _loadingGroups = true);
       }

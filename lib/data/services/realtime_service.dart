@@ -1,6 +1,6 @@
 import 'dart:async';
 
-import 'package:flutter/foundation.dart';
+import 'package:flutter/widgets.dart';
 import 'package:socket_io_client/socket_io_client.dart' as io;
 import 'package:smart_meal_management/core/config/env_config.dart';
 import 'package:smart_meal_management/core/constants/realtime_events.dart';
@@ -54,7 +54,7 @@ class RealtimeMessage {
 /// rt.leaveGroup(groupId);
 /// await rt.disconnect();                     // on logout
 /// ```
-class RealtimeService {
+class RealtimeService with WidgetsBindingObserver {
   RealtimeService._();
 
   /// App-wide singleton — mirrors the `DioApiService.instance` pattern.
@@ -76,6 +76,12 @@ class RealtimeService {
 
   Timer? _heartbeat;
 
+  /// Battery: true while the socket is intentionally down because the app is
+  /// backgrounded (see [didChangeAppLifecycleState]). Distinct from a logout
+  /// [disconnect] — group rooms are preserved for the resume reconnect.
+  bool _pausedByLifecycle = false;
+  bool _observerRegistered = false;
+
   /// True once the underlying socket reports a live connection.
   bool get isConnected =>
       connectionState.value == RealtimeConnectionState.connected;
@@ -92,6 +98,15 @@ class RealtimeService {
   /// Opens the socket using the stored JWT. Safe to call repeatedly — a live
   /// socket is reused. No-op when no valid session exists.
   Future<void> connect() async {
+    // Battery: pause/resume the socket with the APP lifecycle — an open
+    // websocket + 25s heartbeat in the background is pure battery drain (FCM
+    // push covers background delivery; realtime events only refresh visible
+    // UI). Registered once for the app-lifetime singleton.
+    if (!_observerRegistered) {
+      _observerRegistered = true;
+      WidgetsBinding.instance.addObserver(this);
+    }
+    _pausedByLifecycle = false;
     if (_socket != null && _socket!.connected) return;
 
     final session = await AuthStorageService.instance.loadSession();
@@ -135,6 +150,33 @@ class RealtimeService {
   Future<void> reconnectWithFreshToken() async {
     await disconnect();
     await connect();
+  }
+
+  /// Battery: tear the socket down while backgrounded, restore it on resume.
+  /// Only `paused`/`resumed` are acted on — `inactive`/`hidden` fire for
+  /// dialogs and the notification shade and must not thrash the connection.
+  /// Rooms are preserved; [connect]'s onConnect handler re-joins them.
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    switch (state) {
+      case AppLifecycleState.paused:
+      case AppLifecycleState.detached:
+        if (_socket != null) {
+          _pausedByLifecycle = true;
+          _stopHeartbeat();
+          _disposeSocket();
+          connectionState.value = RealtimeConnectionState.disconnected;
+          _log('paused (app backgrounded)');
+        }
+      case AppLifecycleState.resumed:
+        if (_pausedByLifecycle) {
+          _log('resuming socket after background');
+          unawaited(connect()); // clears _pausedByLifecycle, re-joins rooms
+        }
+      case AppLifecycleState.inactive:
+      case AppLifecycleState.hidden:
+        break;
+    }
   }
 
   // ── Rooms ──────────────────────────────────────────────────────────────────

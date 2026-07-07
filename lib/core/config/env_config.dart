@@ -26,6 +26,7 @@ class EnvConfig {
     required this.maxRequestRetries,
     required this.retryBaseDelayMs,
     required this.cacheMaxAgeMs,
+    required this.imageCacheMaxBytes,
   });
 
   // ── API ────────────────────────────────────────────────────────────────────
@@ -84,6 +85,14 @@ class EnvConfig {
   /// per-day attendance cache). Configurable; never hardcoded.
   final int cacheMaxAgeMs;
 
+  /// Cap for Flutter's decoded-image RAM cache (bytes). The framework default
+  /// is 100 MiB, which reads as "heavy RAM" on budget devices. Every list
+  /// image is decode-capped (cacheWidth) and thumbnails are ~15 KB, so 48 MiB
+  /// still holds far more images than any screen shows at once. An evicted
+  /// image reloads from the DISK cache (no network) — a miss costs a re-decode
+  /// only. Configurable; never hardcoded at the call site.
+  final int imageCacheMaxBytes;
+
   // ── Derived helpers ────────────────────────────────────────────────────────
 
   /// Full versioned API prefix. e.g. `https://api.emilestone.com/v1`
@@ -119,6 +128,7 @@ class EnvConfig {
     maxRequestRetries: 2,
     retryBaseDelayMs: 300,
     cacheMaxAgeMs: 604800000, // 7 days
+    imageCacheMaxBytes: 50331648, // 48 MiB decoded-image RAM ceiling
   );
 
   static const EnvConfig _staging = EnvConfig._(
@@ -136,6 +146,7 @@ class EnvConfig {
     maxRequestRetries: 2,
     retryBaseDelayMs: 300,
     cacheMaxAgeMs: 604800000, // 7 days
+    imageCacheMaxBytes: 50331648, // 48 MiB decoded-image RAM ceiling
   );
 
   static const EnvConfig _production = EnvConfig._(
@@ -157,6 +168,7 @@ class EnvConfig {
     maxRequestRetries: 2,
     retryBaseDelayMs: 300,
     cacheMaxAgeMs: 604800000, // 7 days
+    imageCacheMaxBytes: 50331648, // 48 MiB decoded-image RAM ceiling
   );
 
   // ── Active config resolver ─────────────────────────────────────────────────

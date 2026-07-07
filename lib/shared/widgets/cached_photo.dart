@@ -51,6 +51,14 @@ class CachedPhoto extends StatelessWidget {
       url != null &&
       (url!.startsWith('http://') || url!.startsWith('https://'));
 
+  /// Session-scoped negative cache of thumbnail URLs that 404'd (images
+  /// uploaded before the thumbnail pipeline existed have no `_thumb.jpg`).
+  /// Without this, EVERY render of a legacy image paid a failed thumbnail
+  /// round-trip before falling back to the original — the "avatars/meal
+  /// images take time" symptom. With it, the detour is paid at most once per
+  /// URL per app session; once the server backfill runs, this set stays empty.
+  static final Set<String> _missingThumbs = <String>{};
+
   /// Derives the thumbnail URL by the backend's naming convention
   /// (`<name>.<ext>` -> `<name>_thumb.jpg`).
   String _thumbUrl(String u) => u.replaceFirst(RegExp(r'\.\w+$'), '_thumb.jpg');
@@ -89,9 +97,17 @@ class CachedPhoto extends StatelessWidget {
     if (_hasNetwork) {
       final original = url!;
       if (useThumbnail) {
-        // Thumb first; on miss (404 / older upload) fall back to the original.
-        return _networkImage(_thumbUrl(original),
-            onError: () => _networkImage(original));
+        final thumb = _thumbUrl(original);
+        // Known-missing thumb (already 404'd this session) → go straight to
+        // the original; never re-pay the failed round-trip.
+        if (_missingThumbs.contains(thumb)) {
+          return _networkImage(original);
+        }
+        // Thumb first; on miss (404 / older upload) remember it and fall back.
+        return _networkImage(thumb, onError: () {
+          _missingThumbs.add(thumb);
+          return _networkImage(original);
+        });
       }
       return _networkImage(original);
     }

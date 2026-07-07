@@ -205,6 +205,7 @@ class _AdminGroupsScreenState extends State<AdminGroupsScreen> {
                       if (user == null) return;
                       _provider.loadGroups(
                         organizationId: user.organizationId,
+                        includeInactive: _showArchived, // stay in this scope
                       );
                     },
                     child: const Text('Retry'),
@@ -237,6 +238,7 @@ class _AdminGroupsScreenState extends State<AdminGroupsScreen> {
                         if (user == null) return;
                         await _provider.loadGroups(
                           organizationId: user.organizationId,
+                          includeInactive: _showArchived, // stay in this scope
                         );
                       },
                       // GRP-007: drag-and-drop reordering (persisted per user).
@@ -257,10 +259,29 @@ class _AdminGroupsScreenState extends State<AdminGroupsScreen> {
                             padding: const EdgeInsets.only(bottom: 12),
                             child: GroupCard(
                               group: group,
-                              onTap: () => context.push(
-                                RouteNames.adminGroupDetail
-                                    .replaceAll(':groupId', group.id),
-                              ),
+                              onTap: () async {
+                                // Await the detail route so archive/delete done
+                                // there reflect here INSTANTLY on return: the
+                                // provider wrote through the shared cache —
+                                // repaint from it (local, ~ms), then refresh
+                                // silently from the network.
+                                await context.push(
+                                  RouteNames.adminGroupDetail
+                                      .replaceAll(':groupId', group.id),
+                                );
+                                if (!context.mounted) return;
+                                final user = AuthProviderScope.of(context)
+                                    .currentUser;
+                                if (user == null) return;
+                                await _provider.repaintFromCache(
+                                  organizationId: user.organizationId,
+                                  includeInactive: _showArchived,
+                                );
+                                _provider.loadGroups(
+                                  organizationId: user.organizationId,
+                                  includeInactive: _showArchived,
+                                );
+                              },
                             ),
                           );
                         },

@@ -1,4 +1,7 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+import 'package:smart_meal_management/data/services/response_cache_service.dart';
 import 'package:smart_meal_management/core/theme/app_colors.dart';
 import 'package:smart_meal_management/core/theme/app_typography.dart';
 import 'package:smart_meal_management/core/utils/time_format.dart';
@@ -71,17 +74,35 @@ class _StaffAttendanceScreenState extends State<StaffAttendanceScreen> {
     _orgId = user.organizationId;
     _userId = user.id;
 
+    // Cache-first: paint the group selector from the shared org-groups cache
+    // and start today's data immediately — the network refresh below runs in
+    // the same wave and reconciles silently.
+    final cached = await ResponseCacheService.instance.readList(
+        'admin_groups:$_orgId', GroupModel.fromJson,
+        maxAge: const Duration(hours: 12));
+    if (!mounted) return;
+    if (cached.isNotEmpty) {
+      setState(() {
+        _groups = cached;
+        _groupId = cached.first.id;
+        _loadingGroups = false;
+      });
+      unawaited(_load());
+    }
+
+    final prevSel = _groupId;
     final res = await _groupRepo.getOrganisationGroups(organizationId: _orgId);
     if (!mounted) return;
     switch (res) {
       case Ok(:final value):
         _groups = value.data;
-        _groupId = _groups.isNotEmpty ? _groups.first.id : null;
+        _groupId ??= _groups.isNotEmpty ? _groups.first.id : null;
       case Err(:final failure):
-        _error = failure.message;
+        if (_groups.isEmpty) _error = failure.message;
     }
     setState(() => _loadingGroups = false);
-    if (_groupId != null) await _load();
+    // Avoid a duplicate fetch when the cached path already loaded this group.
+    if (_groupId != null && _groupId != prevSel) await _load();
   }
 
   Future<void> _load() async {
@@ -92,15 +113,18 @@ class _StaffAttendanceScreenState extends State<StaffAttendanceScreen> {
       _error = null;
     });
 
-    final mealsRes = await _mealRepo.getTodayMeals(
+    // Independent reads — one parallel wave, not two sequential round-trips.
+    final mealsF = _mealRepo.getTodayMeals(
       organizationId: _orgId,
       groupId: gid,
     );
-    final recRes = await _attendanceRepo.getTodayAttendance(
+    final recF = _attendanceRepo.getTodayAttendance(
       userId: _userId,
       groupId: gid,
       organizationId: _orgId,
     );
+    final mealsRes = await mealsF;
+    final recRes = await recF;
     if (!mounted) return;
 
     List<MealModel> meals = [];
