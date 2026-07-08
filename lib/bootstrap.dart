@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:smart_meal_management/app/app.dart';
 import 'package:smart_meal_management/app/router/app_router.dart';
 import 'package:smart_meal_management/app/router/notification_route_resolver.dart';
@@ -48,6 +49,12 @@ Future<void> bootstrap() async {
   // UX — evictions re-decode from the DISK cache, never re-download.
   PaintingBinding.instance.imageCache.maximumSizeBytes =
       EnvConfig.current.imageCacheMaxBytes;
+
+  // Battery/network: Inter is bundled in assets/fonts (see pubspec), so the
+  // fonts package must NEVER fetch from fonts.google.com at runtime — the
+  // first cold start previously paid a network font download (and offline
+  // first-runs rendered a fallback face).
+  GoogleFonts.config.allowRuntimeFetching = false;
 
   final authProvider = AuthProvider(); // starts in AuthUnknown
   final themeProvider = ThemeProvider();

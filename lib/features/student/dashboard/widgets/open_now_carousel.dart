@@ -52,7 +52,8 @@ class OpenNowCarousel extends StatefulWidget {
   State<OpenNowCarousel> createState() => _OpenNowCarouselState();
 }
 
-class _OpenNowCarouselState extends State<OpenNowCarousel> {
+class _OpenNowCarouselState extends State<OpenNowCarousel>
+    with WidgetsBindingObserver {
   late final PageController _controller;
   Timer? _timer;
   int _page = 0;
@@ -64,7 +65,25 @@ class _OpenNowCarouselState extends State<OpenNowCarousel> {
     super.initState();
     _page = _hasPending ? widget.pendingIndex : 0;
     _controller = PageController(initialPage: _page);
+    // Battery: Dart timers keep firing while the app is BACKGROUNDED (the
+    // engine stays alive), so the auto-scroll must pause with the app
+    // lifecycle — otherwise it wakes the CPU every 4s in the background.
+    WidgetsBinding.instance.addObserver(this);
     _maybeStartAutoScroll();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    switch (state) {
+      case AppLifecycleState.paused:
+      case AppLifecycleState.detached:
+        _pauseAutoScroll();
+      case AppLifecycleState.resumed:
+        _maybeStartAutoScroll();
+      case AppLifecycleState.inactive:
+      case AppLifecycleState.hidden:
+        break;
+    }
   }
 
   @override
@@ -115,6 +134,7 @@ class _OpenNowCarouselState extends State<OpenNowCarousel> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _timer?.cancel();
     _controller.dispose();
     super.dispose();

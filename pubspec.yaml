@@ -81,3 +81,11 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+
+  # Inter bundled locally (OFL-licensed, assets/fonts/OFL.txt) so google_fonts
+  # loads it from the ASSET MANIFEST instead of fetching from fonts.google.com
+  # at runtime — zero first-run network/battery cost, correct brand font even
+  # offline. google_fonts matches these by filename (Inter-<Weight>.ttf); they
+  # are deliberately declared as assets, NOT as a pubspec font family.
+  assets:
+    - assets/fonts/
