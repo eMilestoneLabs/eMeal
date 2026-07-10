@@ -1528,6 +1528,11 @@ class _DayMealEditSheetState extends State<_DayMealEditSheet> {
     try {
       final file =
           await ImagePicker().pickImage(source: ImageSource.gallery);
+      // The gallery picker backgrounds the activity; on aggressive OEMs (MIUI)
+      // this sheet's state can be disposed before the pick returns. Every
+      // resume point below re-checks `mounted` — a setState on a disposed
+      // state throws into the global error handler.
+      if (!mounted) return;
       if (file == null) {
         setState(() => _isPickingImage = false);
         return;
@@ -1547,6 +1552,7 @@ class _DayMealEditSheetState extends State<_DayMealEditSheet> {
         out = c;
         if (c.length <= AppConstants.maxMealImageBytes) break;
       }
+      if (!mounted) return;
       if (out == null || out.isEmpty) {
         setState(() => _imageError = 'Could not process this photo.');
         return;
@@ -1559,9 +1565,9 @@ class _DayMealEditSheetState extends State<_DayMealEditSheet> {
       }
       setState(() => _imageBytes = [out!]);
     } catch (_) {
-      setState(() => _imageError = 'Could not pick the photo.');
+      if (mounted) setState(() => _imageError = 'Could not pick the photo.');
     } finally {
-      setState(() => _isPickingImage = false);
+      if (mounted) setState(() => _isPickingImage = false);
     }
   }
 

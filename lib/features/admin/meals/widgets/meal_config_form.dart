@@ -252,6 +252,11 @@ class _MealConfigFormState extends State<MealConfigForm> {
       // previous one (old bytes discarded) so storage never keeps copies.
       final file = await picker.pickImage(source: ImageSource.gallery);
 
+      // The gallery picker backgrounds the activity; on aggressive OEMs (MIUI)
+      // this form's state can be disposed before the pick returns. Every resume
+      // point below re-checks `mounted` — a setState on a disposed state throws
+      // into the global error handler.
+      if (!mounted) return;
       if (file == null) {
         setState(() => _isPickingImages = false);
         return;
@@ -277,6 +282,7 @@ class _MealConfigFormState extends State<MealConfigForm> {
         if (out.length <= _maxTotalBytes) break;
       }
 
+      if (!mounted) return;
       if (compressed == null || compressed.isEmpty) {
         setState(() => _imageError =
             'Could not process this photo. Please try another.');
@@ -299,9 +305,12 @@ class _MealConfigFormState extends State<MealConfigForm> {
           ..add(compressed!);
       });
     } catch (_) {
-      setState(() => _imageError = 'Could not pick the photo. Please try again.');
+      if (mounted) {
+        setState(
+            () => _imageError = 'Could not pick the photo. Please try again.');
+      }
     } finally {
-      setState(() => _isPickingImages = false);
+      if (mounted) setState(() => _isPickingImages = false);
     }
   }
 

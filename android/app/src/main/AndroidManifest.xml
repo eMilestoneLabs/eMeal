@@ -105,6 +105,21 @@
             android:exported="false"
             android:name="com.dexterous.flutterlocalnotifications.ActionBroadcastReceiver"/>
 
+        <!-- ── Renderer: force Impeller's OpenGLES backend ─────────────────────
+             Without this the engine auto-selects Vulkan where the driver claims
+             support. On Adreno 6xx (e.g. Redmi Note 11 / Adreno 610 — our real
+             test device) the Vulkan driver has known surface-restore bugs: the
+             screen can come back COMPLETELY BLACK after returning from another
+             app (gallery image picker in Add Meal, camera, share sheet) and
+             never recover. Profiling on that device also measured 17.5% raster-
+             thread jank. Impeller GLES is the mature, deterministic path and for
+             this app's 2D UI (cards/text/images, no custom shaders) performs
+             equivalently on high-end GPUs — so we trade nothing measurable for
+             fleet-wide stability. Remove this meta-data to re-enable Vulkan. -->
+        <meta-data
+            android:name="io.flutter.embedding.android.ImpellerBackend"
+            android:value="opengles" />
+
         <!-- Don't delete the meta-data below.
              This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->
         <meta-data

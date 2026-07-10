@@ -7,6 +7,7 @@ import 'package:smart_meal_management/app/app.dart';
 import 'package:smart_meal_management/app/router/app_router.dart';
 import 'package:smart_meal_management/app/router/notification_route_resolver.dart';
 import 'package:smart_meal_management/core/config/env_config.dart';
+import 'package:smart_meal_management/data/services/crash_reporter_service.dart';
 import 'package:smart_meal_management/data/services/dio_api_service.dart';
 import 'package:smart_meal_management/data/services/notification_service.dart';
 import 'package:smart_meal_management/data/services/push_notification_service.dart';
@@ -59,6 +60,21 @@ Future<void> bootstrap() async {
   final authProvider = AuthProvider(); // starts in AuthUnknown
   final themeProvider = ThemeProvider();
   final router = buildRouter(authProvider);
+
+  // Crash telemetry: install the global error handlers BEFORE runApp so an error
+  // during the very first build is captured. No-op in dev (flag off); in
+  // staging/prod it chains onto Flutter's default handlers (nothing is lost) and
+  // forwards redacted, deduped reports to the backend telemetry sink. Buffered
+  // offline reports are flushed after the first frame (see below). The route
+  // resolver is fully guarded so a routing-API change can never break startup.
+  CrashReporterService.instance.routeResolver = () {
+    try {
+      return router.routerDelegate.currentConfiguration.uri.toString();
+    } catch (_) {
+      return null;
+    }
+  };
+  CrashReporterService.instance.initialize();
 
   // Wire the notification tap handler now that the router exists (capture only;
   // no I/O). Routing a tapped notification still works once init completes.
@@ -125,5 +141,10 @@ Future<void> _initBackgroundServices(AuthProvider authProvider) async {
   // Self-heal: drop expired + corrupt SWR entries and bound date-keyed growth.
   try {
     await ResponseCacheService.instance.prune(EnvConfig.current.cacheMaxAge);
+  } catch (_) {/* best-effort */}
+
+  // Flush any crash reports that were buffered while offline on a previous run.
+  try {
+    await CrashReporterService.instance.flushPending();
   } catch (_) {/* best-effort */}
 }
