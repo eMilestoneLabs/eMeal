@@ -365,6 +365,29 @@ class _OtpScreenState extends State<OtpScreen> {
                             ),
                           ),
               ),
+
+              // Signup already created the account and issued tokens — email
+              // verification is optional for login. If the OTP email is slow
+              // or lands in spam, the user must never be trapped here: let
+              // them continue and verify later from Profile ("Verify now").
+              if (widget.isSignup && !widget.popOnSuccess) ...[
+                const SizedBox(height: 4),
+                Center(
+                  child: TextButton(
+                    onPressed: _isLoading
+                        ? null
+                        : () =>
+                            _routeAfterAuth(AuthProviderScope.of(context)),
+                    child: Text(
+                      'Skip for now — verify later from Profile',
+                      style: AppTypography.bodySmall.copyWith(
+                        color: colorScheme.onSurfaceVariant,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
                     const SizedBox(height: 32),
                   ],
                 ),

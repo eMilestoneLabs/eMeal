@@ -418,6 +418,25 @@ class DioApiService {
             cause: e,
           );
         }
+        if (status == 409) {
+          // Conflict — e.g. "This email already has an account" or "An
+          // organization with this name already exists". The server carries
+          // the human-readable reason in errors{}, while its top-level message
+          // is often just "Validation failed" — so prefer the field error as
+          // the user-facing message, or signup screens show a useless generic.
+          final fieldErrors = _extractFieldErrors(e.response);
+          final specific =
+              fieldErrors.values.isNotEmpty ? fieldErrors.values.first : null;
+          final genericTop = serverMessage == null ||
+              serverMessage.toLowerCase() == 'validation failed';
+          return ValidationFailure(
+            message: genericTop
+                ? (specific ?? 'Already in use. Try a different value.')
+                : serverMessage,
+            fieldErrors: fieldErrors,
+            cause: e,
+          );
+        }
         if (status >= 500) {
           return NetworkFailure(
             message: serverMessage ?? 'Server error. Please try again later.',
