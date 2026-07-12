@@ -154,19 +154,18 @@ class _MyCorrectionsScreenState extends State<MyCorrectionsScreen> {
   }
 
   Widget _card(CorrectionRequestModel r, bool isDark) {
+    // SRS Module 03 ATT-004: admin-proposed prompts no longer exist — every
+    // request is member-raised and awaits the admin's approve/reject.
     final busy = _busyId == r.id;
     final c = _statusColor(r.status);
-    final isPrompt = r.isMemberConfirmation && r.isPending;
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: isDark ? AppColors.surfaceDark : AppColors.surface,
         borderRadius: BorderRadius.circular(16),
         border: Border.all(
-          color: isPrompt
-              ? AppColors.warning.withValues(alpha: 0.6)
-              : (isDark ? AppColors.borderDark : AppColors.border)
-                  .withValues(alpha: 0.5),
+          color: (isDark ? AppColors.borderDark : AppColors.border)
+              .withValues(alpha: 0.5),
         ),
       ),
       child: Column(
@@ -198,10 +197,7 @@ class _MyCorrectionsScreenState extends State<MyCorrectionsScreen> {
           ),
           const SizedBox(height: 6),
           Text(
-            isPrompt
-                ? 'Your admin says you attended this meal. Confirm to accept '
-                    'the charge — decline if you did not eat.'
-                : r.typeLabel,
+            r.typeLabel,
             style: AppTypography.bodySmall
                 .copyWith(color: AppColors.textSecondary),
           ),
@@ -227,40 +223,6 @@ class _MyCorrectionsScreenState extends State<MyCorrectionsScreen> {
               width: 18,
               height: 18,
               child: CircularProgressIndicator(strokeWidth: 2),
-            ),
-          ] else if (isPrompt) ...[
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                Expanded(
-                  child: FilledButton(
-                    onPressed: () => _act(
-                      r,
-                      () => _repo.confirm(r.id),
-                      'Confirmed — your attendance has been recorded.',
-                    ),
-                    style: FilledButton.styleFrom(
-                        backgroundColor: AppColors.present),
-                    child: const Text('Confirm — I ate'),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: OutlinedButton(
-                    onPressed: () => _act(
-                      r,
-                      () => _repo.decline(r.id),
-                      'Declined — nothing was charged.',
-                    ),
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: AppColors.absent,
-                      side: BorderSide(
-                          color: AppColors.absent.withValues(alpha: 0.5)),
-                    ),
-                    child: const Text('Decline'),
-                  ),
-                ),
-              ],
             ),
           ] else if (r.isPending) ...[
             const SizedBox(height: 12),

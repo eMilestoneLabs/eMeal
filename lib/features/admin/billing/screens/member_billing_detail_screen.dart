@@ -26,6 +26,7 @@ class MemberBillingDetailScreen extends StatefulWidget {
     required this.from,
     required this.to,
     required this.pricingEnabled,
+    this.billSkippedMeals = false,
     this.guestCount = 0,
     this.guestAmount = 0,
     this.adjustmentsTotal = 0,
@@ -40,6 +41,10 @@ class MemberBillingDetailScreen extends StatefulWidget {
   final DateTime from;
   final DateTime to;
   final bool pricingEnabled;
+
+  /// SRS Module 03 (survey Q17/Q22): group Bill-Skip policy — bills
+  /// Absent/Skipped rows at their scheduled price when true.
+  final bool billSkippedMeals;
 
   /// Billing-consistency fix: the same hosted-guest charges and signed ledger
   /// adjustments the Member Billing list shows, so this screen's headline is
@@ -140,7 +145,8 @@ class _MemberBillingDetailScreenState extends State<MemberBillingDetailScreen> {
       todayMeals: todayMeals,
       vacationUserIds: vacationUserIds,
     ).where((r) => r.userId == widget.userId).toList();
-    final summaries = BillingService.summarize(rows);
+    final summaries = BillingService.summarize(rows,
+        billSkippedMeals: widget.billSkippedMeals);
 
     if (!mounted) return;
     setState(() {
@@ -186,20 +192,9 @@ class _MemberBillingDetailScreenState extends State<MemberBillingDetailScreen> {
             todayMeals: _todayMeals,
             vacationUserIds: _vacationUserIds,
             financialsByUser: _exportFinancials,
+            billSkippedMeals: widget.billSkippedMeals,
           );
-        case 'csv':
-          await svc.exportCsv(
-            records: _records,
-            meals: _meals,
-            groupName: name,
-            pricingEnabled: widget.pricingEnabled,
-            from: widget.from,
-            to: widget.to,
-            dateRangeLabel: label,
-            todayMeals: _todayMeals,
-            vacationUserIds: _vacationUserIds,
-            financialsByUser: _exportFinancials,
-          );
+        // RPT-001: CSV export removed — Excel + PDF only.
         default:
           await svc.exportXlsx(
             records: _records,
@@ -212,6 +207,7 @@ class _MemberBillingDetailScreenState extends State<MemberBillingDetailScreen> {
             todayMeals: _todayMeals,
             vacationUserIds: _vacationUserIds,
             financialsByUser: _exportFinancials,
+            billSkippedMeals: widget.billSkippedMeals,
           );
       }
       if (mounted) {
@@ -319,7 +315,7 @@ class _MemberBillingDetailScreenState extends State<MemberBillingDetailScreen> {
                     PopupMenuItem(value: 'pdf', child: Text('Export PDF')),
                     PopupMenuItem(
                         value: 'xlsx', child: Text('Export Excel (.xlsx)')),
-                    PopupMenuItem(value: 'csv', child: Text('Export CSV')),
+                    // RPT-001: CSV export removed — Excel + PDF only.
                   ],
                 ),
         ],

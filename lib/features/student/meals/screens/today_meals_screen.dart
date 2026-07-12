@@ -13,6 +13,7 @@ import 'package:smart_meal_management/shared/models/attendance_model.dart';
 import 'package:smart_meal_management/shared/models/group_model.dart';
 import 'package:smart_meal_management/shared/models/meal_model.dart';
 import 'package:smart_meal_management/shared/models/preference_group_model.dart';
+import 'package:smart_meal_management/shared/utils/verification_gate.dart';
 import 'package:smart_meal_management/shared/widgets/preference_group_selector.dart';
 import 'package:smart_meal_management/shared/widgets/cached_photo.dart';
 import 'package:smart_meal_management/shared/widgets/app_skeleton.dart';
@@ -63,23 +64,31 @@ class _TodayMealsScreenState extends State<TodayMealsScreen> {
     if (dashboardProvider != null) await dashboardProvider.load(user: user);
   }
 
-  void _mark(
+  Future<void> _mark(
     MealModel meal,
     AttendanceStatus status, {
     String? preference,
     List<PreferenceSelection>? selections,
-  }) {
+  }) async {
     final user = AuthProviderScope.of(context).currentUser;
     if (user == null) return;
     final dashboardProvider = StudentDashboardScope.maybeOf(context);
     if (dashboardProvider == null) return;
-    dashboardProvider.markStatus(
+    final ok = await dashboardProvider.markStatus(
       user: user,
       meal: meal,
       status: status,
       preference: preference,
       selections: selections,
     );
+    // SRS Module 03 ACC-005: unverified members get the guided verify flow.
+    if (!ok && mounted) {
+      await VerificationGate.handleMessage(
+        context,
+        dashboardProvider.actionError,
+        email: user.email,
+      );
+    }
   }
 
   @override
@@ -200,7 +209,14 @@ class _TodayMealsScreenState extends State<TodayMealsScreen> {
                                 isWindowOpen: isOpen,
                                 isWindowPast: isPast,
                                 isVacationMode: isVacation,
-                                isDefaultAttend: isDefaultAttend,
+                                // SRS Module 03 ATT-011: Personal
+                                // Auto-Attendance is SUSPENDED on
+                                // preference-required meals — manual marking
+                                // with full preferences applies there.
+                                isDefaultAttend: isDefaultAttend &&
+                                    !(meal.preferencesEnabled ||
+                                        dashboardProvider.preferencesEnabled) &&
+                                    meal.preferenceGroups.isEmpty,
                                 preferencesEnabled: meal.preferencesEnabled ||
                                     dashboardProvider.preferencesEnabled,
                                 enabledPreferences:
@@ -641,7 +657,6 @@ class _TodayMealCardState extends State<_TodayMealCard> {
             if (widget.isDefaultAttend && widget.isWindowOpen)
               _DefaultAttendActions(
                 onMarkAbsent: () => _submit(AttendanceStatus.absent),
-                onMarkSkipped: () => _submit(AttendanceStatus.skipped),
                 isDark: isDark,
               )
             else if (widget.isWindowOpen) ...[
@@ -918,20 +933,7 @@ class _AttendActions extends StatelessWidget {
                 ),
               ),
               const SizedBox(width: AppConstants.space8),
-              Expanded(
-                flex: 2,
-                child: OutlinedButton(
-                  onPressed:
-                      canMark ? () => onMark(AttendanceStatus.skipped) : null,
-                  style: OutlinedButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(vertical: 11),
-                    textStyle: AppTypography.labelLarge
-                        .copyWith(fontWeight: FontWeight.w600),
-                  ),
-                  child: const Text('Skip'),
-                ),
-              ),
-              const SizedBox(width: AppConstants.space8),
+              // Q17/Q21: Skip button removed — Present or Absent only.
               Expanded(
                 flex: 2,
                 child: OutlinedButton(
@@ -959,16 +961,15 @@ class _AttendActions extends StatelessWidget {
   }
 }
 
-/// Default attendance flip: "Mark Absent" is primary; "Skip" is secondary.
+/// Default attendance flip: "Mark Absent" is the only change action —
+/// SRS Module 03 (survey Q17/Q21): there is no Skip button anywhere.
 class _DefaultAttendActions extends StatelessWidget {
   const _DefaultAttendActions({
     required this.onMarkAbsent,
-    required this.onMarkSkipped,
     required this.isDark,
   });
 
   final VoidCallback onMarkAbsent;
-  final VoidCallback onMarkSkipped;
   final bool isDark;
 
   @override
@@ -1011,18 +1012,6 @@ class _DefaultAttendActions extends StatelessWidget {
                     textStyle: AppTypography.labelLarge
                         .copyWith(fontWeight: FontWeight.w600),
                   ),
-                ),
-              ),
-              const SizedBox(width: AppConstants.space8),
-              Expanded(
-                child: OutlinedButton(
-                  onPressed: onMarkSkipped,
-                  style: OutlinedButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(vertical: 11),
-                    textStyle: AppTypography.labelLarge
-                        .copyWith(fontWeight: FontWeight.w600),
-                  ),
-                  child: const Text('Skip'),
                 ),
               ),
             ],
@@ -1193,16 +1182,7 @@ class _ChangeStatusSheet extends StatelessWidget {
             },
           ),
           const SizedBox(height: AppConstants.space8),
-          _SheetOption(
-            icon: Icons.remove_circle_rounded,
-            label: 'Skip',
-            color: AppColors.skipped,
-            onTap: () {
-              Navigator.of(context).pop();
-              onMark(AttendanceStatus.skipped);
-            },
-          ),
-          const SizedBox(height: AppConstants.space8),
+          // Q17/Q21: Skip removed — Present or Absent only.
           _SheetOption(
             icon: Icons.cancel_rounded,
             label: 'Mark Absent',

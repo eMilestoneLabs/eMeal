@@ -131,9 +131,7 @@ class ExportPreviewScreen extends StatelessWidget {
                 const SizedBox(width: 10),
                 _exportBtn(context, 'Excel', Icons.table_chart_rounded,
                     AppColors.secondary, exporting, () => onExport('xlsx')),
-                const SizedBox(width: 10),
-                _exportBtn(context, 'CSV', Icons.description_rounded,
-                    AppColors.info, exporting, () => onExport('csv')),
+                // RPT-001: CSV export removed — Excel + PDF only.
               ],
             ),
           ),

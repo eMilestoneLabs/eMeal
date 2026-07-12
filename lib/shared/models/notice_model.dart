@@ -15,6 +15,10 @@ class NoticeModel {
     this.linkType,
     this.targetUserId,
     required this.pinned,
+    this.imageUrl,
+    this.documentUrl,
+    this.documentName,
+    this.externalLinks = const [],
     required this.isActive,
     required this.isRead,
     required this.readCount,
@@ -46,6 +50,12 @@ class NoticeModel {
   /// visibility; kept here for cache round-trip fidelity.
   final String? targetUserId;
   final bool pinned;
+
+  /// SRS Module 03 NTC-003/012/013: optional rich content (MinIO URLs).
+  final String? imageUrl;
+  final String? documentUrl;
+  final String? documentName;
+  final List<String> externalLinks;
   final bool isActive;
 
   /// Whether the requesting user has read this notice.
@@ -79,6 +89,12 @@ class NoticeModel {
             : j['linkType'] as String?,
         targetUserId: j['targetUserId']?.toString(),
         pinned: j['pinned'] == true,
+        imageUrl: j['imageUrl']?.toString(),
+        documentUrl: j['documentUrl']?.toString(),
+        documentName: j['documentName']?.toString(),
+        externalLinks: (j['externalLinks'] as List<dynamic>? ?? const [])
+            .map((e) => e.toString())
+            .toList(),
         isActive: j['isActive'] != false,
         isRead: j['isRead'] == true,
         readCount: j['readCount'] is int
@@ -103,6 +119,10 @@ class NoticeModel {
         'linkType': linkType,
         'targetUserId': targetUserId,
         'pinned': pinned,
+        'imageUrl': imageUrl,
+        'documentUrl': documentUrl,
+        'documentName': documentName,
+        'externalLinks': externalLinks,
         'isActive': isActive,
         'isRead': isRead,
         'readCount': readCount,
@@ -123,6 +143,10 @@ class NoticeModel {
         linkType: linkType,
         targetUserId: targetUserId,
         pinned: pinned,
+        imageUrl: imageUrl,
+        documentUrl: documentUrl,
+        documentName: documentName,
+        externalLinks: externalLinks,
         isActive: isActive,
         isRead: isRead ?? this.isRead,
         readCount: readCount,

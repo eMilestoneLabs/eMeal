@@ -17,11 +17,16 @@ class CorrectionRepository {
       '${d.day.toString().padLeft(2, '0')}';
 
   /// Raise a correction request for a (meal, date) — FR-ACR-001.
+  ///
+  /// SRS Module 03 ATT-004/COR-006: [selections] carries the member's full
+  /// preference-group selection set (same JSON shape as normal marking) —
+  /// required when the correction targets Present on a preference-group meal.
   Future<Result<CorrectionRequestModel>> createRequest({
     required String mealId,
     required DateTime attendanceDate,
     required String requestType,
     String? requestedPreference,
+    List<Map<String, dynamic>>? selections,
     String? reason,
   }) async {
     final result = await DioApiService.instance.post<Map<String, dynamic>>(
@@ -32,6 +37,8 @@ class CorrectionRepository {
         'requestType': requestType,
         if (requestedPreference != null && requestedPreference.isNotEmpty)
           'requestedPreference': requestedPreference,
+        if (selections != null && selections.isNotEmpty)
+          'selections': selections,
         if (reason != null && reason.isNotEmpty) 'reason': reason,
       },
     );
@@ -79,13 +86,8 @@ class CorrectionRepository {
   Future<Result<CorrectionRequestModel>> cancel(String id, {String? note}) =>
       _action('$id/cancel', note);
 
-  /// Member CONFIRMS an admin-proposed increase (FR-OVR-020).
-  Future<Result<CorrectionRequestModel>> confirm(String id) =>
-      _action('$id/confirm', null);
-
-  /// Member DECLINES an admin-proposed increase (FR-OVR-020).
-  Future<Result<CorrectionRequestModel>> decline(String id, {String? note}) =>
-      _action('$id/decline', note);
+  // SRS Module 03 ATT-004: confirm/decline (FR-OVR-020 admin-proposed
+  // increases) were REMOVED with the admin override.
 
   Future<Result<CorrectionRequestModel>> _action(
       String path, String? note) async {

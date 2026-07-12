@@ -15,6 +15,7 @@ import 'package:smart_meal_management/shared/models/attendance_model.dart';
 import 'package:smart_meal_management/shared/models/group_model.dart';
 import 'package:smart_meal_management/shared/models/meal_model.dart';
 import 'package:smart_meal_management/shared/models/preference_group_model.dart';
+import 'package:smart_meal_management/shared/utils/verification_gate.dart';
 import 'package:smart_meal_management/shared/widgets/app_skeleton.dart';
 
 /// Student attendance screen — today's meals with per-meal action cards.
@@ -135,23 +136,31 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
     }
   }
 
-  void _mark(
+  Future<void> _mark(
     MealModel meal,
     AttendanceStatus status, {
     String? preference,
     List<PreferenceSelection>? selections,
-  }) {
+  }) async {
     final user = AuthProviderScope.of(context).currentUser;
     if (user == null) return;
     final dashProvider = StudentDashboardScope.maybeOf(context);
     if (dashProvider == null) return;
-    dashProvider.markStatus(
+    final ok = await dashProvider.markStatus(
       user: user,
       meal: meal,
       status: status,
       preference: preference,
       selections: selections,
     );
+    // SRS Module 03 ACC-005: unverified members get the guided verify flow.
+    if (!ok && mounted) {
+      await VerificationGate.handleMessage(
+        context,
+        dashProvider.actionError,
+        email: user.email,
+      );
+    }
   }
 
   @override
@@ -311,7 +320,14 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
                                 isWindowClosed:
                                     dashProvider.isWindowPast(meal),
                                 isVacationMode: isVacation,
-                                isDefaultAttendance: isDefaultAttend,
+                                // SRS Module 03 ATT-011: Personal
+                                // Auto-Attendance is SUSPENDED on
+                                // preference-required meals — those stay
+                                // manual (and auto-resume on the next
+                                // no-preference meal, ATT-012).
+                                isDefaultAttendance: isDefaultAttend &&
+                                    !prefsEnabled &&
+                                    meal.preferenceGroups.isEmpty,
                                 preferencesEnabled: prefsEnabled,
                                 enabledPreferences: enabledPrefs,
                                 onMark: (s, {String? preference}) =>

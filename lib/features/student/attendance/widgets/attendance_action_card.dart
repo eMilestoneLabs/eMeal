@@ -12,7 +12,10 @@ import 'package:smart_meal_management/shared/widgets/preference_group_selector.d
 /// Card for a single meal's attendance action (Attendance tab).
 ///
 /// Supports five states:
-/// 1. **Normal**: preference chips (if enabled) + Present / Skip / Absent
+/// 1. **Normal**: preference chips (if enabled) + Present / Absent
+///    (SRS Module 03 survey Q17/Q21: there is NO Skip button anywhere —
+///    Skip is an internal system status assigned at window close when no
+///    attendance was submitted; Absent is the member's deliberate choice)
 /// 2. **Default Attendance ON**: "Auto-marked Present"; primary = Mark Absent
 /// 3. **Vacation**: "Vacation Mode is ON"
 /// 4. **Window closed**: locked indicator
@@ -470,6 +473,7 @@ class _AttendanceActionCardState extends State<AttendanceActionCard> {
                   const SizedBox(height: AppConstants.space8),
                   Row(
                     children: [
+                      // Q17/Q21: no Skip button — Absent is the only opt-out.
                       Expanded(
                         child: OutlinedButton.icon(
                           onPressed: _canMark
@@ -487,21 +491,6 @@ class _AttendanceActionCardState extends State<AttendanceActionCard> {
                             textStyle: AppTypography.labelLarge
                                 .copyWith(fontWeight: FontWeight.w600),
                           ),
-                        ),
-                      ),
-                      const SizedBox(width: AppConstants.space8),
-                      Expanded(
-                        child: OutlinedButton(
-                          onPressed: _canMark
-                              ? () => _markWithPreference(AttendanceStatus.skipped)
-                              : null,
-                          style: OutlinedButton.styleFrom(
-                            padding:
-                                const EdgeInsets.symmetric(vertical: 10),
-                            textStyle: AppTypography.labelLarge
-                                .copyWith(fontWeight: FontWeight.w600),
-                          ),
-                          child: const Text('Skip'),
                         ),
                       ),
                     ],
@@ -547,22 +536,7 @@ class _AttendanceActionCardState extends State<AttendanceActionCard> {
                     ),
                   ),
                   const SizedBox(width: AppConstants.space8),
-                  Expanded(
-                    flex: 2,
-                    child: OutlinedButton(
-                      onPressed: _canMark
-                          ? () => _markWithPreference(AttendanceStatus.skipped)
-                          : null,
-                      style: OutlinedButton.styleFrom(
-                        padding:
-                            const EdgeInsets.symmetric(vertical: 10),
-                        textStyle: AppTypography.labelLarge
-                            .copyWith(fontWeight: FontWeight.w600),
-                      ),
-                      child: const Text('Skip'),
-                    ),
-                  ),
-                  const SizedBox(width: AppConstants.space8),
+                  // Q17/Q21: Skip button removed — Present or Absent only.
                   Expanded(
                     flex: 2,
                     child: OutlinedButton(
@@ -788,9 +762,7 @@ class _MarkedRow extends StatelessWidget {
             _sheetOption(context, Icons.check_circle_rounded, 'Mark Present',
                 AppColors.present, AttendanceStatus.present, isDark),
             const SizedBox(height: AppConstants.space8),
-            _sheetOption(context, Icons.remove_circle_rounded, 'Skip',
-                AppColors.skipped, AttendanceStatus.skipped, isDark),
-            const SizedBox(height: AppConstants.space8),
+            // Q17/Q21: Skip removed — Present or Absent only.
             _sheetOption(context, Icons.cancel_rounded, 'Mark Absent',
                 AppColors.absent, AttendanceStatus.absent, isDark),
             const SizedBox(height: AppConstants.space8),

@@ -3,27 +3,36 @@ import 'package:smart_meal_management/core/constants/app_constants.dart';
 import 'package:smart_meal_management/core/theme/app_colors.dart';
 import 'package:smart_meal_management/core/theme/app_typography.dart';
 import 'package:smart_meal_management/data/repositories/correction_repository.dart';
+import 'package:smart_meal_management/features/auth/providers/auth_provider.dart';
+import 'package:smart_meal_management/shared/utils/verification_gate.dart';
 import 'package:smart_meal_management/shared/models/correction_request_model.dart';
 import 'package:smart_meal_management/shared/models/meal_model.dart';
+import 'package:smart_meal_management/shared/models/preference_group_model.dart';
 import 'package:smart_meal_management/shared/models/result.dart';
+import 'package:smart_meal_management/shared/widgets/preference_group_selector.dart';
 
-/// Module 33 (ISSUE-17): bottom sheet to raise an Attendance Correction
-/// Request for a (meal, date) after the window closed.
+/// Module 33 (ISSUE-17) + SRS Module 03 ATT-004/COR-004/005/006: bottom sheet
+/// to raise an Attendance Correction Request for a meal AFTER its window
+/// closed, on the SAME calendar day only.
 ///
-/// Types offered:
-///   • I ate — mark me Present (claim_present → needs admin approval)
-///   • I didn't eat — mark me Absent (correct_to_absent → auto-approvable)
-///   • Mark as Skipped (correct_to_skip → auto-approvable)
+/// Types offered (COR-004 — Present or Absent only, Skip is never a target):
+///   • I ate — mark me Present (claim_present → admin approves/rejects)
+///   • I didn't eat — mark me Absent (correct_to_absent → admin approves/rejects)
 ///   • Fix my preference (fix_preference → billing-neutral, when options exist)
 ///
-/// Returns the created request (null when dismissed). The caller shows the
-/// outcome snackbar — an auto-approved request comes back status=approved.
+/// COR-006: when the meal has preference groups and the member requests
+/// Present, the ENTIRE preference selection must be completed again with the
+/// same validation as normal marking — Submit stays disabled until valid.
+/// The admin only approves or rejects; the system applies the submitted
+/// values automatically.
 Future<CorrectionRequestModel?> showCorrectionRequestSheet(
   BuildContext context, {
   required List<MealModel> meals,
   MealModel? initialMeal,
   DateTime? initialDate,
-  int maxAgeDays = 7,
+  // Kept for call-site compatibility; COR-005 makes corrections same-day only
+  // so the date is fixed and no longer pickable.
+  int maxAgeDays = 0,
 }) {
   if (meals.isEmpty && initialMeal == null) return Future.value(null);
   return showModalBottomSheet<CorrectionRequestModel>(
@@ -34,7 +43,6 @@ Future<CorrectionRequestModel?> showCorrectionRequestSheet(
       meals: meals.isEmpty ? [initialMeal!] : meals,
       initialMeal: initialMeal,
       initialDate: initialDate,
-      maxAgeDays: maxAgeDays,
     ),
   );
 }
@@ -42,7 +50,6 @@ Future<CorrectionRequestModel?> showCorrectionRequestSheet(
 class _CorrectionRequestSheet extends StatefulWidget {
   const _CorrectionRequestSheet({
     required this.meals,
-    required this.maxAgeDays,
     this.initialMeal,
     this.initialDate,
   });
@@ -50,7 +57,6 @@ class _CorrectionRequestSheet extends StatefulWidget {
   final List<MealModel> meals;
   final MealModel? initialMeal;
   final DateTime? initialDate;
-  final int maxAgeDays;
 
   @override
   State<_CorrectionRequestSheet> createState() =>
@@ -68,21 +74,23 @@ class _CorrectionRequestSheetState extends State<_CorrectionRequestSheet> {
   bool _submitting = false;
   String? _error;
 
+  // COR-006: preference-group selection state (claim_present on group meals).
+  List<PreferenceSelection> _selections = const [];
+  bool _selectionsComplete = true;
+
   @override
   void initState() {
     super.initState();
     _meal = widget.initialMeal ?? widget.meals.first;
-    // Default the correction date to the meal's ORG-timezone business date (the
-    // date the backend keyed the meal/attendance under), NOT the device date.
-    // A phone calendar that differs from the org date submitted a date the
-    // backend couldn't match, so the request was rejected — exactly the
-    // "closed attendance → can't request" symptom. Falls back to the device
-    // date only when orgDate is absent (e.g. a cache-painted meal). All of
-    // today's meals share the same org date, so this stays correct if the user
-    // switches meals inside the sheet.
+    // COR-005: corrections are same-calendar-day only. The date is the meal's
+    // ORG-timezone business date (the date the backend keyed attendance
+    // under), never the device date, and it is not user-pickable.
     final base =
         widget.initialDate ?? _parseOrgDate(_meal.orgDate) ?? DateTime.now();
     _date = DateTime(base.year, base.month, base.day);
+    // COR-006: a meal with REQUIRED preference groups starts incomplete until
+    // the selector reports every required group satisfied.
+    _selectionsComplete = !_meal.preferenceGroups.any((g) => g.required);
   }
 
   /// "YYYY-MM-DD" → local-midnight DateTime; null on missing/unparsable input.
@@ -101,23 +109,29 @@ class _CorrectionRequestSheetState extends State<_CorrectionRequestSheet> {
     super.dispose();
   }
 
-  Future<void> _pickDate() async {
-    final now = DateTime.now();
-    final picked = await showDatePicker(
-      context: context,
-      initialDate: _date,
-      firstDate: now.subtract(Duration(days: widget.maxAgeDays)),
-      lastDate: now,
-    );
-    if (picked != null) {
-      setState(() => _date = DateTime(picked.year, picked.month, picked.day));
-    }
+  bool get _needsGroupSelections =>
+      _type == 'claim_present' && _meal.preferenceGroups.isNotEmpty;
+
+  bool get _needsFlatPreference =>
+      _type == 'claim_present' &&
+      _meal.preferenceGroups.isEmpty &&
+      _meal.preferencesEnabled &&
+      _meal.enabledPreferences.isNotEmpty;
+
+  /// COR-006: Submit stays disabled until every mandatory selection is done —
+  /// exactly the same gate as normal attendance marking.
+  bool get _canSubmit {
+    if (_submitting) return false;
+    if (_type == 'fix_preference' && _preference == null) return false;
+    if (_needsGroupSelections && !_selectionsComplete) return false;
+    if (_needsFlatPreference && _preference == null) return false;
+    return true;
   }
 
   Future<void> _submit() async {
-    if (_submitting) return;
-    if (_type == 'fix_preference' && (_preference == null)) {
-      setState(() => _error = 'Choose the corrected preference first.');
+    if (!_canSubmit) {
+      setState(() =>
+          _error = 'Complete all required meal preference selections first.');
       return;
     }
     setState(() {
@@ -128,7 +142,12 @@ class _CorrectionRequestSheetState extends State<_CorrectionRequestSheet> {
       mealId: _meal.id,
       attendanceDate: _date,
       requestType: _type,
-      requestedPreference: _type == 'fix_preference' ? _preference : null,
+      requestedPreference: (_type == 'fix_preference' || _needsFlatPreference)
+          ? _preference
+          : null,
+      selections: _needsGroupSelections
+          ? _selections.map((s) => s.toJson()).toList()
+          : null,
       reason: _reasonCtrl.text.trim(),
     );
     if (!mounted) return;
@@ -136,6 +155,15 @@ class _CorrectionRequestSheetState extends State<_CorrectionRequestSheet> {
       case Ok(:final value):
         Navigator.of(context).pop(value);
       case Err(:final failure):
+        // SRS Module 03 ACC-005: unverified members get the guided verify
+        // flow instead of a dead-end inline error.
+        final email =
+            AuthProviderScope.of(context).currentUser?.email ?? '';
+        if (VerificationGate.isVerificationRequired(failure)) {
+          await VerificationGate.handle(context, failure, email: email);
+          if (mounted) Navigator.of(context).pop();
+          return;
+        }
         setState(() {
           _submitting = false;
           _error = failure.message;
@@ -178,13 +206,14 @@ class _CorrectionRequestSheetState extends State<_CorrectionRequestSheet> {
             const SizedBox(height: 4),
             Text(
               'An admin reviews your request. Your record (and bill) only '
-              'changes if it is approved.',
+              'changes if it is approved. Corrections are allowed for '
+              'today only — until 11:59 PM.',
               style: AppTypography.bodySmall
                   .copyWith(color: AppColors.textSecondary),
             ),
             const SizedBox(height: AppConstants.space16),
 
-            // ── Meal + date ────────────────────────────────────────────────
+            // ── Meal + date (COR-005: date fixed to today, not pickable) ────
             Row(
               children: [
                 Expanded(
@@ -207,27 +236,33 @@ class _CorrectionRequestSheetState extends State<_CorrectionRequestSheet> {
                         setState(() {
                           _meal = m.first;
                           _preference = null;
+                          _selections = const [];
+                          _selectionsComplete =
+                              !m.first.preferenceGroups.any((g) => g.required);
                         });
                       }
                     },
                   ),
                 ),
                 const SizedBox(width: 12),
-                OutlinedButton.icon(
-                  onPressed: _pickDate,
-                  icon: const Icon(Icons.event_rounded, size: 16),
+                Chip(
+                  avatar: const Icon(Icons.event_rounded, size: 16),
                   label: Text(
-                    '${_date.day.toString().padLeft(2, '0')}/${_date.month.toString().padLeft(2, '0')}',
+                    'Today · ${_date.day.toString().padLeft(2, '0')}/${_date.month.toString().padLeft(2, '0')}',
+                    style: AppTypography.labelSmall,
                   ),
                 ),
               ],
             ),
             const SizedBox(height: AppConstants.space12),
 
-            // ── Request type ───────────────────────────────────────────────
+            // ── Request type (COR-004: Present or Absent only) ─────────────
             RadioGroup<String>(
               groupValue: _type,
-              onChanged: (v) => setState(() => _type = v ?? _type),
+              onChanged: (v) => setState(() {
+                _type = v ?? _type;
+                _error = null;
+              }),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
@@ -236,17 +271,33 @@ class _CorrectionRequestSheetState extends State<_CorrectionRequestSheet> {
                   _typeTile(
                       'correct_to_absent',
                       'I didn’t eat — mark me Absent',
-                      'Applied immediately (reduces your bill).'),
-                  _typeTile('correct_to_skip', 'Mark as Skipped',
-                      'Applied immediately (no charge).'),
-                  if (prefs.isNotEmpty)
+                      'Needs admin approval; nothing is charged if approved.'),
+                  if (prefs.isNotEmpty || _meal.preferenceGroups.isNotEmpty)
                     _typeTile('fix_preference', 'Fix my preference',
                         'Billing-neutral; corrects the stored choice.'),
                 ],
               ),
             ),
 
-            if (_type == 'fix_preference' && prefs.isNotEmpty) ...[
+            // ── COR-006: full preference selection, same rules as marking ──
+            if (_needsGroupSelections) ...[
+              const SizedBox(height: AppConstants.space8),
+              Text('Meal preferences (required)',
+                  style: AppTypography.labelMedium
+                      .copyWith(fontWeight: FontWeight.w700)),
+              const SizedBox(height: 4),
+              PreferenceGroupSelector(
+                groups: _meal.preferenceGroups,
+                onChanged: (selections, totalDelta, complete) {
+                  setState(() {
+                    _selections = selections;
+                    _selectionsComplete = complete;
+                  });
+                },
+              ),
+            ],
+            if ((_needsFlatPreference || _type == 'fix_preference') &&
+                prefs.isNotEmpty) ...[
               const SizedBox(height: AppConstants.space8),
               Wrap(
                 spacing: 8,
@@ -283,7 +334,7 @@ class _CorrectionRequestSheetState extends State<_CorrectionRequestSheet> {
             SizedBox(
               width: double.infinity,
               child: FilledButton(
-                onPressed: _submitting ? null : _submit,
+                onPressed: _canSubmit ? _submit : null,
                 child: _submitting
                     ? const SizedBox(
                         width: 18,

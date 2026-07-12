@@ -14,7 +14,7 @@ class ExportProvider extends ChangeNotifier {
 
   bool _isExporting = false;
   String? _error;
-  String _exportFormat = 'pdf'; // 'pdf' | 'xlsx' | 'csv'
+  String _exportFormat = 'pdf'; // 'pdf' | 'xlsx' (RPT-001: csv removed)
   bool _exportSuccess = false;
 
   // ── Getters ────────────────────────────────────────────────────────────────
@@ -28,8 +28,9 @@ class ExportProvider extends ChangeNotifier {
   // ── Actions ────────────────────────────────────────────────────────────────
 
   void setFormat(String format) {
-    assert(format == 'pdf' || format == 'xlsx' || format == 'csv',
-        'Format must be pdf, xlsx or csv');
+    // RPT-001: CSV export removed — Excel + PDF only.
+    assert(format == 'pdf' || format == 'xlsx',
+        'Format must be pdf or xlsx');
     if (_exportFormat == format) return;
     _exportFormat = format;
     notifyListeners();
@@ -49,6 +50,8 @@ class ExportProvider extends ChangeNotifier {
     // Guests + adjustments per member so exported summaries reconcile with
     // the billing screens (net = meals + guests + adjustments).
     Map<String, MemberExportFinancials> financialsByUser = const {},
+    // SRS Module 03 (survey Q17/Q22): group Bill-Skip policy.
+    bool billSkippedMeals = false,
   }) async {
     if (_isExporting) return;
     _isExporting = true;
@@ -69,19 +72,9 @@ class ExportProvider extends ChangeNotifier {
             dateRangeLabel: dateRangeLabel,
             vacationUserIds: vacationUserIds,
             financialsByUser: financialsByUser,
+            billSkippedMeals: billSkippedMeals,
           );
-        case 'csv':
-          await _service.exportCsv(
-            records: records,
-            meals: meals,
-            groupName: groupName,
-            pricingEnabled: pricingEnabled,
-            from: from,
-            to: to,
-            dateRangeLabel: dateRangeLabel,
-            vacationUserIds: vacationUserIds,
-            financialsByUser: financialsByUser,
-          );
+        // RPT-001: CSV export removed — Excel + PDF only.
         default: // 'xlsx'
           await _service.exportXlsx(
             records: records,
@@ -93,6 +86,7 @@ class ExportProvider extends ChangeNotifier {
             dateRangeLabel: dateRangeLabel,
             vacationUserIds: vacationUserIds,
             financialsByUser: financialsByUser,
+            billSkippedMeals: billSkippedMeals,
           );
       }
       _exportSuccess = true;

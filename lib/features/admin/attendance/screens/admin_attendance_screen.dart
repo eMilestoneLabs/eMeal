@@ -156,29 +156,41 @@ class _AdminAttendanceScreenState extends State<AdminAttendanceScreen> {
     }
   }
 
-  /// Shows the admin attendance override bottom sheet for a single record.
-  ///
-  /// Admin can change any member's status regardless of timing windows.
-  Future<void> _showOverrideSheet(AttendanceModel record) async {
-    final selected = await showModalBottomSheet<AttendanceStatus>(
+  /// SRS Module 03 ATT-004: attendance ownership belongs to the member —
+  /// admins can no longer change a member's record. Tapping a record explains
+  /// the Correction Request workflow and deep-links to the review queue.
+  Future<void> _showOwnershipInfo(AttendanceModel record) async {
+    final name = record.mealName ?? 'this meal';
+    final goToQueue = await showDialog<bool>(
       context: context,
-      backgroundColor: Colors.transparent,
-      builder: (ctx) => _AttendanceOverrideSheet(record: record),
-    );
-    if (selected == null || !mounted) return;
-    final ok = await _provider.markAttendance(
-      recordId: record.id,
-      newStatus: selected,
-    );
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(ok
-            ? 'Attendance updated to ${selected.name}'
-            : 'Failed to update attendance'),
-        duration: const Duration(seconds: 2),
+      builder: (ctx) => AlertDialog(
+        title: const Text('Attendance belongs to the member'),
+        content: Text(
+          'Admins cannot mark or edit member attendance for $name. '
+          'If a change is needed, the member submits an Attendance '
+          'Correction Request (Present or Absent + their meal preferences) '
+          'and you approve or reject it — the system applies the change '
+          'automatically on approval.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Close'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Review corrections'),
+          ),
+        ],
       ),
     );
+    if (goToQueue == true && mounted) {
+      await Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => const CorrectionRequestsScreen(),
+        ),
+      );
+    }
   }
 
   /// Module 22 (Pass 9): hosted-guest management for the selected group+date —
@@ -419,7 +431,7 @@ class _AdminAttendanceScreenState extends State<AdminAttendanceScreen> {
                                   final record = _provider.filteredRecords[i];
                                   return MemberAttendanceRow(
                                     record: record,
-                                    onTap: () => _showOverrideSheet(record),
+                                    onTap: () => _showOwnershipInfo(record),
                                   );
                                 },
                               ),
@@ -595,116 +607,8 @@ class _StatBadge extends StatelessWidget {
   }
 }
 
-// ── Attendance override bottom sheet ───────────────────────────────────────────
-
-/// Admin override bottom sheet — lets admin set any attendance status for a
-/// member, bypassing the normal timing window restriction.
-class _AttendanceOverrideSheet extends StatelessWidget {
-  const _AttendanceOverrideSheet({required this.record});
-  final AttendanceModel record;
-
-  static const _options = [
-    (AttendanceStatus.present, 'Mark Present', Icons.check_circle_rounded, AppColors.present),
-    (AttendanceStatus.absent,  'Mark Absent',  Icons.cancel_rounded,       AppColors.absent),
-    (AttendanceStatus.skipped, 'Mark Skipped', Icons.remove_circle_outline_rounded, AppColors.skipped),
-  ];
-
-  @override
-  Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final name = record.mealName ?? record.mealId;
-
-    return Container(
-      decoration: BoxDecoration(
-        color: isDark ? AppColors.surfaceDark : AppColors.surface,
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      padding: const EdgeInsets.fromLTRB(20, 12, 20, 32),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Handle
-          Center(
-            child: Container(
-              width: 40, height: 4,
-              decoration: BoxDecoration(
-                color: isDark ? AppColors.borderDark : AppColors.border,
-                borderRadius: BorderRadius.circular(2),
-              ),
-            ),
-          ),
-          const SizedBox(height: 16),
-          Text('Override Attendance',
-              style: AppTypography.titleMedium.copyWith(fontWeight: FontWeight.w700)),
-          const SizedBox(height: 4),
-          Text(
-            'Member · $name',
-            style: AppTypography.bodySmall.copyWith(color: AppColors.textSecondary),
-          ),
-          const SizedBox(height: 4),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-            decoration: BoxDecoration(
-              color: AppColors.warning.withValues(alpha: 0.12),
-              borderRadius: BorderRadius.circular(6),
-            ),
-            child: Text(
-              'Admin override — ignores attendance window',
-              style: AppTypography.labelSmall.copyWith(color: AppColors.warning),
-            ),
-          ),
-          const SizedBox(height: 20),
-          ..._options.map((opt) {
-            final (status, label, icon, color) = opt;
-            final isCurrent = record.status == status;
-            return Padding(
-              padding: const EdgeInsets.only(bottom: 10),
-              child: Material(
-                color: isCurrent
-                    ? color.withValues(alpha: 0.08)
-                    : (isDark ? AppColors.backgroundDark : AppColors.background),
-                borderRadius: BorderRadius.circular(12),
-                child: InkWell(
-                  borderRadius: BorderRadius.circular(12),
-                  onTap: () => Navigator.pop(context, status),
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-                    child: Row(
-                      children: [
-                        Icon(icon, color: color, size: 22),
-                        const SizedBox(width: 14),
-                        Expanded(
-                          child: Text(label,
-                              style: AppTypography.bodyMedium.copyWith(
-                                color: isCurrent ? color : (isDark ? AppColors.textPrimaryDark : AppColors.textPrimary),
-                                fontWeight: isCurrent ? FontWeight.w700 : FontWeight.w500,
-                              )),
-                        ),
-                        if (isCurrent)
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                            decoration: BoxDecoration(
-                              color: color.withValues(alpha: 0.15),
-                              borderRadius: BorderRadius.circular(6),
-                            ),
-                            child: Text('Current',
-                                style: AppTypography.labelSmall.copyWith(color: color)),
-                          ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-            );
-          }),
-          const SizedBox(height: 8),
-        ],
-      ),
-    );
-  }
-}
-
+// SRS Module 03 ATT-004: the admin attendance-override sheet was REMOVED —
+// members own their attendance; changes flow through Correction Requests.
 
 // ── Issue 5: admin self-attendance sheet ────────────────────────────────────
 
@@ -787,10 +691,10 @@ class _MyAttendanceSheetState extends State<_MyAttendanceSheet> {
       _savingStatus = status;
     });
     final now = DateTime.now();
-    // Use the meal's ORG business date, not the device date: the backend admin
-    // override rejects a date ahead of org-today as "future" (422). A wrong /
-    // ahead phone clock would otherwise block the admin from marking. Falls back
-    // to the device date when orgDate is absent (legacy payloads).
+    // Use the meal's ORG business date, not the device date (a wrong/ahead
+    // phone clock would otherwise block the admin from marking). ATT-004: this
+    // is the admin's OWN attendance — the server delegates self-marks to the
+    // normal member path, so window rules apply like any member.
     final orgDate = meal.orgDate;
     final markDate = (orgDate != null && orgDate.length >= 10)
         ? (DateTime.tryParse(orgDate) ?? DateTime(now.year, now.month, now.day))
@@ -1051,15 +955,7 @@ class _MySelfMealCard extends StatelessWidget {
                     onMark(AttendanceStatus.present, prefsOn ? selectedPref : null),
               ),
               const SizedBox(width: 8),
-              _SelfBtn(
-                label: 'Skip',
-                selected: status == AttendanceStatus.skipped,
-                color: AppColors.warning,
-                loading: savingStatus == AttendanceStatus.skipped,
-                enabled: !busy,
-                onTap: () => onMark(AttendanceStatus.skipped, null),
-              ),
-              const SizedBox(width: 8),
+              // Q17/Q21: Skip button removed — Present or Absent only.
               _SelfBtn(
                 label: 'Absent',
                 selected: status == AttendanceStatus.absent,

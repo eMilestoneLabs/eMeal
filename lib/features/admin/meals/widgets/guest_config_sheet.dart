@@ -81,6 +81,7 @@ class _GuestConfigSheetState extends State<_GuestConfigSheet> {
       guestAdultPrice: _int(_adultPrice),
       guestChildPrice: _int(_childPrice),
       guestSurcharge: _int(_surcharge),
+      guestSurchargeType: _cfg.guestSurchargeType,
       guestRequiresApproval: _cfg.guestRequiresApproval,
       guestCutoffMinutesBeforeClose:
           (_int(_cutoff) ?? _cfg.guestCutoffMinutesBeforeClose).clamp(0, 720),
@@ -246,12 +247,39 @@ class _GuestConfigSheetState extends State<_GuestConfigSheet> {
                           ),
                         ],
                       ),
-                    if (_cfg.guestPricingMode == 'flatSurcharge')
+                    if (_cfg.guestPricingMode == 'flatSurcharge') ...[
+                      // GST-011: the surcharge is Fixed ₹ OR a percentage of
+                      // the final effective member price — never both.
+                      DropdownButtonFormField<String>(
+                        initialValue: _cfg.guestSurchargeType,
+                        decoration: const InputDecoration(
+                          labelText: 'Surcharge type',
+                          isDense: true,
+                        ),
+                        items: const [
+                          DropdownMenuItem(
+                            value: 'fixed',
+                            child: Text('Fixed amount (₹)'),
+                          ),
+                          DropdownMenuItem(
+                            value: 'percent',
+                            child: Text('Percentage of member price (%)'),
+                          ),
+                        ],
+                        onChanged: (v) => setState(
+                            () => _cfg = _cfg.copyWith(guestSurchargeType: v)),
+                      ),
+                      const SizedBox(height: AppConstants.space12),
                       _numField(
                         _surcharge,
-                        label: 'Surcharge per guest (₹)',
-                        hint: 'Required',
+                        label: _cfg.guestSurchargeType == 'percent'
+                            ? 'Surcharge per guest (%)'
+                            : 'Surcharge per guest (₹)',
+                        hint: _cfg.guestSurchargeType == 'percent'
+                            ? '0–100, applied on final member price'
+                            : 'Required',
                       ),
+                    ],
                   ],
                   const SizedBox(height: AppConstants.space8),
                   _toggle(

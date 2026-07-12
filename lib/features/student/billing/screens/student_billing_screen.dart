@@ -56,6 +56,8 @@ class _StudentBillingScreenState extends State<StudentBillingScreen> {
   // backend engine as the admin dashboard, so both sides show one number.
   MyBilling? _serverBilling;
   bool _pricingEnabled = false;
+  // SRS Module 03 (survey Q17/Q22): group Bill-Skip policy.
+  bool _billSkippedMeals = false;
   String _groupName = '';
 
   // Cached for export (same inputs the on-screen rows were built from).
@@ -148,6 +150,7 @@ class _StudentBillingScreenState extends State<StudentBillingScreen> {
     if (todayRes case Ok(:final value)) todayMeals = value;
     if (groupRes case Ok(:final value)) {
       _pricingEnabled = value.mealConfig.mealPricingEnabled;
+      _billSkippedMeals = value.mealConfig.billSkippedMeals;
       _groupName = value.name;
     }
 
@@ -162,7 +165,8 @@ class _StudentBillingScreenState extends State<StudentBillingScreen> {
       todayMeals: todayMeals,
       vacationUserIds: vacationIds,
     ).where((r) => r.userId == _userId).toList();
-    final summaries = BillingService.summarize(rows);
+    final summaries =
+        BillingService.summarize(rows, billSkippedMeals: _billSkippedMeals);
 
     // Issue 5: pull the authoritative net from the shared billing engine. This
     // is the ONLY number that includes hosted-guest charges + admin
@@ -269,20 +273,9 @@ class _StudentBillingScreenState extends State<StudentBillingScreen> {
             todayMeals: _todayMeals,
             vacationUserIds: _vacationUserIds,
             financialsByUser: financials,
+            billSkippedMeals: _billSkippedMeals,
           );
-        case 'csv':
-          await svc.exportCsv(
-            records: _records,
-            meals: _meals,
-            groupName: name,
-            pricingEnabled: _pricingEnabled,
-            from: _from,
-            to: _to,
-            dateRangeLabel: label,
-            todayMeals: _todayMeals,
-            vacationUserIds: _vacationUserIds,
-            financialsByUser: financials,
-          );
+        // RPT-001: CSV export removed — Excel + PDF only.
         default:
           await svc.exportXlsx(
             records: _records,
@@ -295,6 +288,7 @@ class _StudentBillingScreenState extends State<StudentBillingScreen> {
             todayMeals: _todayMeals,
             vacationUserIds: _vacationUserIds,
             financialsByUser: financials,
+            billSkippedMeals: _billSkippedMeals,
           );
       }
       if (mounted) {
@@ -412,7 +406,7 @@ class _StudentBillingScreenState extends State<StudentBillingScreen> {
               itemBuilder: (_) => const [
                 PopupMenuItem(value: 'pdf', child: Text('Export PDF')),
                 PopupMenuItem(value: 'xlsx', child: Text('Export Excel')),
-                PopupMenuItem(value: 'csv', child: Text('Export CSV')),
+                // RPT-001: CSV export removed — Excel + PDF only.
               ],
             ),
         ],

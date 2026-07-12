@@ -156,10 +156,10 @@ class EventAdminSettingsTab extends StatelessWidget {
               _SettingsTile(
                 icon: Icons.table_chart_rounded,
                 iconColor: AppColors.present,
-                title: 'Export Guest List — CSV',
-                subtitle: 'Download raw attendance data as a CSV spreadsheet',
+                title: 'Export Guest List — Excel',
+                subtitle: 'Download attendance data as an Excel spreadsheet',
                 isDark: isDark,
-                onTap: () => _exportCsv(context, provider),
+                onTap: () => _exportXlsx(context, provider),
               ),
               const SizedBox(height: 24),
 
@@ -278,20 +278,21 @@ class EventAdminSettingsTab extends StatelessWidget {
     }
   }
 
-  Future<void> _exportCsv(
+  // SRS Module 03 RPT-001: CSV removed — the spreadsheet export is Excel.
+  Future<void> _exportXlsx(
       BuildContext context, EventAdminProvider provider) async {
     if (provider.event == null) return;
     final messenger = ScaffoldMessenger.of(context);
     final event = provider.event!;
     try {
-      await ExportService.instance.exportEventGuestsCsv(
+      await ExportService.instance.exportEventGuestsXlsx(
         parties: provider.parties,
         eventName: event.name,
         eventDateLabel: event.formattedDate,
       );
       if (!context.mounted) return;
       messenger.showSnackBar(const SnackBar(
-        content: Text('CSV exported successfully'),
+        content: Text('Excel exported successfully'),
       ));
     } catch (e) {
       if (!context.mounted) return;

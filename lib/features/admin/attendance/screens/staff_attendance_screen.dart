@@ -194,10 +194,10 @@ class _StaffAttendanceScreenState extends State<StaffAttendanceScreen> {
             preference: preference,
           );
 
-    // Issue 5: admins mark their OWN attendance through the override path, so
-    // it works after the window has closed too — the same allowance the spec
-    // grants admins. The endpoint snapshots the effective price and bypasses
-    // the window + vacation checks; it is org/role-scoped server-side.
+    // SRS Module 03 ATT-004: the endpoint now treats an admin marking their
+    // OWN attendance as member behaviour — the server delegates to the normal
+    // marking path, so windows/vacation rules apply to admins exactly like
+    // every member. After close, admins use Correction Requests too.
     final res = await _attendanceRepo.adminOverride(record: record);
     if (!mounted) return;
     switch (res) {
@@ -452,15 +452,7 @@ class _StaffAttendanceScreenState extends State<StaffAttendanceScreen> {
                     preference: prefsOn ? selectedPref : null),
               ),
               const SizedBox(width: 8),
-              _actionButton(
-                'Skip',
-                AppColors.skipped,
-                status == AttendanceStatus.skipped,
-                loading: busy && _busyStatus == AttendanceStatus.skipped,
-                enabled: !busy,
-                onTap: () => _mark(meal, AttendanceStatus.skipped),
-              ),
-              const SizedBox(width: 8),
+              // Q17/Q21: Skip button removed — Present or Absent only.
               _actionButton(
                 'Absent',
                 AppColors.absent,

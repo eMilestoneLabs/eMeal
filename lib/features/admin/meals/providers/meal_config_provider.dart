@@ -12,7 +12,6 @@ import 'package:smart_meal_management/shared/models/meal_schedule_model.dart';
 import 'package:smart_meal_management/shared/models/result.dart';
 import 'package:smart_meal_management/data/services/image_cache_seeder.dart';
 import 'package:smart_meal_management/data/services/response_cache_service.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
 /// Default preference tags used when enabling preferences globally.
 /// Mirrors the same constant in [MealConfigForm] to keep them in sync.
@@ -54,8 +53,6 @@ class MealConfigProvider extends ChangeNotifier {
   bool _preferencesEnabled = false;
   // Additive: per-group meal pricing toggle.
   bool _mealPricingEnabled = false;
-  // Enhancement 3: per-group 'Continue Recurring Weekly Menu' toggle.
-  bool _autoContinueLastWeek = false;
 
   // ── Getters ───────────────────────────────────────────────────────────────
 
@@ -69,7 +66,6 @@ class MealConfigProvider extends ChangeNotifier {
   bool get mealsEnabled => _mealsEnabled;
   bool get preferencesEnabled => _preferencesEnabled;
   bool get mealPricingEnabled => _mealPricingEnabled;
-  bool get autoContinueLastWeek => _autoContinueLastWeek;
 
   /// SRS FR-TRUST-001 (Pass 7): true when the group runs the opt-out trust
   /// model (unmarked members auto-Present at window close). Read straight off
@@ -147,9 +143,9 @@ class MealConfigProvider extends ChangeNotifier {
   ///
   /// Order of operations is chosen so draft auto-population stays correct:
   /// 1. LOCAL, awaited (all ~ms): cached groups + selection resolve (honouring
-  ///    [preferredGroupId] from Meal Config) + cached meals + recurring flag —
-  ///    so [_meals] and [_autoContinueLastWeek] are populated BEFORE any
-  ///    schedule response can reach [_ensureWeekdaysPopulated].
+  ///    [preferredGroupId] from Meal Config) + cached meals — so [_meals] is
+  ///    populated BEFORE any schedule response can reach
+  ///    [_ensureWeekdaysPopulated].
   /// 2. PARALLEL network: loadGroups (refreshes groups + selected meals) and
   ///    loadSchedule for the resolved group ride the same wave.
   /// 3. RECONCILE: if the network moved the selection (deleted group /
@@ -186,7 +182,6 @@ class MealConfigProvider extends ChangeNotifier {
             _mealsCacheKey(organizationId, sel.id), MealModel.fromJson,
             maxAge: const Duration(hours: 12));
       }
-      await _loadRecurringFlag(sel.id); // local prefs, ~ms
     }
     notifyListeners();
 
@@ -236,7 +231,6 @@ class MealConfigProvider extends ChangeNotifier {
       organizationId: organizationId,
       groupId: group.id,
     );
-    await _loadRecurringFlag(group.id);
   }
 
   Future<void> _loadForGroup(
@@ -251,7 +245,6 @@ class MealConfigProvider extends ChangeNotifier {
       organizationId: organizationId,
       groupId: group.id,
     );
-    await _loadRecurringFlag(group.id);
   }
 
   /// Per-org, per-group cache key for the configured meals list.
@@ -337,101 +330,15 @@ class MealConfigProvider extends ChangeNotifier {
     final allEmpty =
         sched.days.isEmpty || sched.days.every((d) => d.meals.isEmpty);
     if (!allEmpty) return;
-    // Enhancement 3: when recurring is ON and we cached the last published
-    // week's per-day config, carry it forward; otherwise default-populate (#2).
-    if (_autoContinueLastWeek && await _restoreRecurringTemplate(groupId)) {
-      return;
-    }
-    // copyFromPreviousWeek builds all 7 days with every active meal enabled.
-    copyFromPreviousWeek();
+    // SRS Module 03 SCH-011/012: the recurring toggle + its cached template
+    // were removed — server-side auto-continuation keeps serving the last
+    // PUBLISHED schedule; this only default-populates a brand-new empty draft.
+    _defaultPopulateWeek();
   }
 
-  // ── Enhancement 3: Continue Recurring Weekly Menu (frontend MVP) ───────────
-
-  static String _recurringFlagKey(String groupId) => 'meal_recurring_$groupId';
-  static String _recurringTemplateKey(String groupId) =>
-      'meal_recurring_template_$groupId';
-
-  Future<void> _loadRecurringFlag(String groupId) async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      _autoContinueLastWeek = prefs.getBool(_recurringFlagKey(groupId)) ?? false;
-    } catch (_) {
-      _autoContinueLastWeek = false;
-    }
-    notifyListeners();
-  }
-
-  /// Enables/disables 'Continue Recurring Weekly Menu' for [groupId] and
-  /// persists it. When turned ON it immediately carries the most-recent
-  /// per-day config into the current EMPTY draft.
-  Future<void> setAutoContinueLastWeek(
-    bool value, {
-    required String groupId,
-  }) async {
-    _autoContinueLastWeek = value;
-    notifyListeners();
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setBool(_recurringFlagKey(groupId), value);
-    } catch (_) {}
-    final sched = _weekSchedule;
-    final emptyDraft = sched != null &&
-        !sched.isPublished &&
-        _meals.any((m) => m.isActive) &&
-        (sched.days.isEmpty || sched.days.every((d) => d.meals.isEmpty));
-    if (value && emptyDraft) {
-      if (!await _restoreRecurringTemplate(groupId)) {
-        copyFromPreviousWeek();
-      }
-    }
-  }
-
-  /// Caches a published schedule so recurring can carry it forward later.
-  Future<void> _saveRecurringTemplate(
-    String groupId,
-    MealScheduleModel schedule,
-  ) async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setString(
-        _recurringTemplateKey(groupId),
-        jsonEncode(schedule.toJson()),
-      );
-    } catch (_) {}
-  }
-
-  /// Restores the cached recurring template into the current (empty) draft.
-  /// Returns true when a non-empty template was applied.
-  Future<bool> _restoreRecurringTemplate(String groupId) async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      final raw = prefs.getString(_recurringTemplateKey(groupId));
-      if (raw == null || raw.isEmpty) return false;
-      final tmpl = MealScheduleModel.fromJson(
-        jsonDecode(raw) as Map<String, dynamic>,
-      );
-      if (tmpl.days.isEmpty || tmpl.days.every((d) => d.meals.isEmpty)) {
-        return false;
-      }
-      final cur = _weekSchedule;
-      if (cur == null) return false;
-      // Carry per-day config forward as a NEW DRAFT for the current week.
-      _weekSchedule = MealScheduleModel(
-        id: cur.id,
-        groupId: cur.groupId,
-        organizationId: cur.organizationId,
-        days: tmpl.days,
-        isPublished: false,
-        publishedAt: cur.publishedAt,
-        createdAt: cur.createdAt,
-      );
-      notifyListeners();
-      return true;
-    } catch (_) {
-      return false;
-    }
-  }
+  // SRS Module 03 SCH-011/012: the "Continue Recurring Weekly Menu" toggle,
+  // its SharedPreferences flag and cached-template machinery were permanently
+  // REMOVED — auto-continuation is server-side, always on, with no toggle.
 
   // ── Meal CRUD ─────────────────────────────────────────────────────────────
 
@@ -699,6 +606,10 @@ class MealConfigProvider extends ChangeNotifier {
     switch (result) {
       case Ok(:final value):
         _selectedGroup = value;
+        // SRS Module 03 ATT-007: the server auto-disables Meal Preferences
+        // when Auto-Present is enabled — mirror the authoritative state so
+        // the Preferences toggle never shows a stale ON.
+        _preferencesEnabled = value.mealConfig.preferencesEnabled;
         _isSaving = false;
         notifyListeners();
         return true;
@@ -735,6 +646,42 @@ class MealConfigProvider extends ChangeNotifier {
       case Ok(:final value):
         _selectedGroup = value;
         _mealPricingEnabled = enabled;
+        _isSaving = false;
+        notifyListeners();
+        return true;
+      case Err(:final failure):
+        _error = failure.message;
+        _isSaving = false;
+        notifyListeners();
+        return false;
+    }
+  }
+
+  /// SRS Module 03 (survey Q17/Q22): "Bill Skip" policy — when ON,
+  /// member-chosen Absent and system-generated Skip are billed at the final
+  /// scheduled price. Kitchen counts stay Present-only.
+  Future<bool> toggleBillSkippedMeals({
+    required String organizationId,
+    required String groupId,
+    required bool enabled,
+  }) async {
+    if (_selectedGroup == null) return false;
+    _isSaving = true;
+    notifyListeners();
+
+    final updatedConfig = _selectedGroup!.mealConfig.copyWith(
+      billSkippedMeals: enabled,
+    );
+
+    final result = await _groupRepo.updateGroup(
+      organizationId: organizationId,
+      groupId: groupId,
+      mealConfig: updatedConfig,
+    );
+
+    switch (result) {
+      case Ok(:final value):
+        _selectedGroup = value;
         _isSaving = false;
         notifyListeners();
         return true;
@@ -949,11 +896,6 @@ class MealConfigProvider extends ChangeNotifier {
     switch (result) {
       case Ok(:final value):
         _weekSchedule = value;
-        // Enhancement 3: remember this published week so recurring can carry
-        // its per-day config forward into the next empty week.
-        if (_autoContinueLastWeek) {
-          await _saveRecurringTemplate(groupId, value);
-        }
         _isSaving = false;
         notifyListeners();
         return true;
@@ -1047,10 +989,10 @@ class MealConfigProvider extends ChangeNotifier {
     return 24 * 60;
   }
 
-  /// Copies the current week's schedule to represent "previous week" as a
-  /// convenience — effectively resets all days to have all active meals enabled.
-  /// On the backend this would fetch the previous ISO-week's published schedule.
-  void copyFromPreviousWeek() {
+  /// Default-populates an EMPTY draft: every active meal enabled on every day
+  /// with its template menu items. (SCH-012 note: this is NOT the removed
+  /// "Copy from previous week" action — it only seeds a brand-new draft.)
+  void _defaultPopulateWeek() {
     if (_weekSchedule == null || _meals.isEmpty) return;
 
     final allDays = DayOfWeek.values.map((day) {

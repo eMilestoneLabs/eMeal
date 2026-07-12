@@ -1334,7 +1334,8 @@ class _ExportSheetState extends State<_ExportSheet> {
           eventDateLabel: eventDateLabel,
         );
       } else {
-        await ExportService.instance.exportEventGuestsCsv(
+        // SRS Module 03 RPT-001: CSV removed — spreadsheet export is Excel.
+        await ExportService.instance.exportEventGuestsXlsx(
           parties: provider.parties,
           eventName: eventName,
           eventDateLabel: eventDateLabel,
@@ -1351,7 +1352,7 @@ class _ExportSheetState extends State<_ExportSheet> {
       _exportingExcel = false;
     });
 
-    final format = isPdf ? 'PDF' : 'CSV';
+    final format = isPdf ? 'PDF' : 'Excel';
     final snackColor = isPdf ? AppColors.error : AppColors.present;
 
     Navigator.pop(context);

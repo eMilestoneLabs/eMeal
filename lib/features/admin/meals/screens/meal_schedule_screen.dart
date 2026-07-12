@@ -132,59 +132,8 @@ class _MealScheduleScreenState extends State<MealScheduleScreen>
     await _provider.loadSchedule(organizationId: orgId, groupId: group.id);
   }
 
-  Future<void> _copyFromPreviousWeek() async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Copy from previous week?'),
-        content: const Text(
-          'All active meals will be enabled on every day, each with its '
-          'template menu items.  You can then edit each day independently.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(false),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(ctx).pop(true),
-            child: const Text('Copy'),
-          ),
-        ],
-      ),
-    );
-    if (confirmed == true && mounted) {
-      _provider.copyFromPreviousWeek();
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Schedule copied — edit each day independently'),
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
-    }
-  }
-
-  /// Enhancement 3: toggle 'Continue Recurring Weekly Menu' for the selected
-  /// group. When ON, an empty week auto-fills from the last published week.
-  Future<void> _toggleRecurring() async {
-    final g = _provider.selectedGroup;
-    if (g == null) return;
-    final next = !_provider.autoContinueLastWeek;
-    await _provider.setAutoContinueLastWeek(next, groupId: g.id);
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            next
-                ? 'Recurring weekly menu ON — an empty week auto-fills from the last published week'
-                : 'Recurring weekly menu OFF',
-          ),
-          behavior: SnackBarBehavior.floating,
-          backgroundColor: next ? AppColors.present : null,
-        ),
-      );
-    }
-  }
+  // SRS Module 03 SCH-011/012: _copyFromPreviousWeek and _toggleRecurring
+  // were permanently REMOVED — auto-continuation replaces both.
 
   Future<void> _publishSchedule() async {
     if (_provider.selectedGroup == null) return;
@@ -441,41 +390,10 @@ class _MealScheduleScreenState extends State<MealScheduleScreen>
             PopupMenuButton<_ScheduleAction>(
               icon: const Icon(Icons.more_vert_rounded),
               itemBuilder: (_) => [
-                if (!widget.dayWiseMode)
-                  const PopupMenuItem(
-                    value: _ScheduleAction.copyPrevious,
-                    child: Row(
-                      children: [
-                        Icon(Icons.copy_all_rounded, size: 18),
-                        SizedBox(width: 10),
-                        Text('Copy from previous week'),
-                      ],
-                    ),
-                  ),
-                if (!widget.dayWiseMode)
-                  PopupMenuItem(
-                    value: _ScheduleAction.toggleRecurring,
-                    child: Row(
-                      children: [
-                        Icon(
-                          _provider.autoContinueLastWeek
-                              ? Icons.event_repeat_rounded
-                              : Icons.event_repeat_outlined,
-                          size: 18,
-                          color: _provider.autoContinueLastWeek
-                              ? AppColors.present
-                              : null,
-                        ),
-                        const SizedBox(width: 10),
-                        const Expanded(
-                          child: Text('Continue Recurring Weekly Menu'),
-                        ),
-                        if (_provider.autoContinueLastWeek)
-                          const Icon(Icons.check_rounded,
-                              size: 16, color: AppColors.present),
-                      ],
-                    ),
-                  ),
+                // SRS Module 03 SCH-011/012: "Copy from previous week" and
+                // "Continue Recurring Weekly Menu" were permanently REMOVED —
+                // auto-continuation always serves the last published schedule
+                // until a newer one is published, with no toggle.
                 if (isPublished)
                   const PopupMenuItem(
                     value: _ScheduleAction.revertToDraft,
@@ -506,14 +424,10 @@ class _MealScheduleScreenState extends State<MealScheduleScreen>
               ],
               onSelected: (action) {
                 switch (action) {
-                  case _ScheduleAction.copyPrevious:
-                    _copyFromPreviousWeek();
                   case _ScheduleAction.revertToDraft:
                     _revertSchedule();
                   case _ScheduleAction.unpublishHide:
                     _unpublishHide();
-                  case _ScheduleAction.toggleRecurring:
-                    _toggleRecurring();
                 }
               },
             ),
@@ -2380,9 +2294,8 @@ class _PlannerGroupSelector extends StatelessWidget {
   }
 }
 
+// SCH-011/012: copyPrevious + toggleRecurring removed with the features.
 enum _ScheduleAction {
-  copyPrevious,
   revertToDraft,
   unpublishHide,
-  toggleRecurring,
 }

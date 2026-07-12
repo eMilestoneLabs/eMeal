@@ -158,6 +158,9 @@ class ExportService {
     // summary block itemises Meals / Hosted guests / Adjustments / Net Total,
     // reconciling exactly with the billing screens.
     Map<String, MemberExportFinancials> financialsByUser = const {},
+    // SRS Module 03 (survey Q17/Q22): group Bill-Skip policy — bills
+    // Absent/Skipped rows at their scheduled price when true.
+    bool billSkippedMeals = false,
   }) async {
     // Issue 3 & 7: pass today's published overlay + vacation members so exported
     // billing matches the on-screen figures (per-day window auto-skip + vacation
@@ -170,7 +173,8 @@ class ExportService {
       todayMeals: todayMeals,
       vacationUserIds: vacationUserIds,
     );
-    final summaries = BillingService.summarize(rows);
+    final summaries =
+        BillingService.summarize(rows, billSkippedMeals: billSkippedMeals);
     final pdf = pw.Document();
 
     pdf.addPage(
@@ -301,84 +305,8 @@ class ExportService {
     );
   }
 
-  // ── CSV ────────────────────────────────────────────────────────────────────
-
-  Future<void> exportCsv({
-    required List<AttendanceModel> records,
-    required List<MealModel> meals,
-    required String groupName,
-    required bool pricingEnabled,
-    required DateTime from,
-    required DateTime to,
-    String? dateRangeLabel,
-    List<MealModel> todayMeals = const [],
-    Set<String> vacationUserIds = const {},
-    Map<String, MemberExportFinancials> financialsByUser = const {},
-  }) async {
-    final rows = BillingService.buildRows(
-        records: records,
-        meals: meals,
-        from: from,
-        to: to,
-        todayMeals: todayMeals,
-        vacationUserIds: vacationUserIds);
-    final summaries = BillingService.summarize(rows);
-    final buffer = StringBuffer();
-
-    // FR-EXP-042/043 (ISSUE-14): leading comment rows — brand + metadata.
-    buffer.writeln('# $brandLine');
-    buffer.writeln(
-        '# ${_metaLine(scopeLabel: 'Group: $groupName', periodLabel: dateRangeLabel)}');
-    buffer.writeln();
-
-    // FR-EXP-041: Summary FIRST, detailed line-items second.
-    buffer.writeln('Billing Summary');
-    for (final s in summaries) {
-      buffer.writeln(_csvEscape(s.userName));
-      final consumed =
-          s.consumedByMeal.entries.map((e) => '${e.key}: ${e.value}');
-      for (final c in consumed) {
-        buffer.writeln(',${_csvEscape(c)}');
-      }
-      buffer.writeln(
-          ',Present: ${s.present},Skipped: ${s.skipped},Absent: ${s.absent},Total meals: ${s.totalMeals}');
-      if (pricingEnabled) {
-        final fin = financialsByUser[s.userId];
-        if (fin == null || !fin.hasAny) {
-          buffer.writeln(',Total Bill: ₹${s.totalBill}');
-        } else {
-          // Host-inclusive breakdown — reconciles with the billing screens.
-          buffer.writeln(',Meals: ₹${s.totalBill}');
-          if (fin.guestAmount != 0) {
-            buffer.writeln(
-                ',${_csvEscape('Hosted guests (${fin.guestCount}) — billed to this host: ₹${fin.guestAmount}')}');
-          }
-          if (fin.adjustmentsTotal != 0) {
-            buffer.writeln(
-                ',${_csvEscape('Adjustments (credits / refunds): ${fin.adjustmentsLabel('₹')}')}');
-          }
-          buffer.writeln(
-              ',Net Total: ${MemberExportFinancials.net('₹', fin.netFor(s.totalBill))}');
-        }
-      }
-    }
-
-    buffer.writeln();
-    buffer.writeln('Detailed Records');
-    buffer.writeln(_headers(pricingEnabled).map(_csvEscape).join(','));
-    for (final r in rows) {
-      buffer.writeln(_rowCells(r, groupName, pricingEnabled)
-          .map(_csvEscape)
-          .join(','));
-    }
-
-    final dir = await getTemporaryDirectory();
-    final file = File(
-        '${dir.path}/attendance_${_safe(groupName)}_${_stamp()}.csv');
-    await file.writeAsString(buffer.toString());
-    await Share.shareXFiles([XFile(file.path, mimeType: 'text/csv')],
-        subject: 'Attendance Export — $groupName');
-  }
+  // SRS Module 03 RPT-001: CSV export removed — Excel multi-sheet + optional
+  // PDF are the only supported formats.
 
   // ── Excel (.xlsx) ────────────────────────────────────────────────────────────
 
@@ -393,6 +321,8 @@ class ExportService {
     List<MealModel> todayMeals = const [],
     Set<String> vacationUserIds = const {},
     Map<String, MemberExportFinancials> financialsByUser = const {},
+    // SRS Module 03 (survey Q17/Q22): group Bill-Skip policy.
+    bool billSkippedMeals = false,
   }) async {
     final rows = BillingService.buildRows(
         records: records,
@@ -401,7 +331,8 @@ class ExportService {
         to: to,
         todayMeals: todayMeals,
         vacationUserIds: vacationUserIds);
-    final summaries = BillingService.summarize(rows);
+    final summaries =
+        BillingService.summarize(rows, billSkippedMeals: billSkippedMeals);
 
     final book = xls.Excel.createExcel();
 
@@ -570,39 +501,58 @@ class ExportService {
     );
   }
 
-  Future<void> exportEventGuestsCsv({
+  /// SRS Module 03 RPT-001: the event guest spreadsheet is an Excel (.xlsx)
+  /// workbook — CSV is no longer supported anywhere in the app.
+  Future<void> exportEventGuestsXlsx({
     required List<EventGuestParty> parties,
     required String eventName,
     String? eventDateLabel,
   }) async {
-    final buffer = StringBuffer();
-    // FR-EXP-042/043 (ISSUE-14): leading comment rows — brand + metadata.
-    buffer.writeln('# $brandLine');
-    buffer.writeln(
-        '# ${_metaLine(scopeLabel: 'Event: $eventName', periodLabel: eventDateLabel)}');
-    buffer.writeln();
-    buffer.writeln('Party,Name,Type,Attendance,Meal Preference,Party Total');
+    final book = xls.Excel.createExcel();
+    final sheet = book['Guest List'];
+
+    // FR-EXP-042/043 (ISSUE-14): brand + metadata band at the top.
+    sheet.appendRow([xls.TextCellValue(brandLine)]);
+    sheet.appendRow([
+      xls.TextCellValue(
+          _metaLine(scopeLabel: 'Event: $eventName', periodLabel: eventDateLabel)),
+    ]);
+    sheet.appendRow([xls.TextCellValue('')]);
+    sheet.appendRow([
+      xls.TextCellValue('Party'),
+      xls.TextCellValue('Name'),
+      xls.TextCellValue('Type'),
+      xls.TextCellValue('Attendance'),
+      xls.TextCellValue('Meal Preference'),
+      xls.TextCellValue('Party Total'),
+    ]);
 
     for (final party in parties) {
       for (final person in party.persons) {
-        buffer.writeln([
-          _csvEscape(party.primaryName),
-          _csvEscape(person.displayName),
-          person.isAdult ? 'Adult' : 'Child',
-          person.isPresent ? 'Present' : 'Absent',
-          _csvEscape(
+        sheet.appendRow([
+          xls.TextCellValue(party.primaryName),
+          xls.TextCellValue(person.displayName),
+          xls.TextCellValue(person.isAdult ? 'Adult' : 'Child'),
+          xls.TextCellValue(person.isPresent ? 'Present' : 'Absent'),
+          xls.TextCellValue(
               person.mealPreference?.label ?? person.selectedMealTypeId ?? ''),
-          party.totalCount.toString(),
-        ].join(','));
+          xls.TextCellValue(party.totalCount.toString()),
+        ]);
       }
     }
 
-    final dir = await getTemporaryDirectory();
-    final file =
-        File('${dir.path}/event_guests_${_safe(eventName)}_${_stamp()}.csv');
-    await file.writeAsString(buffer.toString());
-    await Share.shareXFiles([XFile(file.path, mimeType: 'text/csv')],
-        subject: 'Guest Export — $eventName');
+    if (book.sheets.containsKey('Sheet1')) book.delete('Sheet1');
+    book.setDefaultSheet('Guest List');
+
+    final bytes = book.encode();
+    if (bytes == null) {
+      throw Exception('Failed to encode Excel file');
+    }
+    await _shareBytes(
+      bytes,
+      'event_guests_${_safe(eventName)}_${_stamp()}.xlsx',
+      'Guest Export — $eventName',
+    );
   }
 
   // ── Helpers ────────────────────────────────────────────────────────────────
@@ -639,10 +589,4 @@ class ExportService {
     }
   }
 
-  String _csvEscape(String value) {
-    if (value.contains(',') || value.contains('"') || value.contains('\n')) {
-      return '"${value.replaceAll('"', '""')}"';
-    }
-    return value;
-  }
 }

@@ -207,17 +207,20 @@ class NextMealCard extends StatelessWidget {
                     ),
                   ),
                 ),
+                // SRS Module 03 (survey Q17/Q21): the quick action is
+                // "Absent" (deliberate not-eating) — Skip is internal-only.
                 if (onSkip != null) ...[
                   const SizedBox(width: 10),
                   Expanded(
                     child: OutlinedButton(
                       onPressed: onSkip,
                       style: OutlinedButton.styleFrom(
-                        foregroundColor: textPrimary,
-                        side: BorderSide(color: borderColor),
+                        foregroundColor: AppColors.absent,
+                        side: BorderSide(
+                            color: AppColors.absent.withValues(alpha: 0.5)),
                         padding: const EdgeInsets.symmetric(vertical: 11),
                       ),
-                      child: const Text('Skip'),
+                      child: const Text('Absent'),
                     ),
                   ),
                 ],

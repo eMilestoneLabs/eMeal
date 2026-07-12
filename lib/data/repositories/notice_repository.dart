@@ -68,6 +68,9 @@ class NoticeRepository {
     };
   }
 
+  /// SRS Module 03 NTC-003/012/013: [imageData]/[documentData] are base64
+  /// data URIs (image client-compressed to ≤100 KB; doc ≤50 KB) — the server
+  /// validates hard limits and stores MinIO URLs, never base64.
   Future<Result<NoticeModel>> createNotice({
     required String title,
     required String body,
@@ -75,6 +78,10 @@ class NoticeRepository {
     String priority = 'normal',
     bool pinned = false,
     DateTime? expiresAt,
+    String? imageData,
+    String? documentData,
+    String? documentName,
+    List<String> externalLinks = const [],
   }) async {
     final result = await DioApiService.instance.post<Map<String, dynamic>>(
       '/notices',
@@ -85,6 +92,10 @@ class NoticeRepository {
         'priority': priority,
         'pinned': pinned,
         if (expiresAt != null) 'expiresAt': expiresAt.toUtc().toIso8601String(),
+        if (imageData != null) 'imageData': imageData,
+        if (documentData != null) 'documentData': documentData,
+        if (documentName != null) 'documentName': documentName,
+        if (externalLinks.isNotEmpty) 'externalLinks': externalLinks,
       },
     );
     return switch (result) {

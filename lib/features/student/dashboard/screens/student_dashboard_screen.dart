@@ -19,6 +19,7 @@ import 'package:smart_meal_management/features/student/dashboard/widgets/student
 import 'package:smart_meal_management/shared/enums/user_role.dart';
 import 'package:smart_meal_management/shared/models/attendance_model.dart';
 import 'package:smart_meal_management/shared/models/meal_model.dart';
+import 'package:smart_meal_management/shared/utils/verification_gate.dart';
 import 'package:smart_meal_management/shared/models/meal_schedule_model.dart';
 import 'package:smart_meal_management/features/student/meals/screens/meal_detail_screen.dart';
 import 'package:smart_meal_management/shared/models/user_model.dart';
@@ -232,6 +233,12 @@ class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
     );
     if (!mounted) return;
     if (!ok) {
+      // SRS Module 03 ACC-005: unverified members get the guided verify flow.
+      if (await VerificationGate.handleMessage(context, provider.actionError,
+          email: user.email)) {
+        return;
+      }
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(provider.actionError ?? 'Could not mark attendance'),
@@ -241,7 +248,9 @@ class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
     }
   }
 
-  /// Issue #1: skips the current meal directly from the dashboard.
+  /// Issue #1 + SRS Module 03 (survey Q17/Q21): marks the member ABSENT for
+  /// the current meal directly from the dashboard — the member's deliberate
+  /// not-eating choice. Skip is an internal system status, never a button.
   Future<void> _skipFromDashboard(
     StudentDashboardProvider provider,
     MealModel meal,
@@ -251,10 +260,16 @@ class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
     final ok = await provider.markStatus(
       user: _userWithActiveGroup(user),
       meal: meal,
-      status: AttendanceStatus.skipped,
+      status: AttendanceStatus.absent,
     );
     if (!mounted) return;
     if (!ok) {
+      // SRS Module 03 ACC-005: unverified members get the guided verify flow.
+      if (await VerificationGate.handleMessage(context, provider.actionError,
+          email: user.email)) {
+        return;
+      }
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(provider.error ?? 'Could not update attendance'),

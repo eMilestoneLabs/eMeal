@@ -2,11 +2,11 @@
 ///
 /// Mirrors the backend CorrectionRequestSerializer contract:
 /// attendanceDate is date-only (YYYY-MM-DD); timestamps are ISO-8601 or null.
-/// requestType: claim_present | correct_to_absent | correct_to_skip |
-///              fix_preference | dispute_charge
+/// requestType: claim_present | correct_to_absent | fix_preference |
+///              dispute_charge (SRS Module 03 COR-004: correct_to_skip and
+///              the admin_prompt channel were removed — legacy values are
+///              still rendered for historical rows).
 /// status:      pending | approved | rejected | expired | cancelled
-/// sourceChannel: member (member-raised) | admin_prompt (admin-proposed
-///                increase awaiting the member's confirm/decline).
 class CorrectionRequestModel {
   const CorrectionRequestModel({
     required this.id,

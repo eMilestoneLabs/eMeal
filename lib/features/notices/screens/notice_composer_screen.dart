@@ -1,4 +1,10 @@
+import 'dart:convert';
+import 'dart:typed_data';
+
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_image_compress/flutter_image_compress.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:smart_meal_management/core/theme/app_colors.dart';
 import 'package:smart_meal_management/core/theme/app_typography.dart';
 import 'package:smart_meal_management/data/repositories/group_repository.dart';
@@ -51,6 +57,17 @@ class _NoticeComposerScreenState extends State<NoticeComposerScreen> {
   bool _saving = false;
   String? _error;
 
+  // SRS Module 03 NTC-003/012/013: optional rich content — at most ONE image
+  // (auto-compressed to <=100 KB else rejected) + ONE document (<=50 KB) +
+  // external links. All optional; text-only notices are fully supported.
+  Uint8List? _imageBytes; // compressed JPEG bytes
+  String? _docDataUri;
+  String? _docName;
+  final _linkCtrl = TextEditingController();
+
+  static const int _imageMaxBytes = 100 * 1024;
+  static const int _docMaxBytes = 50 * 1024;
+
   // Issue 2: targeting. 'org' = entire organisation; 'groups' = specific
   // groups. Specific-group delivery reuses the existing single-groupId contract
   // by posting one notice per selected group — no schema / contract change.
@@ -85,8 +102,83 @@ class _NoticeComposerScreenState extends State<NoticeComposerScreen> {
   void dispose() {
     _titleCtrl.dispose();
     _bodyCtrl.dispose();
+    _linkCtrl.dispose();
     super.dispose();
   }
+
+  /// NTC-012: pick + auto-compress the image; reject with the exact SRS
+  /// message when it cannot reach <=100 KB.
+  Future<void> _pickImage() async {
+    final picked = await ImagePicker().pickImage(
+      source: ImageSource.gallery,
+      maxWidth: 1280,
+      maxHeight: 1280,
+    );
+    if (picked == null || !mounted) return;
+    final raw = await picked.readAsBytes();
+    Uint8List? best;
+    for (final quality in const [80, 60, 40, 25, 10]) {
+      final out = await FlutterImageCompress.compressWithList(
+        raw,
+        quality: quality,
+        minWidth: 1024,
+        minHeight: 1024,
+        format: CompressFormat.jpeg,
+      );
+      if (out.length <= _imageMaxBytes) {
+        best = out;
+        break;
+      }
+    }
+    if (!mounted) return;
+    if (best == null) {
+      setState(() => _error =
+          'Unable to upload image. Please select an image smaller than 100 KB.');
+      return;
+    }
+    setState(() {
+      _imageBytes = best;
+      _error = null;
+    });
+  }
+
+  /// NTC-013: pick a PDF/DOC/DOCX/TXT document, hard <=50 KB.
+  Future<void> _pickDocument() async {
+    final res = await FilePicker.platform.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: const ['pdf', 'doc', 'docx', 'txt'],
+      withData: true,
+    );
+    final file = res?.files.firstOrNull;
+    if (file == null || !mounted) return;
+    final bytes = file.bytes;
+    if (bytes == null || bytes.length > _docMaxBytes) {
+      setState(() => _error =
+          'Unable to upload document. Please select a document smaller than 50 KB.');
+      return;
+    }
+    final ext = (file.extension ?? '').toLowerCase();
+    final mime = switch (ext) {
+      'pdf' => 'application/pdf',
+      'doc' => 'application/msword',
+      'docx' =>
+        'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      _ => 'text/plain',
+    };
+    setState(() {
+      _docDataUri = 'data:$mime;base64,${base64Encode(bytes)}';
+      _docName = file.name;
+      _error = null;
+    });
+  }
+
+  /// NTC-003: parse the optional links field (whitespace/comma separated).
+  List<String> _parseLinks() => _linkCtrl.text
+      .split(RegExp(r'[\s,]+'))
+      .map((s) => s.trim())
+      .where((s) => s.startsWith('http://') || s.startsWith('https://'))
+      .take(5)
+      .toList();
 
   Future<void> _pickExpiry() async {
     final now = DateTime.now();
@@ -122,6 +214,10 @@ class _NoticeComposerScreenState extends State<NoticeComposerScreen> {
     // Org-wide = one notice with no group. Specific groups = one notice per
     // selected group (reuses the single-groupId contract; fully additive).
     String? firstError;
+    final imageData = _imageBytes != null
+        ? 'data:image/jpeg;base64,${base64Encode(_imageBytes!)}'
+        : null;
+    final links = _parseLinks();
     if (_scope == 'org') {
       final res = await _repo.createNotice(
         title: title,
@@ -130,6 +226,10 @@ class _NoticeComposerScreenState extends State<NoticeComposerScreen> {
         priority: _priority,
         pinned: _pinned,
         expiresAt: _expiresAt,
+        imageData: imageData,
+        documentData: _docDataUri,
+        documentName: _docName,
+        externalLinks: links,
       );
       if (res case Err(:final failure)) firstError = failure.message;
     } else {
@@ -141,6 +241,10 @@ class _NoticeComposerScreenState extends State<NoticeComposerScreen> {
           priority: _priority,
           pinned: _pinned,
           expiresAt: _expiresAt,
+          imageData: imageData,
+          documentData: _docDataUri,
+          documentName: _docName,
+          externalLinks: links,
         );
         if (res case Err(:final failure)) {
           firstError = failure.message;
@@ -238,6 +342,97 @@ class _NoticeComposerScreenState extends State<NoticeComposerScreen> {
             activeThumbColor: AppColors.primary,
             onChanged: (v) => setState(() => _pinned = v),
           ),
+          _label('Attachments (optional)'),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: _saving ? null : _pickImage,
+                  icon: Icon(
+                    _imageBytes != null
+                        ? Icons.check_circle_rounded
+                        : Icons.image_rounded,
+                    size: 18,
+                    color: _imageBytes != null ? AppColors.present : null,
+                  ),
+                  label: Text(_imageBytes != null ? 'Image added' : 'Add image'),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: _saving ? null : _pickDocument,
+                  icon: Icon(
+                    _docDataUri != null
+                        ? Icons.check_circle_rounded
+                        : Icons.attach_file_rounded,
+                    size: 18,
+                    color: _docDataUri != null ? AppColors.present : null,
+                  ),
+                  label: Text(
+                    _docDataUri != null ? (_docName ?? 'Document') : 'Add document',
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          if (_imageBytes != null) ...[
+            const SizedBox(height: 10),
+            Stack(
+              children: [
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(12),
+                  child: Image.memory(
+                    _imageBytes!,
+                    height: 140,
+                    width: double.infinity,
+                    fit: BoxFit.cover,
+                  ),
+                ),
+                Positioned(
+                  top: 6,
+                  right: 6,
+                  child: InkWell(
+                    onTap: () => setState(() => _imageBytes = null),
+                    child: const CircleAvatar(
+                      radius: 14,
+                      backgroundColor: Colors.black54,
+                      child:
+                          Icon(Icons.close_rounded, size: 16, color: Colors.white),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
+          if (_docDataUri != null)
+            Align(
+              alignment: Alignment.centerLeft,
+              child: TextButton.icon(
+                onPressed: () => setState(() {
+                  _docDataUri = null;
+                  _docName = null;
+                }),
+                icon: const Icon(Icons.close_rounded, size: 14),
+                label: const Text('Remove document'),
+              ),
+            ),
+          const SizedBox(height: 4),
+          Text(
+            'One image (JPG/PNG/WEBP, auto-compressed to 100 KB) and one '
+            'document (PDF/DOC/DOCX/TXT, up to 50 KB).',
+            style:
+                AppTypography.labelSmall.copyWith(color: AppColors.textTertiary),
+          ),
+          const SizedBox(height: 10),
+          TextField(
+            controller: _linkCtrl,
+            maxLines: 2,
+            decoration: _dec('External links (optional) — https://...'),
+          ),
+          const SizedBox(height: 12),
           _label('Send to'),
           const SizedBox(height: 8),
           Row(

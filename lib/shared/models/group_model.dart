@@ -167,6 +167,7 @@ class GroupGuestConfig extends Equatable {
     this.guestAdultPrice,
     this.guestChildPrice,
     this.guestSurcharge,
+    this.guestSurchargeType = 'fixed',
     this.guestRequiresApproval = false,
     this.guestCutoffMinutesBeforeClose = 0,
     this.guestAdvanceBookingDays = 0,
@@ -184,6 +185,9 @@ class GroupGuestConfig extends Equatable {
   final int? guestAdultPrice;
   final int? guestChildPrice;
   final int? guestSurcharge;
+
+  /// SRS Module 03 GST-011: 'fixed' (₹) | 'percent' (% of effective price).
+  final String guestSurchargeType;
   final bool guestRequiresApproval;
   final int guestCutoffMinutesBeforeClose;
   final int guestAdvanceBookingDays;
@@ -208,7 +212,12 @@ class GroupGuestConfig extends Equatable {
             ? (guestAdultPrice ?? mealPrice)
             : (guestChildPrice ?? guestAdultPrice ?? mealPrice);
       case 'flatSurcharge':
-        return (mealPrice ?? 0) + (guestSurcharge ?? 0);
+        // GST-011: fixed ₹ (default) or percentage of the effective price.
+        final base = mealPrice ?? 0;
+        if (guestSurchargeType == 'percent') {
+          return base + ((base * (guestSurcharge ?? 0)) / 100).round();
+        }
+        return base + (guestSurcharge ?? 0);
       default: // sameAsMember
         return mealPrice;
     }
@@ -225,6 +234,7 @@ class GroupGuestConfig extends Equatable {
         guestAdultPrice: _asIntOrNull(j['guestAdultPrice']),
         guestChildPrice: _asIntOrNull(j['guestChildPrice']),
         guestSurcharge: _asIntOrNull(j['guestSurcharge']),
+        guestSurchargeType: j['guestSurchargeType']?.toString() ?? 'fixed',
         guestRequiresApproval: j['guestRequiresApproval'] ?? false,
         guestCutoffMinutesBeforeClose:
             _asIntOrNull(j['guestCutoffMinutesBeforeClose']) ?? 0,
@@ -243,6 +253,7 @@ class GroupGuestConfig extends Equatable {
         'guestAdultPrice': guestAdultPrice,
         'guestChildPrice': guestChildPrice,
         'guestSurcharge': guestSurcharge,
+        'guestSurchargeType': guestSurchargeType,
         'guestRequiresApproval': guestRequiresApproval,
         'guestCutoffMinutesBeforeClose': guestCutoffMinutesBeforeClose,
         'guestAdvanceBookingDays': guestAdvanceBookingDays,
@@ -259,6 +270,7 @@ class GroupGuestConfig extends Equatable {
     int? guestAdultPrice,
     int? guestChildPrice,
     int? guestSurcharge,
+    String? guestSurchargeType,
     bool? guestRequiresApproval,
     int? guestCutoffMinutesBeforeClose,
     int? guestAdvanceBookingDays,
@@ -277,6 +289,7 @@ class GroupGuestConfig extends Equatable {
         guestAdultPrice: guestAdultPrice ?? this.guestAdultPrice,
         guestChildPrice: guestChildPrice ?? this.guestChildPrice,
         guestSurcharge: guestSurcharge ?? this.guestSurcharge,
+        guestSurchargeType: guestSurchargeType ?? this.guestSurchargeType,
         guestRequiresApproval:
             guestRequiresApproval ?? this.guestRequiresApproval,
         guestCutoffMinutesBeforeClose: guestCutoffMinutesBeforeClose ??
@@ -299,6 +312,7 @@ class GroupGuestConfig extends Equatable {
         guestAdultPrice,
         guestChildPrice,
         guestSurcharge,
+        guestSurchargeType,
         guestRequiresApproval,
         guestCutoffMinutesBeforeClose,
         guestAdvanceBookingDays,
@@ -327,6 +341,7 @@ class GroupMealConfig extends Equatable {
     this.vacationRequiresApproval = false,
     this.billingCycleStartDay,
     this.mealPricingEnabled = false,
+    this.billSkippedMeals = false,
     this.attendanceDefault = 'absent',
     this.guestConfig = const GroupGuestConfig(),
   });
@@ -349,13 +364,19 @@ class GroupMealConfig extends Equatable {
   /// request (admin-approved) — the instant self-service toggle is disabled.
   final bool vacationRequiresApproval;
 
-  /// Pass 12 (FR-BILLX-020): day-of-month (1–28) the billing cycle starts.
-  /// Null = calendar month. Period math happens server-side in org time.
+  /// Pass 12 (FR-BILLX-020) + SRS Module 03 BILL-012: day-of-month (1–31)
+  /// the billing cycle starts; days missing from a short month clamp to its
+  /// last calendar day server-side. Null = calendar month.
   final int? billingCycleStartDay;
 
   /// Additive: when true, meals carry a ₹ price shown to students and used for
   /// billing/exports. When false, no price UI appears anywhere.
   final bool mealPricingEnabled;
+
+  /// SRS Module 03 (survey Q17/Q22): "Bill Skip" policy — when true,
+  /// member-chosen Absent and system-generated Skip are billed at the final
+  /// scheduled price. Default false (matches live behaviour).
+  final bool billSkippedMeals;
 
   /// SRS FR-TRUST-001 (Pass 7): group trust model. 'absent' = opt-in (legacy —
   /// not marking means not counted/billed); 'present' = opt-out (unmarked
@@ -390,6 +411,7 @@ class GroupMealConfig extends Equatable {
             ? (j['billingCycleStartDay'] as num).toInt()
             : null,
         mealPricingEnabled: j['mealPricingEnabled'] ?? false,
+        billSkippedMeals: j['billSkippedMeals'] ?? false,
         attendanceDefault: j['attendanceDefault']?.toString() ?? 'absent',
         guestConfig: j['guestConfig'] is Map
             ? GroupGuestConfig.fromJson(
@@ -411,6 +433,7 @@ class GroupMealConfig extends Equatable {
         if (billingCycleStartDay != null)
           'billingCycleStartDay': billingCycleStartDay,
         'mealPricingEnabled': mealPricingEnabled,
+        'billSkippedMeals': billSkippedMeals,
         'attendanceDefault': attendanceDefault,
         'guestConfig': guestConfig.toJson(),
       };
@@ -426,6 +449,7 @@ class GroupMealConfig extends Equatable {
     int? billingCycleStartDay,
     bool clearBillingCycleStartDay = false,
     bool? mealPricingEnabled,
+    bool? billSkippedMeals,
     String? attendanceDefault,
     GroupGuestConfig? guestConfig,
   }) =>
@@ -442,6 +466,7 @@ class GroupMealConfig extends Equatable {
             ? null
             : (billingCycleStartDay ?? this.billingCycleStartDay),
         mealPricingEnabled: mealPricingEnabled ?? this.mealPricingEnabled,
+        billSkippedMeals: billSkippedMeals ?? this.billSkippedMeals,
         attendanceDefault: attendanceDefault ?? this.attendanceDefault,
         guestConfig: guestConfig ?? this.guestConfig,
       );
@@ -457,6 +482,7 @@ class GroupMealConfig extends Equatable {
         vacationRequiresApproval,
         billingCycleStartDay,
         mealPricingEnabled,
+        billSkippedMeals,
         attendanceDefault,
         guestConfig,
       ];

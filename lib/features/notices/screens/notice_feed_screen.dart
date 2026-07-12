@@ -20,6 +20,8 @@ import 'package:smart_meal_management/shared/models/notice_model.dart';
 import 'package:smart_meal_management/shared/models/notification_diagnostics_model.dart';
 import 'package:smart_meal_management/shared/models/result.dart';
 import 'package:smart_meal_management/shared/widgets/app_skeleton.dart';
+import 'package:smart_meal_management/shared/widgets/cached_photo.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 /// Notice board feed (Phase B) — bell center for students + admins.
 ///
@@ -622,6 +624,19 @@ class _NoticeCard extends StatelessWidget {
                 Text(_relativeTime(notice.publishedAt),
                     style: AppTypography.labelSmall
                         .copyWith(color: tertiaryText)),
+                if (notice.imageUrl != null) ...[
+                  const SizedBox(width: 8),
+                  Icon(Icons.image_rounded, size: 13, color: tertiaryText),
+                ],
+                if (notice.documentUrl != null) ...[
+                  const SizedBox(width: 6),
+                  Icon(Icons.attach_file_rounded,
+                      size: 13, color: tertiaryText),
+                ],
+                if (notice.externalLinks.isNotEmpty) ...[
+                  const SizedBox(width: 6),
+                  Icon(Icons.link_rounded, size: 13, color: tertiaryText),
+                ],
                 if (notice.linkType != null) ...[
                   const SizedBox(width: 10),
                   Container(
@@ -753,10 +768,63 @@ class _NoticeDetailSheet extends StatelessWidget {
                 style: AppTypography.bodyMedium.copyWith(
                     color: Theme.of(context).colorScheme.onSurfaceVariant,
                     height: 1.5)),
+            // SRS Module 03 NTC-003/012/013: optional rich content.
+            if (notice.imageUrl != null) ...[
+              const SizedBox(height: 14),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(12),
+                child: CachedPhoto(
+                  url: notice.imageUrl,
+                  width: double.infinity,
+                  height: 180,
+                  fit: BoxFit.cover,
+                  cacheWidth: 800,
+                ),
+              ),
+            ],
+            if (notice.documentUrl != null) ...[
+              const SizedBox(height: 12),
+              OutlinedButton.icon(
+                onPressed: () => _openExternal(notice.documentUrl!),
+                icon: const Icon(Icons.description_rounded, size: 18),
+                label: Text(
+                  notice.documentName ?? 'Open attachment',
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ],
+            if (notice.externalLinks.isNotEmpty) ...[
+              const SizedBox(height: 12),
+              ...notice.externalLinks.map(
+                (link) => Align(
+                  alignment: Alignment.centerLeft,
+                  child: TextButton.icon(
+                    onPressed: () => _openExternal(link),
+                    icon: const Icon(Icons.link_rounded, size: 16),
+                    label: Text(
+                      link,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ),
+              ),
+            ],
           ],
         ),
       ),
     );
+  }
+
+  /// Opens a notice document / external link in the system browser.
+  static Future<void> _openExternal(String url) async {
+    final uri = Uri.tryParse(url);
+    if (uri == null) return;
+    try {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    } catch (_) {
+      // Best-effort — an unopenable link is not a crash.
+    }
   }
 }
 

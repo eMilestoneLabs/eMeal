@@ -8,6 +8,7 @@ import 'package:smart_meal_management/data/repositories/meal_repository.dart';
 import 'package:smart_meal_management/data/services/billing_service.dart';
 import 'package:smart_meal_management/data/services/export_service.dart';
 import 'package:smart_meal_management/features/admin/exports/providers/export_provider.dart';
+import 'package:smart_meal_management/features/admin/exports/screens/data_archives_screen.dart';
 import 'package:smart_meal_management/features/admin/exports/screens/export_preview_screen.dart';
 import 'package:smart_meal_management/shared/models/attendance_model.dart';
 import 'package:smart_meal_management/shared/models/group_model.dart';
@@ -118,6 +119,19 @@ class _ExportScreenState extends State<ExportScreen> {
     }
   }
 
+  /// SRS Module 03 (survey Q17/Q22): the selected group's Bill-Skip policy.
+  bool get _billSkippedMeals {
+    if (_selectedGroupId == null) return false;
+    try {
+      return _groups
+          .firstWhere((g) => g.id == _selectedGroupId)
+          .mealConfig
+          .billSkippedMeals;
+    } catch (_) {
+      return false;
+    }
+  }
+
   /// FR-EXP-040 (ISSUE-14): loads the report data and opens the VIEW-ONLY
   /// preview (summary first). Download/share happens only from the preview.
   Future<void> _previewReport() async {
@@ -188,7 +202,9 @@ class _ExportScreenState extends State<ExportScreen> {
       to: _endDate,
       vacationUserIds: vacationUserIds,
     );
-    final summaries = BillingService.summarize(rows);
+    final billSkippedMeals = _billSkippedMeals;
+    final summaries =
+        BillingService.summarize(rows, billSkippedMeals: billSkippedMeals);
     final rangeLabel = '${_fmt(_startDate)} – ${_fmt(_endDate)}';
     final groupName = _selectedGroupName;
     final pricingEnabled = _pricingEnabled;
@@ -212,6 +228,7 @@ class _ExportScreenState extends State<ExportScreen> {
             rangeLabel: rangeLabel,
             vacationUserIds: vacationUserIds,
             financialsByUser: financialsByUser,
+            billSkippedMeals: billSkippedMeals,
           ),
         ),
       ),
@@ -228,6 +245,7 @@ class _ExportScreenState extends State<ExportScreen> {
     required String rangeLabel,
     required Set<String> vacationUserIds,
     Map<String, MemberExportFinancials> financialsByUser = const {},
+    bool billSkippedMeals = false,
   }) async {
     _provider.setFormat(format);
     _exporting.value = true;
@@ -242,6 +260,7 @@ class _ExportScreenState extends State<ExportScreen> {
         dateRangeLabel: rangeLabel,
         vacationUserIds: vacationUserIds,
         financialsByUser: financialsByUser,
+        billSkippedMeals: billSkippedMeals,
       );
     } finally {
       _exporting.value = false;
@@ -268,6 +287,17 @@ class _ExportScreenState extends State<ExportScreen> {
         title: Text('Export Attendance', style: AppTypography.titleLarge),
         backgroundColor: colorScheme.surface,
         surfaceTintColor: Colors.transparent,
+        actions: [
+          // SRS Module 03 RPT-010 step 4: Reports → Data Archives — the
+          // pre-purge Excel/PDF retention archives (admin's permanent copy).
+          IconButton(
+            tooltip: 'Data Archives',
+            icon: const Icon(Icons.inventory_2_rounded),
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const DataArchivesScreen()),
+            ),
+          ),
+        ],
       ),
       body: Padding(
         padding: const EdgeInsets.symmetric(
@@ -295,10 +325,7 @@ class _ExportScreenState extends State<ExportScreen> {
               _FormatTile(label: 'Excel', icon: Icons.table_chart_rounded,
                   selected: _provider.exportFormat == 'xlsx', color: AppColors.secondary,
                   onTap: () => _provider.setFormat('xlsx')),
-              const SizedBox(width: 12),
-              _FormatTile(label: 'CSV', icon: Icons.description_rounded,
-                  selected: _provider.exportFormat == 'csv', color: AppColors.info,
-                  onTap: () => _provider.setFormat('csv')),
+              // SRS Module 03 RPT-001: CSV export removed — Excel + PDF only.
             ]),
             const SizedBox(height: AppConstants.space24),
             Text('Date Range', style: AppTypography.titleSmall),

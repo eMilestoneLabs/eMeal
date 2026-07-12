@@ -127,12 +127,16 @@ class _MealConfigScreenState extends State<MealConfigScreen> {
             }),
         ],
       ),
-      floatingActionButton: _provider.mealsEnabled &&
-              _provider.selectedGroup != null
+      // SRS Module 03 MODE-003: Attendance-Only groups manage their Master
+      // Attendance Template here — the FAB adds a window instead of a meal.
+      floatingActionButton: _provider.selectedGroup != null
           ? FloatingActionButton.extended(
-              onPressed: () => _showAddMealSheet(context),
+              onPressed: () => _provider.mealsEnabled
+                  ? _showAddMealSheet(context)
+                  : _showWindowSheet(),
               icon: const Icon(Icons.add_rounded),
-              label: const Text('Add Meal'),
+              label:
+                  Text(_provider.mealsEnabled ? 'Add Meal' : 'Add Window'),
             )
           : null,
       body: _provider.isLoading
@@ -206,7 +210,15 @@ class _MealConfigScreenState extends State<MealConfigScreen> {
                   const AppSheetSkeleton(rows: 3, rowHeight: 104, padding: EdgeInsets.symmetric(vertical: 24)),
                 ] else ...[
                   // ── Master meal toggle ───────────────────────────────────
-                  const AppSectionTitle(title: 'Meal System'),
+                  // Wording: one-line explainer so a new admin knows what the
+                  // Master Meal Template is before meeting the toggles.
+                  const AppSectionTitle(
+                    title: 'Meal System',
+                    subtitle:
+                        'Define this group\'s meals once here — the weekly '
+                        'planner, daily plans and member menus all build from '
+                        'this master list',
+                  ),
                   const SizedBox(height: 12),
                   _ToggleTile(
                     icon: Icons.restaurant_rounded,
@@ -228,14 +240,25 @@ class _MealConfigScreenState extends State<MealConfigScreen> {
 
                   if (_provider.mealsEnabled) ...[
                     // ── Preferences toggle ─────────────────────────────────
+                    // SRS Module 03 ATT-007: mutually exclusive with
+                    // Auto-Present — greyed (only while OFF, so a legacy
+                    // both-ON group can still switch it off) with an info
+                    // subtitle instead of failing after the tap.
                     _ToggleTile(
                       icon: Icons.tune_rounded,
                       title: 'Meal Preferences',
-                      subtitle: _provider.preferencesEnabled
-                          ? 'Members tag Veg/Chicken/Fish etc. before attendance'
-                          : 'No preference selection — just mark present/absent',
+                      subtitle: (!_provider.preferencesEnabled &&
+                              _provider.optOutAttendance)
+                          ? 'Unavailable while Auto-Present is ON — automatic '
+                              'attendance can\'t pick preferences for members. '
+                              'Turn off Auto-Present first.'
+                          : _provider.preferencesEnabled
+                              ? 'Members tag Veg/Chicken/Fish etc. before attendance'
+                              : 'No preference selection — just mark present/absent',
                       value: _provider.preferencesEnabled,
-                      onChanged: _provider.isSaving
+                      onChanged: (_provider.isSaving ||
+                              (!_provider.preferencesEnabled &&
+                                  _provider.optOutAttendance))
                           ? null
                           : (v) => _provider.togglePreferences(
                                 organizationId: _orgId,
@@ -264,18 +287,53 @@ class _MealConfigScreenState extends State<MealConfigScreen> {
                     ),
                     const SizedBox(height: 12),
 
+                    // ── Bill-Skip policy (SRS Module 03, survey Q17/Q22) ──
+                    if (_provider.mealPricingEnabled) ...[
+                      _ToggleTile(
+                        icon: Icons.rule_folder_rounded,
+                        title: 'Bill Missed / Absent Meals',
+                        subtitle: (_provider.selectedGroup?.mealConfig
+                                    .billSkippedMeals ??
+                                false)
+                            ? 'Absent and unmarked (skipped) meals are billed at the scheduled price'
+                            : 'Only Present meals are billed — Absent/unmarked meals are free',
+                        value: _provider.selectedGroup?.mealConfig
+                                .billSkippedMeals ??
+                            false,
+                        onChanged: _provider.isSaving
+                            ? null
+                            : (v) => _provider.toggleBillSkippedMeals(
+                                  organizationId: _orgId,
+                                  groupId: _provider.selectedGroup!.id,
+                                  enabled: v,
+                                ),
+                      ),
+                      const SizedBox(height: 12),
+                    ],
+
                     // ── Opt-out trust model (SRS FR-TRUST-001, Pass 7) ─────
+                    // SRS Module 03 ATT-007: mutually exclusive with Meal
+                    // Preferences (see the Preferences tile above). Renamed
+                    // from "Opt-Out Attendance" — "Auto-Present" says what it
+                    // actually does; new admins don't know opt-out jargon.
                     _ToggleTile(
                       icon: Icons.how_to_reg_rounded,
-                      title: 'Opt-Out Attendance',
-                      subtitle: _provider.optOutAttendance
-                          ? 'Unmarked members are auto-marked Present at window '
-                              'close (they can correct it). Communicate this '
-                              'policy to your members.'
-                          : 'Opt-in (default): not marking means not counted '
-                              'or billed',
+                      title: 'Auto-Present Attendance',
+                      subtitle: (!_provider.optOutAttendance &&
+                              _provider.preferencesEnabled)
+                          ? 'Unavailable while Meal Preferences is ON — the '
+                              'system can\'t pick preferences for members. '
+                              'Turn off Meal Preferences first.'
+                          : _provider.optOutAttendance
+                              ? 'Members who don\'t mark anything are automatically '
+                                  'marked Present when the window closes (they can '
+                                  'correct it). Tell your members about this policy.'
+                              : 'OFF (default): members mark themselves — no mark '
+                                  'means not counted and not billed',
                       value: _provider.optOutAttendance,
-                      onChanged: _provider.isSaving
+                      onChanged: (_provider.isSaving ||
+                              (!_provider.optOutAttendance &&
+                                  _provider.preferencesEnabled))
                           ? null
                           : (v) => _provider.setAttendanceDefault(
                                 organizationId: _orgId,
@@ -286,12 +344,15 @@ class _MealConfigScreenState extends State<MealConfigScreen> {
                     const SizedBox(height: 12),
 
                     // ── Hosted guests (Module 22, Pass 9) ──────────────────
+                    // Wording: "Hosted Guests (+N)" read as jargon to new
+                    // admins — "Guest Meals" says what it is.
                     _ToggleTile(
                       icon: Icons.group_add_rounded,
-                      title: 'Hosted Guests (+N)',
+                      title: 'Guest Meals',
                       subtitle: _provider.guestConfig.guestAttendanceEnabled
-                          ? 'Members can bring guests — billed to the host. '
-                              'Tap "Guest settings" below for caps & pricing.'
+                          ? 'Members can bring guests to a meal — the extra plates '
+                              'are billed to the member who booked them. Tap '
+                              '"Guest settings" below for limits & pricing.'
                           : 'Members cannot add guests to their meals',
                       value: _provider.guestConfig.guestAttendanceEnabled,
                       onChanged: _provider.isSaving
@@ -427,7 +488,7 @@ class _MealConfigScreenState extends State<MealConfigScreen> {
                           ),
                           const SizedBox(height: 6),
                           Text(
-                            'Meal menus and timelines are hidden. Members continue to mark daily attendance.',
+                            'Meal menus and timelines are hidden. Members mark attendance in the windows below.',
                             textAlign: TextAlign.center,
                             style: TextStyle(
                               fontSize: 13,
@@ -437,11 +498,206 @@ class _MealConfigScreenState extends State<MealConfigScreen> {
                         ],
                       ),
                     ),
+                    // ── SRS Module 03 MODE-003: Master Attendance Template ──
+                    const SizedBox(height: 20),
+                    AppSectionTitle(
+                      title: 'Attendance Windows',
+                      subtitle:
+                          '${_windowMeals.length} of 5 — applied automatically every day',
+                    ),
+                    const SizedBox(height: 12),
+                    if (_windowMeals.isEmpty)
+                      const AppEmptyState(
+                        icon: Icons.schedule_rounded,
+                        title: 'No attendance windows yet',
+                        subtitle:
+                            'Tap + Add Window to create one (e.g. "Morning Attendance", 7:00–8:00 AM).',
+                      )
+                    else
+                      ..._windowMeals.map(
+                        (w) => Card(
+                          margin: const EdgeInsets.only(bottom: 10),
+                          child: ListTile(
+                            leading: const Icon(Icons.schedule_rounded,
+                                color: AppColors.primary),
+                            title: Text(w.name,
+                                style: AppTypography.bodyMedium
+                                    .copyWith(fontWeight: FontWeight.w700)),
+                            subtitle: Text(
+                              '${TimeFormat.hm12(w.attendanceWindow.openTime)} – ${TimeFormat.hm12(w.attendanceWindow.closeTime)}'
+                              '${w.isActive ? '' : '  ·  Disabled'}',
+                              style: AppTypography.labelSmall
+                                  .copyWith(color: AppColors.textSecondary),
+                            ),
+                            onTap: () => _showWindowSheet(window: w),
+                            trailing: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Switch(
+                                  value: w.isActive,
+                                  onChanged: _provider.isSaving
+                                      ? null
+                                      : (v) => _provider.updateMeal(
+                                            organizationId: _orgId,
+                                            groupId: w.groupId,
+                                            mealId: w.id,
+                                            isActive: v,
+                                          ),
+                                ),
+                                IconButton(
+                                  icon: const Icon(Icons.delete_outline_rounded,
+                                      size: 20, color: AppColors.error),
+                                  onPressed: () => _confirmDelete(context, w),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
                   ],
                 ],
               ],
             ),
     );
+  }
+
+  /// MODE-003: the group's attendance windows (window-only meal rows). The
+  /// implicit general-attendance slot never appears in the template.
+  List<MealModel> get _windowMeals =>
+      _provider.meals.where((m) => !m.isGeneralAttendance).toList();
+
+  /// MODE-003: create/edit one Master Attendance Template window —
+  /// name + open/close times only (no menus, pricing or preferences).
+  Future<void> _showWindowSheet({MealModel? window}) async {
+    final nameCtrl = TextEditingController(text: window?.name ?? '');
+    TimeOfDay open = _parseHHmm(window?.attendanceWindow.openTime) ??
+        const TimeOfDay(hour: 7, minute: 0);
+    TimeOfDay close = _parseHHmm(window?.attendanceWindow.closeTime) ??
+        const TimeOfDay(hour: 8, minute: 0);
+    String? sheetError;
+
+    final saved = await showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setSheet) => Padding(
+          padding: EdgeInsets.fromLTRB(
+              20, 20, 20, MediaQuery.of(ctx).viewInsets.bottom + 24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                window == null ? 'Add Attendance Window' : 'Edit Window',
+                style: AppTypography.titleMedium
+                    .copyWith(fontWeight: FontWeight.w700),
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: nameCtrl,
+                maxLength: 64,
+                decoration: const InputDecoration(
+                  labelText: 'Window name',
+                  hintText: 'e.g. Morning Attendance',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      icon: const Icon(Icons.login_rounded, size: 16),
+                      label: Text('Opens ${open.format(ctx)}'),
+                      onPressed: () async {
+                        final t = await showTimePicker(
+                            context: ctx, initialTime: open);
+                        if (t != null) setSheet(() => open = t);
+                      },
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      icon: const Icon(Icons.logout_rounded, size: 16),
+                      label: Text('Closes ${close.format(ctx)}'),
+                      onPressed: () async {
+                        final t = await showTimePicker(
+                            context: ctx, initialTime: close);
+                        if (t != null) setSheet(() => close = t);
+                      },
+                    ),
+                  ),
+                ],
+              ),
+              if (sheetError != null) ...[
+                const SizedBox(height: 8),
+                Text(sheetError!,
+                    style: AppTypography.labelSmall
+                        .copyWith(color: AppColors.error)),
+              ],
+              const SizedBox(height: 16),
+              SizedBox(
+                width: double.infinity,
+                height: 48,
+                child: FilledButton(
+                  onPressed: () {
+                    if (nameCtrl.text.trim().isEmpty) {
+                      setSheet(() => sheetError = 'Window name is required.');
+                      return;
+                    }
+                    Navigator.of(ctx).pop(true);
+                  },
+                  child: Text(window == null ? 'Add window' : 'Save changes'),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    if (saved != true || !mounted) return;
+    String hhmm(TimeOfDay t) =>
+        '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}';
+    final win = MealAttendanceWindow(
+        openTime: hhmm(open), closeTime: hhmm(close));
+    final name = nameCtrl.text.trim();
+    if (window == null) {
+      await _provider.createMeal(
+        organizationId: _orgId,
+        groupId: _provider.selectedGroup!.id,
+        name: name,
+        slotKey: 'window-${DateTime.now().millisecondsSinceEpoch}',
+        order: _windowMeals.length,
+        attendanceWindow: win,
+      );
+    } else {
+      await _provider.updateMeal(
+        organizationId: _orgId,
+        groupId: window.groupId,
+        mealId: window.id,
+        name: name,
+        attendanceWindow: win,
+      );
+    }
+    if (mounted && _provider.error != null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(_provider.error!)),
+      );
+    }
+  }
+
+  static TimeOfDay? _parseHHmm(String? s) {
+    if (s == null || s.length < 4) return null;
+    final parts = s.split(':');
+    final h = int.tryParse(parts[0]);
+    final m = parts.length > 1 ? int.tryParse(parts[1]) : null;
+    if (h == null || m == null) return null;
+    return TimeOfDay(hour: h, minute: m);
   }
 
   void _showAddMealSheet(BuildContext context) {
@@ -581,7 +837,14 @@ class _MealConfigScreenState extends State<MealConfigScreen> {
       context: context,
       builder: (ctx) => AlertDialog(
         title: Text('Delete ${meal.name}?'),
-        content: const Text('This cannot be undone.'),
+        // MMT-011/012 wording: say exactly what happens instead of a vague
+        // "cannot be undone" — the meal leaves future plans, members keep the
+        // currently published menu until re-publish, history stays intact.
+        content: const Text(
+          'This meal is removed from upcoming plans and menus. Members keep '
+          'seeing the currently published menu until you publish again. Past '
+          'attendance and billing records are kept.',
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(false),
@@ -665,11 +928,14 @@ class _BillingCycleTile extends StatelessWidget {
               ],
             ),
           ),
+          // SRS Module 03 BILL-012 (survey Q20): anchor days 1–31 all valid —
+          // a day missing from a short month clamps to its last calendar day
+          // server-side (the configured value never changes).
           DropdownButton<int>(
-            value: effective.clamp(1, 28),
+            value: effective.clamp(1, 31),
             underline: const SizedBox.shrink(),
             items: [
-              for (var d = 1; d <= 28; d++)
+              for (var d = 1; d <= 31; d++)
                 DropdownMenuItem(
                   value: d,
                   child: Text(d == 1 ? '1st (month)' : '$d${_ord(d)}'),

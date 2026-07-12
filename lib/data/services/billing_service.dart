@@ -226,7 +226,15 @@ class BillingService {
   }
 
   /// Aggregates [rows] into per-member billing summaries.
-  static List<BillingSummary> summarize(List<BillingRow> rows) {
+  ///
+  /// SRS Module 03 (survey Q17/Q22/Q23): when [billSkippedMeals] is true the
+  /// group's Bill-Skip policy is ON — member-chosen Absent and (auto-)Skipped
+  /// meals are billed at the row's scheduled price snapshot (base + day
+  /// override, no add-ons). Default false = live behaviour (Present only).
+  static List<BillingSummary> summarize(
+    List<BillingRow> rows, {
+    bool billSkippedMeals = false,
+  }) {
     final byUser = <String, List<BillingRow>>{};
     final names = <String, String>{};
     for (final r in rows) {
@@ -245,8 +253,10 @@ class BillingService {
             consumed[r.mealName] = (consumed[r.mealName] ?? 0) + 1;
           case AttendanceStatus.absent:
             absent++;
+            if (billSkippedMeals) bill += r.price ?? 0;
           case AttendanceStatus.skipped:
             skipped++;
+            if (billSkippedMeals) bill += r.price ?? 0;
           default:
             break;
         }
