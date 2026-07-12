@@ -773,7 +773,8 @@ class _MyAttendanceSheetState extends State<_MyAttendanceSheet> {
             const SizedBox(height: 12),
             Expanded(
               child: _loading
-                  ? const Center(child: CircularProgressIndicator())
+                  ? const AppListSkeleton(
+                      rows: 3, rowHeight: 120, padding: EdgeInsets.zero)
                   : _meals.isEmpty
                       ? Center(
                           child: Text('No meals configured for today.',
