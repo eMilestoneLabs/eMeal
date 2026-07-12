@@ -115,7 +115,20 @@ class _StudentSignupScreenState extends State<StudentSignupScreen> {
     setState(() => _isLoading = false);
 
     if (error != null) {
-      setState(() => _emailError = error);
+      // Issue 3: attach a duplicate-account conflict to the correct field
+      // (mobile vs email) instead of always the email field.
+      final fe = auth.lastSignupFieldErrors;
+      setState(() {
+        final mobileErr = fe['mobileNumber'] ?? fe['phone'] ?? fe['mobile'];
+        final emailErr = fe['email'];
+        if (mobileErr != null) {
+          _mobileError = mobileErr;
+        } else if (emailErr != null) {
+          _emailError = emailErr;
+        } else {
+          _emailError = error; // generic fallback (unchanged behaviour)
+        }
+      });
       return;
     }
 

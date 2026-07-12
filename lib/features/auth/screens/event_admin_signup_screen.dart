@@ -143,7 +143,23 @@ class _EventAdminSignupScreenState extends State<EventAdminSignupScreen> {
     if (!mounted) return;
     setState(() => _isLoading = false);
 
-    if (error != null) { setState(() => _emailError = error); return; }
+    if (error != null) {
+      // Issue 3: attach a duplicate-account conflict to the correct field
+      // (mobile vs email) instead of always the email field.
+      final fe = auth.lastSignupFieldErrors;
+      setState(() {
+        final mobileErr = fe['mobileNumber'] ?? fe['phone'] ?? fe['mobile'];
+        final emailErr = fe['email'];
+        if (mobileErr != null) {
+          _mobileError = mobileErr;
+        } else if (emailErr != null) {
+          _emailError = emailErr;
+        } else {
+          _emailError = error; // generic fallback (unchanged behaviour)
+        }
+      });
+      return;
+    }
 
     await AuthStorageService.instance.saveLoginPreference(LoginPreference.email);
     await AuthStorageService.instance.saveRememberedIdentifier(_emailCtrl.text.trim());

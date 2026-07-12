@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:flutter/widgets.dart';
+import 'package:smart_meal_management/core/errors/failure.dart';
 import 'package:smart_meal_management/data/repositories/auth_repository.dart';
 import 'package:smart_meal_management/data/services/realtime_service.dart';
 import 'package:smart_meal_management/data/services/response_cache_service.dart';
@@ -259,6 +260,7 @@ class AuthProvider extends ChangeNotifier {
     bool autoDeleteEvent = false,
   }) async {
     _state = const AuthLoading();
+    _lastSignupFieldErrors = const {};
     notifyListeners();
 
     final result = await _repo.signup(
@@ -282,16 +284,28 @@ class AuthProvider extends ChangeNotifier {
       case Ok(:final value):
         _session = value;
         _state = AuthAuthenticated(session: value);
+        _lastSignupFieldErrors = const {};
         RealtimeService.instance.connect(); // open the live realtime socket
         notifyListeners();
         return null;
 
       case Err(:final failure):
         _state = const AuthUnauthenticated();
+        // Issue 3: carry the per-field conflict (e.g. `mobileNumber` /
+        // `email` / `organizationSlug`) so the signup screen can attach the
+        // error to the RIGHT field instead of always the email field.
+        _lastSignupFieldErrors =
+            failure is ValidationFailure ? failure.fieldErrors : const {};
         notifyListeners();
         return failure.message;
     }
   }
+
+  /// Per-field errors from the last failed [signup] (backend `errors{}` map,
+  /// e.g. `{mobileNumber: '...'}` or `{email: '...'}`). Empty after a success.
+  /// Signup screens read this to place a conflict on its own field.
+  Map<String, String> _lastSignupFieldErrors = const {};
+  Map<String, String> get lastSignupFieldErrors => _lastSignupFieldErrors;
 
   // ── Logout ─────────────────────────────────────────────────────────────────
 

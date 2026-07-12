@@ -182,6 +182,36 @@ class DioApiService {
         requiresAuth: requiresAuth,
       );
 
+  /// Fire-and-forget refresh-token-family revocation for sign-out.
+  ///
+  /// Self-authenticates with the CURRENT [accessToken] and deliberately BYPASSES
+  /// the storage-backed auth interceptor (`requiresAuth:false`) and its 401
+  /// refresh path (`isRetry:true`). That guarantees this call performs **no**
+  /// storage writes, so it can safely run AFTER the local session has already
+  /// been cleared — eliminating the token-refresh/persist race that would
+  /// otherwise re-persist a "ghost" session (and the cross-account clobber if
+  /// the user re-logs in immediately). Never throws; sign-out is best-effort on
+  /// the server and must never surface a network error.
+  Future<void> revokeSession({
+    required String accessToken,
+    String? refreshToken,
+  }) async {
+    if (accessToken.isEmpty) return;
+    try {
+      await _dio.post<dynamic>(
+        '/auth/logout',
+        data: {if (refreshToken != null) 'refreshToken': refreshToken},
+        options: Options(
+          headers: {'Authorization': 'Bearer $accessToken'},
+          extra: {_kRequiresAuth: false, _kIsRetry: true},
+        ),
+      );
+    } catch (_) {
+      // Best-effort: a slow/offline link or an expired token (idle logout) must
+      // not affect the already-completed local sign-out.
+    }
+  }
+
   // ── Core request dispatcher ───────────────────────────────────────────────
 
   Future<Result<T>> _request<T>({

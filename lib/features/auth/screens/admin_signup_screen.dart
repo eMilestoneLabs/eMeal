@@ -123,7 +123,26 @@ class _AdminSignupScreenState extends State<AdminSignupScreen> {
     if (!mounted) return;
     setState(() => _isLoading = false);
 
-    if (error != null) { setState(() => _emailError = error); return; }
+    if (error != null) {
+      // Issue 3: attach a duplicate-account conflict to the field it belongs to
+      // (mobile / email / organization) instead of always the email field.
+      final fe = auth.lastSignupFieldErrors;
+      setState(() {
+        final mobileErr = fe['mobileNumber'] ?? fe['phone'] ?? fe['mobile'];
+        final orgErr = fe['organizationSlug'] ?? fe['organizationName'];
+        final emailErr = fe['email'];
+        if (mobileErr != null) {
+          _mobileError = mobileErr;
+        } else if (orgErr != null) {
+          _orgNameError = orgErr;
+        } else if (emailErr != null) {
+          _emailError = emailErr;
+        } else {
+          _emailError = error; // generic fallback (unchanged behaviour)
+        }
+      });
+      return;
+    }
 
     final identifier = _loginPref == LoginPreference.email
         ? _emailCtrl.text.trim()

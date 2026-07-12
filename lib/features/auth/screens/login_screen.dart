@@ -39,6 +39,7 @@ class _LoginScreenState extends State<LoginScreen> with TickerProviderStateMixin
   final _passwordCtrl   = TextEditingController();
   final _identifierFocus = FocusNode();
   final _passwordFocus   = FocusNode();
+  final _scrollCtrl      = ScrollController();
 
   String? _identifierError;
   String? _passwordError;
@@ -113,7 +114,32 @@ class _LoginScreenState extends State<LoginScreen> with TickerProviderStateMixin
       (_identifierCtrl.text.isEmpty ? _identifierFocus : _passwordFocus)
           .requestFocus();
     });
+    // Issue 2: the password field sits at the bottom of the glass card, so with
+    // resizeToAvoidBottomInset:false its keyboard can hide the field AND the
+    // Sign In button. When the password gains focus, lift the form above the
+    // keyboard once the inset has finished animating in.
+    _passwordFocus.addListener(_liftFormForPasswordKeyboard);
     _restorePreference();
+  }
+
+  /// Scrolls the form to its end so the password field and the Sign In button
+  /// clear the on-screen keyboard. No-op when the content already fits (there is
+  /// nothing to scroll). Fully guarded — safe if the screen is disposed while
+  /// the keyboard settles.
+  void _liftFormForPasswordKeyboard() {
+    if (!_passwordFocus.hasFocus) return;
+    // The keyboard inset animates in over ~250ms and grows maxScrollExtent as it
+    // does; wait for it to settle before computing the scroll target.
+    Future.delayed(const Duration(milliseconds: 300), () {
+      if (!mounted || !_passwordFocus.hasFocus || !_scrollCtrl.hasClients) return;
+      final target = _scrollCtrl.position.maxScrollExtent;
+      if (target <= 0) return;
+      _scrollCtrl.animateTo(
+        target,
+        duration: const Duration(milliseconds: 260),
+        curve: Curves.easeOut,
+      );
+    });
   }
 
   Future<void> _restorePreference() async {
@@ -131,7 +157,9 @@ class _LoginScreenState extends State<LoginScreen> with TickerProviderStateMixin
     _identifierCtrl.dispose();
     _passwordCtrl.dispose();
     _identifierFocus.dispose();
+    _passwordFocus.removeListener(_liftFormForPasswordKeyboard);
     _passwordFocus.dispose();
+    _scrollCtrl.dispose();
     super.dispose();
   }
 
@@ -318,6 +346,7 @@ class _LoginScreenState extends State<LoginScreen> with TickerProviderStateMixin
             child: LayoutBuilder(
               builder: (context, constraints) =>
                   SingleChildScrollView(
+                controller: _scrollCtrl,
                 physics: const BouncingScrollPhysics(),
                 keyboardDismissBehavior:
                     ScrollViewKeyboardDismissBehavior.onDrag,

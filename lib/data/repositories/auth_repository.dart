@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:smart_meal_management/core/errors/failure.dart';
 import 'package:smart_meal_management/data/contracts/i_auth_repository.dart';
 import 'package:smart_meal_management/data/services/dio_api_service.dart';
@@ -235,19 +237,27 @@ class AuthRepository implements IAuthRepository {
 
   @override
   Future<Result<Unit>> logout() async {
-    // Best-effort server-side revocation (refresh-token family), then ALWAYS
-    // clear locally — logout must never strand the user.
-    final refreshToken = _session?.refreshToken;
-    try {
-      await DioApiService.instance.post<Map<String, dynamic>>(
-        '/auth/logout',
-        body: {if (refreshToken != null) 'refreshToken': refreshToken},
-      );
-    } catch (_) {
-      // Network failure must not block local logout.
-    }
+    // Issue 1 (sign-out delay): clear the local session FIRST and FULLY, then
+    // revoke on the server FIRE-AND-FORGET — so sign-out is instant and never
+    // blocks on the network (a slow/offline link must not stall the UI).
+    //
+    // Ordering matters: storage is cleared BEFORE the revocation call, and the
+    // revocation goes through `revokeSession` (which does no storage I/O and no
+    // token refresh). This removes the ghost-session race — the interceptor's
+    // proactive-refresh path could otherwise re-persist a session AFTER we
+    // cleared it (likely on an idle logout with an expired access token) — and
+    // the cross-account clobber if the user re-logs in immediately.
+    final session = _session;
     _session = null;
     await _storage.clearSession();
+    if (session != null) {
+      unawaited(
+        DioApiService.instance.revokeSession(
+          accessToken: session.accessToken,
+          refreshToken: session.refreshToken,
+        ),
+      );
+    }
     return const Ok(Unit.instance);
   }
 
