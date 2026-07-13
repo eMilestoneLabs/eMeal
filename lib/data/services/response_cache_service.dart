@@ -107,6 +107,28 @@ class ResponseCacheService {
     return <T>[];
   }
 
+  /// Like [readList] but distinguishes a cache MISS (null) from a genuinely
+  /// cached EMPTY list (`[]`). Providers use this so an account whose
+  /// last-known answer is "nothing yet" still paints its empty state
+  /// instantly (stale-while-revalidate) instead of blocking on the network
+  /// behind a skeleton on every tap — the "new account feels slow" root cause.
+  Future<List<T>?> readListOrNull<T>(
+    String key,
+    T Function(Map<String, dynamic>) fromJson, {
+    Duration? maxAge,
+  }) async {
+    final cached = await read(key, maxAge: maxAge);
+    if (cached is List) {
+      try {
+        return cached
+            .whereType<Map<String, dynamic>>()
+            .map(fromJson)
+            .toList();
+      } catch (_) {/* corrupt cache → treat as miss */}
+    }
+    return null;
+  }
+
   /// Writes a list of models as JSON (each via [toJson]). Fire-and-forget.
   Future<void> writeList<T>(
     String key,

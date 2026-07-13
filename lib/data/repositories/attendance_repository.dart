@@ -224,6 +224,10 @@ class AttendanceRepository implements IAttendanceRepository {
         'status': record.status.name,
         if (record.preference != null) 'preference': record.preference,
         if (record.note != null) 'note': record.note,
+        // FR-PG parity (ATT-004 self-mark): group selections travel exactly
+        // like the member mark path; the server validates them identically.
+        if (record.selections != null)
+          'selections': record.selections!.map((s) => s.toJson()).toList(),
       },
     );
     return switch (result) {

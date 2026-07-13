@@ -76,17 +76,23 @@ class _NoticeFeedScreenState extends State<NoticeFeedScreen> {
 
   Future<void> _load() async {
     // Cache-first (SWR): paint the last-known feed instantly, then refresh.
+    // Miss-vs-empty aware: a cached EMPTY feed paints its empty state
+    // instantly too; only a true cache MISS keeps the loader.
+    var cacheMiss = true;
     if (_notices.isEmpty) {
-      final cached = await ResponseCacheService.instance.readList(
+      final cached = await ResponseCacheService.instance.readListOrNull(
           _cacheKey, NoticeModel.fromJson, maxAge: const Duration(hours: 12));
-      if (cached.isNotEmpty && mounted) {
+      if (cached != null && mounted) {
+        cacheMiss = false;
         setState(() {
           _notices = cached;
           _unavailable = false;
         });
       }
+    } else {
+      cacheMiss = false;
     }
-    if (mounted) setState(() => _loading = _notices.isEmpty);
+    if (mounted) setState(() => _loading = cacheMiss && _notices.isEmpty);
     final res = await _repo.getNotices(
       organizationId: widget.organizationId,
       groupId: widget.groupId,

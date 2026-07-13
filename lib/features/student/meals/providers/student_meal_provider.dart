@@ -58,7 +58,8 @@ class StudentMealProvider extends ChangeNotifier {
   }) async {
     if (_isLoading) return;
     // Issue 3: an empty placeholder schedule (id '') means "nothing published
-    // yet" — never cache it, so the menu refreshes once the admin publishes.
+    // yet" — it never satisfies this early-return, so the menu keeps
+    // refreshing (silently, painted from cache) until the admin publishes.
     if (!forceRefresh && _schedule != null && _schedule!.id.isNotEmpty) return;
 
     _organizationId = organizationId;
@@ -66,15 +67,18 @@ class StudentMealProvider extends ChangeNotifier {
 
     // Cache-first (stale-while-revalidate): paint the last-known schedule
     // instantly from local storage, then refresh from the network below.
-    // Only real (published) schedules are cached, mirroring the rule above.
+    // The empty "nothing published yet" answer is cached too, so it paints
+    // instantly as well — and because an empty in-memory schedule never
+    // triggers the early-return above, every open still refreshes silently
+    // and picks up a newly published menu (Issue 3 preserved).
     if (_schedule == null) {
       _isLoading = true; // sync: first build shows the loader, never empty menu
       final m = await ResponseCacheService.instance.readObject(
           _menuCacheKey(organizationId, groupId), MealScheduleModel.fromJson,
           maxAge: const Duration(days: 7));
-      if (m != null && m.id.isNotEmpty) {
+      if (m != null) {
         _schedule = m;
-        _ensureValidDay();
+        if (m.id.isNotEmpty) _ensureValidDay();
       }
     }
 
@@ -94,12 +98,12 @@ class StudentMealProvider extends ChangeNotifier {
         _schedule = value;
         _error = null;
         _ensureValidDay();
-        // Persist real (published) schedules for instant cache-first paint
-        // next session. Fire-and-forget; never blocks.
-        if (value.id.isNotEmpty) {
-          ResponseCacheService.instance
-              .write(_menuCacheKey(_organizationId, _groupId), value.toJson());
-        }
+        // Persist for instant cache-first paint next session — including the
+        // empty placeholder ("nothing published yet"), so groups without a
+        // menu stop paying a loader + round-trip on every open. Publishing
+        // still shows up because empty schedules always refresh silently.
+        ResponseCacheService.instance
+            .write(_menuCacheKey(_organizationId, _groupId), value.toJson());
       case Err(:final failure):
         _error = failure.message;
     }

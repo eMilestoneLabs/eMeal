@@ -117,10 +117,12 @@ class MemberBillingProvider extends ChangeNotifier {
     // this also de-duplicates that list across tabs). The financial numbers
     // below (getBillingSummaryV2 / series) are intentionally NEVER cached — they
     // are always fetched live so billing figures are never stale.
-    final cachedGroups = await ResponseCacheService.instance.readList(
+    // Miss-vs-empty aware: a cached EMPTY org (no groups yet) paints the real
+    // empty state instantly; only a true cache MISS keeps the loader.
+    final cachedGroups = await ResponseCacheService.instance.readListOrNull(
         _orgGroupsCacheKey, GroupModel.fromJson,
         maxAge: const Duration(hours: 12));
-    if (cachedGroups.isNotEmpty) {
+    if (cachedGroups != null && cachedGroups.isNotEmpty) {
       groups = cachedGroups;
       groupId = groups.first.id;
       loadingGroups = false;
@@ -132,6 +134,9 @@ class MemberBillingProvider extends ChangeNotifier {
       // refresh below — the screen is fully fresh after one round-trip wave
       // instead of groups-then-figures sequentially.
       unawaited(compute());
+    } else if (cachedGroups != null) {
+      loadingGroups = false;
+      notifyListeners();
     }
     final computedFor = groupId;
 

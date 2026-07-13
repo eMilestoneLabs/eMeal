@@ -219,6 +219,11 @@ class AdminDashboardProvider extends ChangeNotifier {
     // Cache-first (stale-while-revalidate): paint last-known KPIs + recent
     // activity instantly; the fetches below overwrite. Atomic + best-effort.
     final dashKey = 'admin_dashboard:$organizationId';
+    // Miss-vs-empty aware: a cached EMPTY dashboard (new account, no groups
+    // yet) still counts as a valid instant paint — the real empty state shows
+    // immediately while the network refresh runs, instead of a skeleton +
+    // full round-trip on every tap.
+    var paintedFromCache = false;
     if (_groups.isEmpty) {
       final cached = await ResponseCacheService.instance
           .read(dashKey, maxAge: const Duration(hours: 12));
@@ -271,10 +276,11 @@ class AdminDashboardProvider extends ChangeNotifier {
           _restoreIntMap(_totalByGroup, cached['totalByGroup']);
           final sg = cached['selectedGroupId'];
           if (sg is String) _selectedGroupId = sg;
+          paintedFromCache = true;
         } catch (_) {/* ignore corrupt cache */}
       }
     }
-    _isLoading = _groups.isEmpty;
+    _isLoading = _groups.isEmpty && !paintedFromCache;
     notifyListeners();
 
     // GOLDEN PATH — single round-trip: GET /dashboard/admin/overview returns
@@ -289,9 +295,9 @@ class AdminDashboardProvider extends ChangeNotifier {
         await _restoreDefaultGroupSelection();
       }
       _bindRealtime();
-      if (_groups.isNotEmpty) {
-        _writeDashCache(dashKey);
-      }
+      // Cache the answer even when it is EMPTY (new account) — a cached
+      // "no groups yet" paints instantly on the next tap.
+      _writeDashCache(dashKey);
       // Pass 15 (FR-ANL-022): live data landed — stamp freshness.
       _lastUpdated = DateTime.now();
       _isLoading = false;
@@ -419,10 +425,9 @@ class AdminDashboardProvider extends ChangeNotifier {
     // B10: join group rooms + subscribe to live events (no-op in mock mode).
     _bindRealtime();
 
-    // Persist the dashboard KPI core for instant cache-first paint next time.
-    if (_groups.isNotEmpty) {
-      _writeDashCache(dashKey);
-    }
+    // Persist the dashboard KPI core for instant cache-first paint next time
+    // — even when EMPTY, so a new account's next tap paints instantly.
+    _writeDashCache(dashKey);
 
     // Pass 15 (FR-ANL-022): live data landed via the legacy wave path.
     _lastUpdated = DateTime.now();

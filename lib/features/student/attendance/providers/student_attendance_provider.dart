@@ -50,11 +50,20 @@ class StudentAttendanceProvider extends ChangeNotifier {
     // Cache-first (stale-while-revalidate): paint last-known today-records
     // instantly, then refresh below. Best-effort; the fetch always wins.
     final cacheKey = _attendanceCacheKey(organizationId, groupId, userId);
+    bool cacheMiss = false;
     if (_records.isEmpty) {
-      _records = await ResponseCacheService.instance.readList(
+      // Miss-vs-empty aware: a cached EMPTY day (nothing marked yet) paints
+      // instantly; only a true cache MISS keeps the loader while the network
+      // fetch below runs.
+      final cached = await ResponseCacheService.instance.readListOrNull(
           cacheKey, AttendanceModel.fromJson, maxAge: const Duration(hours: 12));
+      if (cached != null) {
+        _records = cached;
+      } else {
+        cacheMiss = true;
+      }
     }
-    _isLoading = _records.isEmpty;
+    _isLoading = cacheMiss && _records.isEmpty;
     _error = null;
     notifyListeners();
 

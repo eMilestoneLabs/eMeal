@@ -53,10 +53,18 @@ class GroupProvider extends ChangeNotifier {
     final cacheKey = 'my_groups:$organizationId:$userId';
     if (_myGroups.isEmpty) {
       _isLoading = true; // sync: first build shows the loader, never empty state
-      _myGroups = await ResponseCacheService.instance.readList(
+      // Miss-vs-empty aware: a member not in any group yet paints the real
+      // "join a group" state instantly; only a true cache MISS keeps the
+      // loader while the refresh below runs.
+      final cached = await ResponseCacheService.instance.readListOrNull(
           cacheKey, GroupModel.fromJson, maxAge: const Duration(hours: 12));
+      if (cached != null) {
+        _myGroups = cached;
+        _isLoading = false;
+      }
+    } else {
+      _isLoading = false;
     }
-    _isLoading = _myGroups.isEmpty;
     _error = null;
     notifyListeners();
 
@@ -228,9 +236,9 @@ class GroupProvider extends ChangeNotifier {
   Future<void> loadPendingRequests({String? userId}) async {
     final cacheKey = 'pending_requests:${userId ?? 'me'}';
     if (_pendingRequests.isEmpty) {
-      final cached = await ResponseCacheService.instance.readList(
+      final cached = await ResponseCacheService.instance.readListOrNull(
           cacheKey, GroupModel.fromJson, maxAge: const Duration(hours: 12));
-      if (cached.isNotEmpty) {
+      if (cached != null && cached.isNotEmpty) {
         _pendingRequests = cached;
         notifyListeners();
       }

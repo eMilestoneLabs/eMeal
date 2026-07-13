@@ -12,8 +12,10 @@ import 'package:smart_meal_management/features/auth/providers/auth_provider.dart
 import 'package:smart_meal_management/shared/models/attendance_model.dart';
 import 'package:smart_meal_management/shared/models/group_model.dart';
 import 'package:smart_meal_management/shared/models/meal_model.dart';
+import 'package:smart_meal_management/shared/models/preference_group_model.dart';
 import 'package:smart_meal_management/shared/models/result.dart';
 import 'package:smart_meal_management/shared/widgets/app_skeleton.dart';
+import 'package:smart_meal_management/shared/widgets/preference_group_selector.dart';
 
 /// Issue 5 — Staff (admin / manager) self-attendance.
 ///
@@ -48,6 +50,13 @@ class _StaffAttendanceScreenState extends State<StaffAttendanceScreen> {
   // admin picks one — exactly like members.
   final Map<String, String?> _selectedPref = {};
 
+  // FR-PG parity: per-meal preference-GROUP selections (Module 36). When the
+  // meal carries explicit preference groups, they take precedence over the
+  // flat chips (same rule as the member card) and "Present" stays disabled
+  // until every required group is satisfied.
+  final Map<String, List<PreferenceSelection>> _groupSelections = {};
+  final Map<String, bool> _groupSelectionsComplete = {};
+
   List<GroupModel> _groups = [];
   String? _groupId;
   List<MealModel> _meals = [];
@@ -77,17 +86,19 @@ class _StaffAttendanceScreenState extends State<StaffAttendanceScreen> {
     // Cache-first: paint the group selector from the shared org-groups cache
     // and start today's data immediately — the network refresh below runs in
     // the same wave and reconciles silently.
-    final cached = await ResponseCacheService.instance.readList(
+    // Miss-vs-empty aware: a cached EMPTY org (no groups yet) paints its real
+    // empty state instantly; only a true cache MISS keeps the loader.
+    final cached = await ResponseCacheService.instance.readListOrNull(
         'admin_groups:$_orgId', GroupModel.fromJson,
         maxAge: const Duration(hours: 12));
     if (!mounted) return;
-    if (cached.isNotEmpty) {
+    if (cached != null) {
       setState(() {
         _groups = cached;
-        _groupId = cached.first.id;
+        _groupId = cached.isNotEmpty ? cached.first.id : null;
         _loadingGroups = false;
       });
-      unawaited(_load());
+      if (_groupId != null) unawaited(_load());
     }
 
     final prevSel = _groupId;
@@ -164,7 +175,7 @@ class _StaffAttendanceScreenState extends State<StaffAttendanceScreen> {
   }
 
   Future<void> _mark(MealModel meal, AttendanceStatus status,
-      {String? preference}) async {
+      {String? preference, List<PreferenceSelection>? selections}) async {
     final gid = _groupId;
     if (gid == null || _busyMealId != null) return;
     setState(() {
@@ -180,8 +191,11 @@ class _StaffAttendanceScreenState extends State<StaffAttendanceScreen> {
         r.date.day == now.day);
 
     final record = existing != -1
-        ? _records[existing]
-            .copyWith(status: status, markedAt: now, preference: preference)
+        ? _records[existing].copyWith(
+            status: status,
+            markedAt: now,
+            preference: preference,
+            selections: selections)
         : AttendanceModel(
             id: 'temp_${meal.id}_${now.millisecondsSinceEpoch}',
             mealId: meal.id,
@@ -192,6 +206,7 @@ class _StaffAttendanceScreenState extends State<StaffAttendanceScreen> {
             date: now,
             markedAt: now,
             preference: preference,
+            selections: selections,
           );
 
     // SRS Module 03 ATT-004: the endpoint now treats an admin marking their
@@ -334,12 +349,22 @@ class _StaffAttendanceScreenState extends State<StaffAttendanceScreen> {
     final open = meal.attendanceWindow.openTime;
     final close = meal.attendanceWindow.closeTime;
 
+    // FR-PG parity (Module 36): explicit preference GROUPS take precedence
+    // over the flat chips — exactly the member card's rule. Present unlocks
+    // once every required group is satisfied (meals with no required group
+    // start unlocked, mirroring the correction sheet).
+    final hasGroups = meal.preferenceGroups.isNotEmpty;
+    final groupsComplete = _groupSelectionsComplete[meal.id] ??
+        !meal.preferenceGroups.any((g) => g.required);
+
     // Issue 5: preference parity. When the meal has preferences enabled, the
     // admin must pick one before "Present" — identical to the member flow.
-    final prefsOn =
-        meal.preferencesEnabled && meal.enabledPreferences.isNotEmpty;
+    final prefsOn = !hasGroups &&
+        meal.preferencesEnabled &&
+        meal.enabledPreferences.isNotEmpty;
     final selectedPref = _selectedPref[meal.id];
-    final canPresent = !prefsOn || selectedPref != null;
+    final canPresent =
+        hasGroups ? groupsComplete : (!prefsOn || selectedPref != null);
 
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
@@ -376,6 +401,18 @@ class _StaffAttendanceScreenState extends State<StaffAttendanceScreen> {
                   : AppColors.textSecondary,
             ),
           ),
+          // ── Preference groups (FR-PG parity with the member card) ─────────
+          if (hasGroups) ...[
+            const SizedBox(height: 12),
+            PreferenceGroupSelector(
+              groups: meal.preferenceGroups,
+              enabled: !busy,
+              onChanged: (selections, delta, complete) => setState(() {
+                _groupSelections[meal.id] = selections;
+                _groupSelectionsComplete[meal.id] = complete;
+              }),
+            ),
+          ],
           // ── Preference chips (Issue 5 parity) ─────────────────────────────
           if (prefsOn) ...[
             const SizedBox(height: 12),
@@ -449,7 +486,13 @@ class _StaffAttendanceScreenState extends State<StaffAttendanceScreen> {
                 loading: busy && _busyStatus == AttendanceStatus.present,
                 enabled: canPresent && !busy,
                 onTap: () => _mark(meal, AttendanceStatus.present,
-                    preference: prefsOn ? selectedPref : null),
+                    preference: prefsOn ? selectedPref : null,
+                    // FR-PG-031: Present sends the selection set; Absent
+                    // needs none (identical to the member card).
+                    selections: hasGroups
+                        ? (_groupSelections[meal.id] ??
+                            const <PreferenceSelection>[])
+                        : null),
               ),
               const SizedBox(width: 8),
               // Q17/Q21: Skip button removed — Present or Absent only.

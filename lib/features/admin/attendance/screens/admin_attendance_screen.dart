@@ -77,14 +77,17 @@ class _AdminAttendanceScreenState extends State<AdminAttendanceScreen> {
     // last-known groups instantly (shared 'admin_groups:$org' cache), so
     // returning to this tab never blocks on a fresh groups round-trip first.
     if (_groups.isEmpty) {
-      final cached = await ResponseCacheService.instance.readList(
+      // Miss-vs-empty aware: a cached EMPTY org (no groups yet) paints its
+      // real empty state instantly; only a true cache MISS shows the loader.
+      final cached = await ResponseCacheService.instance.readListOrNull(
           'admin_groups:$orgId', GroupModel.fromJson,
           maxAge: const Duration(hours: 12));
       if (!mounted) return;
-      if (cached.isNotEmpty) {
+      if (cached != null) {
         setState(() {
           _groups = cached;
           _selectedGroupId = resolveSelected(cached);
+          _loadingGroups = false;
         });
         // Start attendance WITHOUT awaiting so the groups refresh below runs in
         // the SAME network wave — tap-to-fully-fresh costs one round-trip, not

@@ -5,6 +5,7 @@ import 'package:smart_meal_management/app/router/route_names.dart';
 import 'package:smart_meal_management/core/constants/app_constants.dart';
 import 'package:smart_meal_management/core/theme/app_colors.dart';
 import 'package:smart_meal_management/core/theme/app_typography.dart';
+import 'package:smart_meal_management/features/auth/providers/auth_provider.dart';
 import 'package:smart_meal_management/features/groups/providers/group_provider.dart';
 
 /// Premium no-group onboarding screen.
@@ -34,11 +35,19 @@ class _NoGroupScreenState extends State<NoGroupScreen>
   // tapping Done, so surface it with a tappable entry back into the join flow.
   final _groupProvider = GroupProvider();
 
+  /// Signed-in user id so the pending-requests cache key is account-scoped
+  /// (never the shared ':me' fallback). Null-safe before auth resolves.
+  String? get _userId => AuthProviderScope.of(context).currentUser?.id;
+
   @override
   void initState() {
     super.initState();
     _groupProvider.addListener(_onPendingChanged);
-    _groupProvider.loadPendingRequests();
+    // Inherited widgets aren't available in initState — resolve the user id
+    // one frame later (the join flow itself is unaffected).
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _groupProvider.loadPendingRequests(userId: _userId);
+    });
     _ctrl = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 900),
@@ -73,14 +82,16 @@ class _NoGroupScreenState extends State<NoGroupScreen>
   /// home tab (via the shell's bottom nav history) rather than exiting the app.
   Future<void> _scanQr() async {
     await context.push(RouteNames.groupJoin);
-    if (mounted) _groupProvider.loadPendingRequests(); // reflect any change
+    if (mounted) {
+      _groupProvider.loadPendingRequests(userId: _userId); // reflect any change
+    }
   }
 
   /// Issue 4: re-open the join screen (which shows the full "Waiting for
   /// approval" state + Cancel) from the pending banner.
   Future<void> _openPending() async {
     await context.push(RouteNames.groupJoin);
-    if (mounted) _groupProvider.loadPendingRequests();
+    if (mounted) _groupProvider.loadPendingRequests(userId: _userId);
   }
 
   void _enterCode() {

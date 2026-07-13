@@ -88,8 +88,14 @@ class MealConfigProvider extends ChangeNotifier {
     final cacheKey = 'admin_groups:$organizationId';
     if (_groups.isEmpty) {
       _isLoading = true; // sync: first build shows the loader, never empty state
-      _groups = await ResponseCacheService.instance.readList(
+      // Miss-vs-empty aware: a cached EMPTY org (new account) paints its real
+      // empty state instantly; only a true cache MISS keeps the loader.
+      final cachedGroups = await ResponseCacheService.instance.readListOrNull(
           cacheKey, GroupModel.fromJson, maxAge: const Duration(hours: 12));
+      if (cachedGroups != null) {
+        _groups = cachedGroups;
+        _isLoading = false;
+      }
       // Auto-select the first cached group + paint its cached config/meals so
       // the body never flashes "No groups yet" while groups exist. No network
       // awaited here; the fetch below overwrites.
@@ -103,8 +109,9 @@ class MealConfigProvider extends ChangeNotifier {
             _mealsCacheKey(organizationId, g.id), MealModel.fromJson,
             maxAge: const Duration(hours: 12));
       }
+    } else {
+      _isLoading = false;
     }
-    _isLoading = _groups.isEmpty;
     _error = null;
     notifyListeners();
 
@@ -271,6 +278,9 @@ class MealConfigProvider extends ChangeNotifier {
           maxAge: const Duration(hours: 12));
       if (_meals.isNotEmpty) notifyListeners();
     }
+    // Miss-vs-empty note: a cached-empty list is indistinguishable from a
+    // miss here, but this method never gates a loader on it — the screen
+    // stays interactive while the refresh below reconciles.
 
     final result = await _mealRepo.getGroupMeals(
       organizationId: organizationId,

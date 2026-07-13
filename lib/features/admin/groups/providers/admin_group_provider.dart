@@ -142,11 +142,21 @@ class AdminGroupProvider extends ChangeNotifier {
     final scopeChanged = _loadedIncludeInactive != includeInactive;
     if (_groups.isEmpty || scopeChanged) {
       _isLoading = true; // sync: first build shows the loader, never empty state
-      _groups = await ResponseCacheService.instance.readList(
+      // Miss-vs-empty aware: an org whose last-known list is EMPTY (new
+      // account) paints its real empty state instantly; only a true cache
+      // MISS keeps the loader while the refresh below runs.
+      final cached = await ResponseCacheService.instance.readListOrNull(
           cacheKey, GroupModel.fromJson, maxAge: const Duration(hours: 12));
+      if (cached != null) {
+        _groups = cached;
+        _isLoading = false;
+      } else if (scopeChanged) {
+        _groups = [];
+      }
+    } else {
+      _isLoading = false;
     }
     _loadedIncludeInactive = includeInactive;
-    _isLoading = _groups.isEmpty;
     _error = null;
     notifyListeners();
 
@@ -264,12 +274,18 @@ class AdminGroupProvider extends ChangeNotifier {
     // instantly instead of spinning for a network round-trip every open.
     if (_selectedGroupMeals.isEmpty) {
       _isLoadingMeals = true; // sync: loader, never an empty flash
-      final cached = await ResponseCacheService.instance.readList(
+      // Miss-vs-empty aware: a group with no meals configured yet paints its
+      // empty state instantly instead of spinning on every open.
+      final cached = await ResponseCacheService.instance.readListOrNull(
           'meal_config_meals:$organizationId:$groupId', MealModel.fromJson,
           maxAge: const Duration(hours: 12));
-      if (cached.isNotEmpty) _selectedGroupMeals = cached;
+      if (cached != null) {
+        _selectedGroupMeals = cached;
+        _isLoadingMeals = false;
+      }
+    } else {
+      _isLoadingMeals = false;
     }
-    _isLoadingMeals = _selectedGroupMeals.isEmpty;
     notifyListeners();
 
     final result = await _mealRepo.getGroupMeals(
@@ -314,11 +330,18 @@ class AdminGroupProvider extends ChangeNotifier {
     // refresh below. The network result always overwrites.
     if (_selectedGroupMembers.isEmpty) {
       _isLoadingMembers = true; // sync: loader, never an empty members flash
-      _selectedGroupMembers = await ResponseCacheService.instance.readList(
+      // Miss-vs-empty aware: a group with no members yet paints its empty
+      // directory instantly instead of spinning on every open.
+      final cached = await ResponseCacheService.instance.readListOrNull(
           _membersCacheKey(organizationId, groupId), UserModel.fromJson,
           maxAge: const Duration(hours: 12));
+      if (cached != null) {
+        _selectedGroupMembers = cached;
+        _isLoadingMembers = false;
+      }
+    } else {
+      _isLoadingMembers = false;
     }
-    _isLoadingMembers = _selectedGroupMembers.isEmpty;
     notifyListeners();
 
     final result = await _groupRepo.getGroupMembers(

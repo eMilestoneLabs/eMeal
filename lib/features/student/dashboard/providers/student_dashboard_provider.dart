@@ -267,6 +267,11 @@ class StudentDashboardProvider extends ChangeNotifier {
     // best-effort — absent/corrupt cache changes nothing and the loading view
     // shows as before.
     final dashCacheKey = 'student_dashboard:$orgId:$groupId:$userId';
+    // Miss-vs-empty aware: a cached EMPTY dashboard (no meals configured yet)
+    // still counts as a valid instant paint — the real state shows
+    // immediately while the network refresh runs, instead of a skeleton +
+    // full round-trip on every tap.
+    var paintedFromCache = false;
     if (_todayMeals.isEmpty) {
       final cached = await ResponseCacheService.instance
           .read(dashCacheKey, maxAge: const Duration(hours: 12));
@@ -319,11 +324,12 @@ class StudentDashboardProvider extends ChangeNotifier {
               groupName: _groupName,
             );
           }
+          paintedFromCache = true;
         } catch (_) {/* ignore corrupt cache; fetch will populate */}
       }
     }
     // Only show the full loading view when there is nothing cached to show.
-    _isLoading = _todayMeals.isEmpty;
+    _isLoading = _todayMeals.isEmpty && !paintedFromCache;
     notifyListeners();
 
     // ── Five parallel requests ─────────────────────────────────────────────
@@ -476,8 +482,11 @@ class StudentDashboardProvider extends ChangeNotifier {
     _bindRealtime(user, groupId);
 
     // Persist the dashboard core for instant cache-first paint next session.
-    // Fire-and-forget; only real data (mirrors the no-empty rule).
-    if (_todayMeals.isNotEmpty) {
+    // Fire-and-forget. Written even when today's meals are EMPTY (new account
+    // / no meals configured) so the next tap paints instantly — but only when
+    // the live fetch actually answered (a full network failure must never
+    // overwrite good cache with blanks).
+    if (failedSections < results.length) {
       ResponseCacheService.instance.write(dashCacheKey, {
         'meals': _todayMeals.map((m) => m.toJson()).toList(),
         'todayAtt': _todayAttendance.map((a) => a.toJson()).toList(),
@@ -529,10 +538,11 @@ class StudentDashboardProvider extends ChangeNotifier {
         groupId: groupId,
       );
       if (res case Ok(:final value)) {
-        if (value.id.isNotEmpty) {
-          ResponseCacheService.instance
-              .write('weekly_menu:$orgId:$groupId', value.toJson());
-        }
+        // Cache even the empty "nothing published yet" placeholder — it makes
+        // the Menu tab's FIRST open instant for groups without a menu, and
+        // empty schedules always refresh silently so publishing still lands.
+        ResponseCacheService.instance
+            .write('weekly_menu:$orgId:$groupId', value.toJson());
       }
     } catch (_) {/* best-effort prefetch */}
   }

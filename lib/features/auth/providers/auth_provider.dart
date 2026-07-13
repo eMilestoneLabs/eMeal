@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:flutter/widgets.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:smart_meal_management/core/errors/failure.dart';
 import 'package:smart_meal_management/data/repositories/auth_repository.dart';
 import 'package:smart_meal_management/data/services/realtime_service.dart';
@@ -48,6 +49,43 @@ class AuthProvider extends ChangeNotifier {
   /// Locally-picked avatar image bytes (not yet persisted to backend).
   Uint8List? get avatarBytes => _avatarBytes;
 
+  // ── Smart cache ownership ──────────────────────────────────────────────────
+
+  /// SharedPreferences key holding the user id that OWNS the on-device caches
+  /// (SWR response cache + the admin default-group preference).
+  static const String _kCacheOwnerKey = 'cache_owner_user_id';
+
+  /// Guarantees account A's cached data is never painted for account B.
+  ///
+  /// [clearSession] already wipes the SWR cache on logout, but a session can
+  /// also be REPLACED without one (login after an expired session, a fresh
+  /// signup from a cold start). Adopting ownership at every session
+  /// establishment closes that path — and is a strict no-op for the same
+  /// returning user, so their warm cache (instant paints) is preserved.
+  ///
+  /// [clearWhenUnowned]: explicit logins/signups clear even when no owner
+  /// stamp exists (legacy installs — the cache could belong to anyone);
+  /// the boot-time session RESTORE passes false because a restored session
+  /// is by definition the account that wrote the cache.
+  Future<void> _adoptCacheOwnership(
+    String userId, {
+    required bool clearWhenUnowned,
+  }) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final owner = prefs.getString(_kCacheOwnerKey);
+      if (owner != userId) {
+        if (owner != null || clearWhenUnowned) {
+          await ResponseCacheService.instance.clear();
+          // Account-scoped prefs outside the SWR namespace — the admin's
+          // saved default group (AdminDashboardProvider.kDefaultGroupKey).
+          await prefs.remove('admin_default_group_id');
+        }
+        await prefs.setString(_kCacheOwnerKey, userId);
+      }
+    } catch (_) {/* best-effort — cache hygiene must never block auth */}
+  }
+
   // ── Initialise ─────────────────────────────────────────────────────────────
 
   /// Called once from [bootstrap.dart] / app startup.
@@ -68,6 +106,9 @@ class AuthProvider extends ChangeNotifier {
         // and flaky-network cold starts (no forced re-login); a genuinely dead
         // refresh token self-corrects to logout on that first call.
         if (value != null && (value.isValid || value.refreshToken.isNotEmpty)) {
+          // Adopt cache ownership BEFORE the state flip so no provider can
+          // read another account's cache (no-op for the returning owner).
+          await _adoptCacheOwnership(value.user.id, clearWhenUnowned: false);
           _session = value;
           _state = AuthAuthenticated(session: value);
           // B10: open realtime socket once a session is restored (no-op in mock).
@@ -144,6 +185,9 @@ class AuthProvider extends ChangeNotifier {
 
     switch (result) {
       case Ok(:final value):
+        // Different account than the cache owner → wipe before any screen
+        // can paint the previous account's data (no-op for the same user).
+        await _adoptCacheOwnership(value.user.id, clearWhenUnowned: true);
         _session = value;
         _state = AuthAuthenticated(session: value);
         RealtimeService.instance.connect(); // open the live realtime socket
@@ -199,6 +243,8 @@ class AuthProvider extends ChangeNotifier {
 
     switch (result) {
       case Ok(:final value):
+        // Same rule as password login: never paint another account's cache.
+        await _adoptCacheOwnership(value.user.id, clearWhenUnowned: true);
         _session = value;
         _state = AuthAuthenticated(session: value);
         RealtimeService.instance.connect(); // open the live realtime socket
@@ -282,6 +328,8 @@ class AuthProvider extends ChangeNotifier {
 
     switch (result) {
       case Ok(:final value):
+        // A brand-new account must always start from a clean cache.
+        await _adoptCacheOwnership(value.user.id, clearWhenUnowned: true);
         _session = value;
         _state = AuthAuthenticated(session: value);
         _lastSignupFieldErrors = const {};
