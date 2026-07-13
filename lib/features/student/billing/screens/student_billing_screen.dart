@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:smart_meal_management/core/theme/app_colors.dart';
 import 'package:smart_meal_management/core/theme/app_typography.dart';
 import 'package:smart_meal_management/data/repositories/attendance_repository.dart';
+import 'package:smart_meal_management/data/repositories/billing_periods_repository.dart';
 import 'package:smart_meal_management/data/repositories/group_repository.dart';
 import 'package:smart_meal_management/data/repositories/meal_repository.dart';
 import 'package:smart_meal_management/data/services/billing_service.dart';
@@ -37,6 +38,7 @@ class _StudentBillingScreenState extends State<StudentBillingScreen> {
   final _attendanceRepo = AttendanceRepository();
   final _mealRepo = MealRepository();
   final _groupRepo = GroupRepository();
+  final _billingRepo = BillingPeriodsRepository();
 
   bool _loading = true;
   bool _exporting = false;
@@ -55,6 +57,10 @@ class _StudentBillingScreenState extends State<StudentBillingScreen> {
   // Issue 5: authoritative net (meal + guest + adjustments) from the same
   // backend engine as the admin dashboard, so both sides show one number.
   MyBilling? _serverBilling;
+  // command_6 (survey 2026-07-13): admin-proposed debits awaiting MY approval
+  // — they bill only after I approve (member-consent workflow).
+  List<Map<String, dynamic>> _pendingCharges = [];
+  bool _deciding = false;
   bool _pricingEnabled = false;
   // SRS Module 03 (survey Q17/Q22): group Bill-Skip policy.
   bool _billSkippedMeals = false;
@@ -132,6 +138,8 @@ class _StudentBillingScreenState extends State<StudentBillingScreen> {
       from: _from,
       to: _to,
     );
+    // Rides the same parallel wave — pending debit approvals (self-scoped).
+    final pendF = _billingRepo.myPendingAdjustments();
     final recRes = await recF;
     final mealRes = await mealF;
     final todayRes = await todayF;
@@ -185,6 +193,15 @@ class _StudentBillingScreenState extends State<StudentBillingScreen> {
       unawaited(mbF.then((_) {}));
     }
 
+    var pending = <Map<String, dynamic>>[];
+    final pendRes = await pendF;
+    if (!mounted) return;
+    if (pendRes case Ok(:final value)) {
+      pending = value
+          .where((e) => (e['groupId'] ?? '').toString() == _groupId)
+          .toList();
+    }
+
     setState(() {
       _records = records;
       _meals = meals;
@@ -193,6 +210,7 @@ class _StudentBillingScreenState extends State<StudentBillingScreen> {
       _rows = rows;
       _summary = summaries.isNotEmpty ? summaries.first : null;
       _serverBilling = serverBilling;
+      _pendingCharges = pending;
       _loading = false;
     });
   }
@@ -248,6 +266,7 @@ class _StudentBillingScreenState extends State<StudentBillingScreen> {
         guestCount: sb.guestCount,
         guestAmount: sb.guestAmount,
         adjustmentsTotal: sb.adjustmentsTotal,
+        openingBalance: sb.openingBalance,
       ),
     };
   }
@@ -426,6 +445,10 @@ class _StudentBillingScreenState extends State<StudentBillingScreen> {
                           style: AppTypography.bodySmall
                               .copyWith(color: AppColors.textTertiary)),
                       const SizedBox(height: 14),
+                      if (_pendingCharges.isNotEmpty) ...[
+                        _pendingChargesCard(isDark),
+                        const SizedBox(height: 16),
+                      ],
                       _summarySection(isDark),
                       const SizedBox(height: 16),
                       _currentStatusCard(isDark),
@@ -787,6 +810,16 @@ class _StudentBillingScreenState extends State<StudentBillingScreen> {
               style: AppTypography.titleSmall
                   .copyWith(fontWeight: FontWeight.w700)),
           const SizedBox(height: 12),
+          // CREDIT-001: carried-forward opening balance — display row only,
+          // its value is already included in the Net Total below.
+          if (sb != null && sb.openingBalance != 0)
+            _breakdownRow(
+              sb.openingBalance > 0
+                  ? 'Opening balance (dues carried forward)'
+                  : 'Opening balance (credit carried forward)',
+              '${sb.openingBalance > 0 ? '+' : '−'}${_cur(sb.openingBalance.abs())}',
+              sb.openingBalance > 0 ? AppColors.warning : AppColors.present,
+            ),
           if (entries.isEmpty)
             Text('No charges yet.',
                 style: AppTypography.bodySmall
@@ -834,6 +867,142 @@ class _StudentBillingScreenState extends State<StudentBillingScreen> {
         ],
       ),
     );
+  }
+
+  // ── command_6 (survey 2026-07-13): member-consent debit approvals ────────
+
+  Widget _pendingChargesCard(bool isDark) {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(16, 14, 16, 6),
+      decoration: BoxDecoration(
+        color: isDark ? AppColors.surfaceDark : AppColors.surface,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: AppColors.warning.withValues(alpha: 0.45)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.pending_actions_rounded,
+                  color: AppColors.warning, size: 20),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text('Charges awaiting your approval',
+                    style: AppTypography.titleSmall
+                        .copyWith(fontWeight: FontWeight.w700)),
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Text('A proposed charge bills you only after you approve it.',
+              style: AppTypography.labelSmall
+                  .copyWith(color: AppColors.textTertiary)),
+          const SizedBox(height: 10),
+          for (final e in _pendingCharges) _pendingChargeTile(isDark, e),
+        ],
+      ),
+    );
+  }
+
+  Widget _pendingChargeTile(bool isDark, Map<String, dynamic> e) {
+    final amountPaise = (e['amount'] as num?) ?? 0;
+    final reason = (e['reason'] ?? '').toString();
+    final date = (e['entryDate'] ?? '').toString();
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: AppColors.warning.withValues(alpha: 0.07),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(reason.isEmpty ? 'Proposed charge' : reason,
+                    style: AppTypography.bodyMedium
+                        .copyWith(fontWeight: FontWeight.w600)),
+              ),
+              Text('+${_cur((amountPaise / 100).round())}',
+                  style: AppTypography.titleSmall.copyWith(
+                      color: AppColors.warning, fontWeight: FontWeight.w800)),
+            ],
+          ),
+          if (date.isNotEmpty) ...[
+            const SizedBox(height: 2),
+            Text(date,
+                style: AppTypography.labelSmall
+                    .copyWith(color: AppColors.textTertiary)),
+          ],
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed:
+                      _deciding ? null : () => _decideCharge(e, approve: false),
+                  icon: const Icon(Icons.close_rounded, size: 17),
+                  label: const Text('Decline'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: AppColors.error,
+                    side: BorderSide(
+                        color: AppColors.error.withValues(alpha: 0.5)),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: FilledButton.icon(
+                  onPressed:
+                      _deciding ? null : () => _decideCharge(e, approve: true),
+                  icon: const Icon(Icons.check_rounded, size: 17),
+                  label: const Text('Approve'),
+                  style:
+                      FilledButton.styleFrom(backgroundColor: AppColors.present),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _decideCharge(Map<String, dynamic> e,
+      {required bool approve}) async {
+    if (_deciding) return;
+    setState(() => _deciding = true);
+    final res = await _billingRepo.decideAdjustment(
+      entryId: (e['id'] ?? '').toString(),
+      approve: approve,
+    );
+    if (!mounted) return;
+    setState(() => _deciding = false);
+    switch (res) {
+      case Ok():
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            behavior: SnackBarBehavior.floating,
+            backgroundColor:
+                approve ? AppColors.present : AppColors.textSecondary,
+            content: Text(approve
+                ? 'Charge approved — added to your bill'
+                : 'Charge declined'),
+          ),
+        );
+        _load();
+      case Err(:final failure):
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            behavior: SnackBarBehavior.floating,
+            backgroundColor: AppColors.error,
+            content: Text(failure.message),
+          ),
+        );
+    }
   }
 
   Widget _periodSelector(bool isDark) {

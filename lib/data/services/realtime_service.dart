@@ -126,6 +126,13 @@ class RealtimeService with WidgetsBindingObserver {
           .setTransports(<String>['websocket'])
           .disableAutoConnect()
           .enableReconnection()
+          // Battery (ISSUE 7): on a flaky link the default backoff retries
+          // every ≤5s forever — each attempt is a full TLS handshake that
+          // lights the radio. Growing the ceiling to 30s cuts reconnect
+          // churn ~6× while still recovering promptly (first retries stay
+          // fast; only sustained outages back off).
+          .setReconnectionDelay(_reconnectDelayMs)
+          .setReconnectionDelayMax(_reconnectDelayMaxMs)
           .setAuth(<String, dynamic>{'token': session.accessToken})
           .build(),
     );
@@ -255,9 +262,19 @@ class RealtimeService with WidgetsBindingObserver {
     return <String, dynamic>{'value': data};
   }
 
+  /// Battery (ISSUE 7): this app-level ping is TELEMETRY ONLY — the
+  /// Socket.IO engine's own ping/pong (server-driven, 25s) is what keeps the
+  /// connection alive. 60s halves-plus the extra radio wakeups while still
+  /// feeding latency samples to `ws-metrics` on the server.
+  static const Duration _heartbeatInterval = Duration(seconds: 60);
+
+  /// Reconnect backoff bounds — first retry ~2s, exponential up to 30s.
+  static const int _reconnectDelayMs = 2000;
+  static const int _reconnectDelayMaxMs = 30000;
+
   void _startHeartbeat() {
     _stopHeartbeat();
-    _heartbeat = Timer.periodic(const Duration(seconds: 25), (_) {
+    _heartbeat = Timer.periodic(_heartbeatInterval, (_) {
       _socket?.emit(RealtimeEvents.ping, <String, dynamic>{
         'clientTime': DateTime.now().millisecondsSinceEpoch,
       });

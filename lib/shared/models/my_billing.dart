@@ -15,6 +15,7 @@ class MyBilling {
     this.guestCount = 0,
     this.guestAmount = 0,
     this.adjustmentsTotal = 0,
+    this.openingBalance = 0,
     this.totalBill = 0,
     int? netBill,
     this.periodFrom,
@@ -33,8 +34,12 @@ class MyBilling {
   final int guestCount;
   final int guestAmount;
 
-  /// Signed ledger total (debit +, credit/refund −), in ₹.
+  /// Signed ledger total (REF-001: debit AND refund +, credit −), in ₹.
   final int adjustmentsTotal;
+
+  /// CREDIT-001: balance carried forward from the previous finalized billing
+  /// period (credit negative, dues positive) — already included in [netBill].
+  final int openingBalance;
 
   /// mealCharges + guestAmount (pre-adjustment) and the final net.
   final int totalBill;
@@ -60,6 +65,7 @@ class MyBilling {
       guestCount: _i(j['guestCount']),
       guestAmount: _i(j['guestAmount']),
       adjustmentsTotal: _i(j['adjustmentsTotal']),
+      openingBalance: _i(j['openingBalance']),
       totalBill: _i(j['totalBill']),
       netBill: j['netBill'] != null ? _i(j['netBill']) : null,
       periodFrom: period?['fromDate']?.toString(),

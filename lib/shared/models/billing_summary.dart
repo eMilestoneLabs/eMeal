@@ -22,6 +22,7 @@ class BillingMemberRow {
     this.guestAmount = 0,
     this.vacationDays = 0,
     this.adjustmentsTotal = 0,
+    this.openingBalance = 0,
     int? netBill,
     this.email,
     this.phone,
@@ -44,9 +45,15 @@ class BillingMemberRow {
   /// Pass 12 (FR-BILLX-012): vacation days — reported separately, never billed.
   final int vacationDays;
 
-  /// Pass 12 (FR-BILLX-030/031): signed append-only ledger total for the
-  /// range (debit +, credit/refund −) and the resulting net bill.
+  /// Pass 12 (FR-BILLX-030/031) + REF-001 (2026-07-13): signed append-only
+  /// ledger total for the range (debit AND refund +, credit −) and the
+  /// resulting net bill.
   final int adjustmentsTotal;
+
+  /// CREDIT-001 (2026-07-13): balance carried forward from the previous
+  /// FINALIZED billing period (credit negative, dues positive). Display
+  /// item — ALREADY included in [netBill].
+  final int openingBalance;
   final int netBill;
 
   /// Additive: included so admins can search members by email / phone.
@@ -69,6 +76,7 @@ class BillingMemberRow {
         guestAmount: _asInt(j['guestAmount']),
         vacationDays: _asInt(j['vacationDays']),
         adjustmentsTotal: _asInt(j['adjustmentsTotal']),
+        openingBalance: _asInt(j['openingBalance']),
         netBill: j['netBill'] != null ? _asInt(j['netBill']) : null,
         email: j['email']?.toString(),
         phone: j['phone']?.toString(),
@@ -135,6 +143,7 @@ class BillingSummaryV2 {
     required this.members,
     this.guestRevenue = 0,
     this.adjustmentsTotal = 0,
+    this.openingBalanceTotal = 0,
     int? netRevenue,
     this.vacationDays = 0,
     this.slotBreakdown = const [],
@@ -158,6 +167,10 @@ class BillingSummaryV2 {
   /// per-slot rollup; period echoes what range the backend actually used
   /// (billing-cycle default when no explicit range was sent).
   final int adjustmentsTotal;
+
+  /// CREDIT-001: group-wide carried-forward total (each member's share is
+  /// already inside their netBill).
+  final int openingBalanceTotal;
   final int netRevenue;
   final int vacationDays;
   final List<BillingSlotBreakdown> slotBreakdown;
@@ -189,6 +202,7 @@ class BillingSummaryV2 {
       averageBill: _asInt(s['averageBill']),
       guestRevenue: _asInt(s['guestRevenue']),
       adjustmentsTotal: _asInt(s['adjustmentsTotal']),
+      openingBalanceTotal: _asInt(s['openingBalanceTotal']),
       netRevenue: s['netRevenue'] != null ? _asInt(s['netRevenue']) : null,
       vacationDays: _asInt(s['vacationDays']),
       slotBreakdown: ((j['slotBreakdown'] as List?) ?? const [])

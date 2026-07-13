@@ -182,11 +182,14 @@ class _ExportScreenState extends State<ExportScreen> {
     if (billingRes case Ok(:final value)) {
       financialsByUser = {
         for (final m in value.members)
-          if (m.guestAmount != 0 || m.adjustmentsTotal != 0)
+          if (m.guestAmount != 0 ||
+              m.adjustmentsTotal != 0 ||
+              m.openingBalance != 0)
             m.userId: MemberExportFinancials(
               guestCount: m.guestCount,
               guestAmount: m.guestAmount,
               adjustmentsTotal: m.adjustmentsTotal,
+              openingBalance: m.openingBalance,
             ),
       };
     }

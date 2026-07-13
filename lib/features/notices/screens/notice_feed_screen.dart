@@ -12,6 +12,7 @@ import 'package:smart_meal_management/features/admin/attendance/screens/admin_at
 import 'package:smart_meal_management/features/admin/attendance/screens/correction_requests_screen.dart';
 import 'package:smart_meal_management/features/admin/attendance/screens/vacation_requests_screen.dart';
 import 'package:smart_meal_management/features/student/attendance/screens/my_corrections_screen.dart';
+import 'package:smart_meal_management/features/student/billing/screens/student_billing_screen.dart';
 import 'package:smart_meal_management/features/student/settings/screens/student_vacation_request_screen.dart';
 import 'package:smart_meal_management/features/notices/screens/notice_composer_screen.dart';
 import 'package:smart_meal_management/features/admin/groups/screens/group_join_requests_screen.dart';
@@ -162,6 +163,10 @@ class _NoticeFeedScreenState extends State<NoticeFeedScreen> {
         return const StudentVacationRequestScreen();
       case 'myCorrections': // member: their correction requests + decision
         return const MyCorrectionsScreen();
+      // command_6 (survey 2026-07-13): a proposed debit awaits the member's
+      // approval on their billing screen (pending-charges card at the top).
+      case 'billingAdjustments':
+        return const StudentBillingScreen();
       // Module 02 (MEM-006/007): admin join-request approvals.
       case 'groupJoinRequests':
         return const GroupJoinRequestsScreen();

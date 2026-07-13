@@ -96,6 +96,34 @@ class BillingPeriodsRepository {
     );
   }
 
+  /// GET /billing/adjustments/my-pending — the signed-in member's own debits
+  /// awaiting THEIR approval (command_6 survey 2026-07-13: an admin-proposed
+  /// charge only bills after the member approves it).
+  Future<Result<List<Map<String, dynamic>>>> myPendingAdjustments() async {
+    final result = await DioApiService.instance.get<Map<String, dynamic>>(
+      '/billing/adjustments/my-pending',
+    );
+    return switch (result) {
+      Err(:final failure) => Err(failure),
+      Ok(:final value) => Ok(
+          (value['data'] as List? ?? const [])
+              .whereType<Map<String, dynamic>>()
+              .toList(),
+        ),
+    };
+  }
+
+  /// POST /billing/adjustments/:id/approve|reject — decide my pending debit.
+  Future<Result<Map<String, dynamic>>> decideAdjustment({
+    required String entryId,
+    required bool approve,
+  }) {
+    return DioApiService.instance.post<Map<String, dynamic>>(
+      '/billing/adjustments/$entryId/${approve ? 'approve' : 'reject'}',
+      body: const {},
+    );
+  }
+
   /// GET /billing/adjustments — newest first, optional member filter.
   Future<Result<List<Map<String, dynamic>>>> listAdjustments({
     required String groupId,

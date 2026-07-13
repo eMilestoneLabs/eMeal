@@ -8,11 +8,12 @@ import 'package:smart_meal_management/shared/models/result.dart';
 
 /// Pass 12 (SRS FR-BILLX-030/031/033, LOOP-010) — append-only billing ledger.
 ///
-/// Admins post credits/refunds (decrease a member's bill, free) and view the
-/// immutable history. Debits (increases) are intentionally NOT offered here:
-/// the consent path (member correction request) is the only way a bill grows —
-/// the backend enforces it (403 CONSENT_REQUIRED), the UI simply doesn't
-/// pretend otherwise.
+/// Admins post credits (money received — decreases the bill), refunds
+/// (REF-001: cash returned to the member — consumes credit, increases the
+/// outstanding bill, hard-capped server-side at the available credit) and
+/// propose debits (command_6 survey 2026-07-13: the member gets a bell
+/// notification and the charge bills only after THEY approve — consent
+/// asymmetry in workflow form).
 ///
 /// Issue 7: premium Material-3 redesign — searchable avatar member selector,
 /// high-contrast Credit/Refund segmented control, currency-formatted amount,
@@ -139,8 +140,11 @@ class _BillingAdjustmentsSheetState extends State<BillingAdjustmentsSheet> {
             SnackBar(
               behavior: SnackBarBehavior.floating,
               backgroundColor: AppColors.present,
-              content: Text('${_type == 'refund' ? 'Refund' : 'Credit'} '
-                  'of ${_rs((rupees * 100).round())} posted'),
+              content: Text(_type == 'debit'
+                  ? 'Charge of ${_rs((rupees * 100).round())} proposed — '
+                      'waiting for member approval'
+                  : '${_type == 'refund' ? 'Refund' : 'Credit'} '
+                      'of ${_rs((rupees * 100).round())} posted'),
             ),
           );
         }
@@ -493,14 +497,28 @@ class _BillingAdjustmentsSheetState extends State<BillingAdjustmentsSheet> {
               const SizedBox(width: 4),
               seg('refund', 'Refund', Icons.currency_exchange_rounded,
                   AppColors.info),
+              const SizedBox(width: 4),
+              // command_6 (survey 2026-07-13): debit proposes a charge that
+              // the member must approve from their bell before it bills.
+              seg('debit', 'Debit', Icons.trending_up_rounded,
+                  AppColors.warning),
             ],
           ),
         ),
         const SizedBox(height: 6),
         Text(
-          _type == 'refund'
-              ? 'Money returned for a paid charge — reduces the bill.'
-              : 'Goodwill / correction credit — reduces the bill.',
+          switch (_type) {
+            // REF-001: a refund returns money and CONSUMES the member's
+            // credit — the outstanding bill goes UP, never down.
+            'refund' =>
+              'Cash returned to the member — consumes their credit '
+                  '(cannot exceed the available credit).',
+            'debit' =>
+              'Proposed extra charge — the member gets a bell notification '
+                  'and it bills only after they approve.',
+            _ => 'Money received from the member (advance/goodwill) — '
+                'reduces the bill.',
+          },
           style: AppTypography.labelSmall.copyWith(color: textSecondary),
         ),
       ],
@@ -592,7 +610,15 @@ class _BillingAdjustmentsSheetState extends State<BillingAdjustmentsSheet> {
     final type = (e['type'] ?? '').toString();
     final isDebit = type == 'debit';
     final amount = (e['amount'] as num?) ?? 0;
-    final accent = isDebit ? AppColors.warning : AppColors.present;
+    // REF-001 (2026-07-13): refund consumes credit → increases the bill like
+    // a debit; only credit decreases it.
+    final increasesBill = type != 'credit';
+    final status = (e['status'] ?? 'posted').toString();
+    final accent = isDebit
+        ? AppColors.warning
+        : type == 'refund'
+            ? AppColors.info
+            : AppColors.present;
     final expanded = _expanded.contains(id);
     final createdBy = (e['createdBy'] ?? '').toString();
     final adminName = _memberName(createdBy);
@@ -650,6 +676,13 @@ class _BillingAdjustmentsSheetState extends State<BillingAdjustmentsSheet> {
                           Row(
                             children: [
                               _typeChip(type, accent),
+                              if (status == 'pending') ...[
+                                const SizedBox(width: 6),
+                                _typeChip('awaiting approval', AppColors.warning),
+                              ] else if (status == 'rejected') ...[
+                                const SizedBox(width: 6),
+                                _typeChip('declined', AppColors.error),
+                              ],
                               const SizedBox(width: 6),
                               Flexible(
                                 child: Text(
@@ -670,7 +703,7 @@ class _BillingAdjustmentsSheetState extends State<BillingAdjustmentsSheet> {
                     Column(
                       crossAxisAlignment: CrossAxisAlignment.end,
                       children: [
-                        Text('${isDebit ? '+' : '−'}${_rs(amount)}',
+                        Text('${increasesBill ? '+' : '−'}${_rs(amount)}',
                             style: AppTypography.titleSmall.copyWith(
                                 color: accent, fontWeight: FontWeight.w800)),
                         Icon(
@@ -708,6 +741,14 @@ class _BillingAdjustmentsSheetState extends State<BillingAdjustmentsSheet> {
                   if (_fmtTime(e['createdAt']?.toString()).isNotEmpty)
                     _detailRow('Recorded at',
                         _fmtTime(e['createdAt']?.toString()), textPrimary,
+                        textSecondary),
+                  if (status != 'posted')
+                    _detailRow(
+                        'Status',
+                        status == 'pending'
+                            ? 'Awaiting member approval — not billed yet'
+                            : 'Declined by member — never billed',
+                        textPrimary,
                         textSecondary),
                 ],
               ],

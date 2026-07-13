@@ -30,6 +30,7 @@ class MemberBillingDetailScreen extends StatefulWidget {
     this.guestCount = 0,
     this.guestAmount = 0,
     this.adjustmentsTotal = 0,
+    this.openingBalance = 0,
   });
 
   final String userId;
@@ -53,6 +54,10 @@ class MemberBillingDetailScreen extends StatefulWidget {
   final int guestCount;
   final int guestAmount;
   final int adjustmentsTotal;
+
+  /// CREDIT-001 (2026-07-13): balance carried forward from the previous
+  /// finalized billing period — included in the net headline, itemised below.
+  final int openingBalance;
 
   @override
   State<MemberBillingDetailScreen> createState() =>
@@ -169,6 +174,7 @@ class _MemberBillingDetailScreenState extends State<MemberBillingDetailScreen> {
           guestCount: widget.guestCount,
           guestAmount: widget.guestAmount,
           adjustmentsTotal: widget.adjustmentsTotal,
+          openingBalance: widget.openingBalance,
         ),
       };
 
@@ -270,10 +276,16 @@ class _MemberBillingDetailScreenState extends State<MemberBillingDetailScreen> {
   /// The bill: meals + hosted guests + signed adjustments. Computed from the
   /// figures shown on this screen so the on-screen math always adds up, and
   /// identical to the backend's netBill / the member's own My Billing total.
-  int get _netBill => _mealsBill + widget.guestAmount + widget.adjustmentsTotal;
+  int get _netBill =>
+      widget.openingBalance +
+      _mealsBill +
+      widget.guestAmount +
+      widget.adjustmentsTotal;
 
   bool get _hasFinancialExtras =>
-      widget.guestAmount != 0 || widget.adjustmentsTotal != 0;
+      widget.guestAmount != 0 ||
+      widget.adjustmentsTotal != 0 ||
+      widget.openingBalance != 0;
 
   static String _rupees(int v) => v < 0 ? '-₹${-v}' : '₹$v';
 
@@ -557,6 +569,32 @@ class _MemberBillingDetailScreenState extends State<MemberBillingDetailScreen> {
               )),
           // Same structure as the member's own My Billing breakdown, so admin
           // and member always reconcile line-by-line to the same net figure.
+          // CREDIT-001: carried-forward opening balance — already included in
+          // the Net Total (transparency line).
+          if (widget.openingBalance != 0)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 5),
+              child: Row(
+                children: [
+                  Expanded(
+                      child: Text(
+                          widget.openingBalance > 0
+                              ? 'Opening balance (dues carried forward)'
+                              : 'Opening balance (credit carried forward)',
+                          style: AppTypography.bodySmall.copyWith(
+                              color: widget.openingBalance > 0
+                                  ? AppColors.warning
+                                  : AppColors.present))),
+                  Text(
+                      '${widget.openingBalance > 0 ? '+' : '−'}₹${widget.openingBalance.abs()}',
+                      style: AppTypography.bodySmall.copyWith(
+                          fontWeight: FontWeight.w700,
+                          color: widget.openingBalance > 0
+                              ? AppColors.warning
+                              : AppColors.present)),
+                ],
+              ),
+            ),
           if (widget.guestAmount != 0)
             Padding(
               padding: const EdgeInsets.symmetric(vertical: 5),

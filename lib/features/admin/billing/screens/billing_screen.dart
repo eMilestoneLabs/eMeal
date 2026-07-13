@@ -76,6 +76,9 @@ class _BillingScreenState extends State<BillingScreen> {
           guestCount: m.guestCount,
           guestAmount: m.guestAmount,
           adjustmentsTotal: m.adjustmentsTotal,
+          // CREDIT-001: carried-forward balance rides along so the detail
+          // headline matches this list's netBill exactly.
+          openingBalance: m.openingBalance,
         ),
       ),
     );
@@ -869,6 +872,19 @@ class _MemberCard extends StatelessWidget {
                         'On vacation ${member.vacationDays} meal(s) — not billed',
                         style: AppTypography.labelSmall
                             .copyWith(color: AppColors.vacation),
+                      ),
+                    // CREDIT-001: carried-forward balance, explainable at a
+                    // glance (already inside the net headline).
+                    if (pricingEnabled && member.openingBalance != 0)
+                      Text(
+                        'Opening ${member.openingBalance > 0 ? '+' : '−'}'
+                        '${cur(member.openingBalance.abs())} carried forward',
+                        style: AppTypography.labelSmall.copyWith(
+                          color: member.openingBalance > 0
+                              ? AppColors.warning
+                              : AppColors.present,
+                          fontWeight: FontWeight.w600,
+                        ),
                       ),
                     if (pricingEnabled && member.adjustmentsTotal != 0)
                       Text(

@@ -21,15 +21,25 @@ class MemberExportFinancials {
     this.guestCount = 0,
     this.guestAmount = 0,
     this.adjustmentsTotal = 0,
+    this.openingBalance = 0,
   });
 
   final int guestCount;
   final int guestAmount;
   final int adjustmentsTotal;
 
-  bool get hasAny => guestAmount != 0 || adjustmentsTotal != 0;
+  /// CREDIT-001 (2026-07-13): balance carried forward from the previous
+  /// finalized billing period — included in the Net Total.
+  final int openingBalance;
 
-  int netFor(int mealsBill) => mealsBill + guestAmount + adjustmentsTotal;
+  bool get hasAny =>
+      guestAmount != 0 || adjustmentsTotal != 0 || openingBalance != 0;
+
+  int netFor(int mealsBill) =>
+      openingBalance + mealsBill + guestAmount + adjustmentsTotal;
+
+  String openingLabel(String currency) =>
+      '${openingBalance > 0 ? '+' : '-'}$currency${openingBalance.abs()}';
 
   String adjustmentsLabel(String currency) =>
       '${adjustmentsTotal > 0 ? '+' : '-'}$currency${adjustmentsTotal.abs()}';
@@ -288,6 +298,11 @@ class ExportService {
                   'Hosted guests (${fin.guestCount}) — billed to this host: Rs ${fin.guestAmount}',
                   style: const pw.TextStyle(fontSize: 9),
                 ),
+              if (fin.openingBalance != 0)
+                pw.Text(
+                  'Opening balance (carried forward): ${fin.openingLabel('Rs ')}',
+                  style: const pw.TextStyle(fontSize: 9),
+                ),
               if (fin.adjustmentsTotal != 0)
                 pw.Text(
                   'Adjustments (credits / refunds): ${fin.adjustmentsLabel('Rs ')}',
@@ -368,6 +383,7 @@ class ExportService {
       if (withFinancials) ...[
         xls.TextCellValue('Meals (₹)'),
         xls.TextCellValue('Hosted Guests (billed to host) (₹)'),
+        xls.TextCellValue('Opening Balance (₹)'),
         xls.TextCellValue('Adjustments (₹)'),
         xls.TextCellValue('Net Total (₹)'),
       ],
@@ -385,6 +401,7 @@ class ExportService {
         if (withFinancials) ...[
           xls.TextCellValue('${s.totalBill}'),
           xls.TextCellValue('${fin.guestAmount}'),
+          xls.TextCellValue('${fin.openingBalance}'),
           xls.TextCellValue('${fin.adjustmentsTotal}'),
           xls.TextCellValue('${fin.netFor(s.totalBill)}'),
         ],
