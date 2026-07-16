@@ -442,9 +442,17 @@ class DioApiService {
           );
         }
         if (status == 422 || status == 400) {
+          final fieldErrors = _extractFieldErrors(e.response);
+          // Live-Test-5 ISSUE-2: preference-selection rejections carry the
+          // actionable reason ("Choose a Option 2 option") in errors.selections
+          // while the top-level message is a generic one-liner. Surface the
+          // specific reason so the member knows exactly what to fix.
+          final selectionsDetail = fieldErrors['selections'];
           return ValidationFailure(
-            message: serverMessage ?? 'Invalid request. Check your input.',
-            fieldErrors: _extractFieldErrors(e.response),
+            message: selectionsDetail ??
+                serverMessage ??
+                'Invalid request. Check your input.',
+            fieldErrors: fieldErrors,
             cause: e,
           );
         }

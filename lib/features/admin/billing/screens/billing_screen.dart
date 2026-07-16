@@ -76,6 +76,10 @@ class _BillingScreenState extends State<BillingScreen> {
           guestCount: m.guestCount,
           guestAmount: m.guestAmount,
           adjustmentsTotal: m.adjustmentsTotal,
+          // Live-Test-5 ISSUE-4: itemised Debits / Credits / Refunds lines.
+          debitsTotal: m.debitsTotal,
+          creditsTotal: m.creditsTotal,
+          refundsTotal: m.refundsTotal,
           // CREDIT-001: carried-forward balance rides along so the detail
           // headline matches this list's netBill exactly.
           openingBalance: m.openingBalance,

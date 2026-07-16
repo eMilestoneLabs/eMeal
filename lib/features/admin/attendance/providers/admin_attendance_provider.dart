@@ -1,6 +1,8 @@
 import 'package:flutter/foundation.dart';
 import 'package:smart_meal_management/data/repositories/attendance_repository.dart';
+import 'package:smart_meal_management/data/repositories/guest_repository.dart';
 import 'package:smart_meal_management/shared/models/attendance_model.dart';
+import 'package:smart_meal_management/shared/models/guest_model.dart';
 import 'package:smart_meal_management/shared/models/result.dart';
 import 'package:smart_meal_management/data/services/response_cache_service.dart';
 
@@ -9,10 +11,12 @@ import 'package:smart_meal_management/data/services/response_cache_service.dart'
 /// Loads group attendance for a selected date, supports status filtering,
 /// and date navigation.
 class AdminAttendanceProvider extends ChangeNotifier {
-  AdminAttendanceProvider({AttendanceRepository? repo})
-      : _repo = repo ?? AttendanceRepository();
+  AdminAttendanceProvider({AttendanceRepository? repo, GuestRepository? guestRepo})
+      : _repo = repo ?? AttendanceRepository(),
+        _guestRepo = guestRepo ?? GuestRepository();
 
   final AttendanceRepository _repo;
+  final GuestRepository _guestRepo;
 
   // ── State ──────────────────────────────────────────────────────────────────
 
@@ -59,11 +63,25 @@ class AdminAttendanceProvider extends ChangeNotifier {
   int get vacationCount => _vacationCount;
   Set<String> get vacationUserIds => _vacationUserIds;
 
+  // Live-Test-5 (Guest Attendance Visibility policy): hosted guests for the
+  // selected date, rendered as a dedicated section BELOW the member list —
+  // guests are attendance records, never merged into the member rows.
+  List<MealGuestModel> _guests = [];
+  List<MealGuestModel> get guests => _guests;
+
+  /// Confirmed guest meals (booked + fully approved) — the "Hosted Guests"
+  /// stat; cancelled/pending rows are listed but not counted here.
+  int get confirmedGuestCount => _guests.where((g) => g.isConfirmed).length;
+
+  /// Total Meals = member meals (present) + confirmed guest meals (policy).
+  int get totalMealsCount => presentCount + confirmedGuestCount;
+
   // ── Load ──────────────────────────────────────────────────────────────────
 
   Future<void> load({
     required String groupId,
     required String organizationId,
+    bool guestsEnabled = false,
   }) async {
     // Cache-first: paint last-known records instantly, then refresh.
     final cacheKey =
@@ -96,6 +114,14 @@ class AdminAttendanceProvider extends ChangeNotifier {
       date: _selectedDate,
     );
 
+    // Live-Test-5: hosted-guest rows ride the SAME parallel wave (zero extra
+    // latency) — fetched only when the group's guest feature is on.
+    final dateStr =
+        '${_selectedDate.year.toString().padLeft(4, '0')}-${_selectedDate.month.toString().padLeft(2, '0')}-${_selectedDate.day.toString().padLeft(2, '0')}';
+    final guestsFuture = guestsEnabled
+        ? _guestRepo.listGuests(groupId: groupId, date: dateStr)
+        : null;
+
     final result = await _repo.getGroupAttendance(
       groupId: groupId,
       organizationId: organizationId,
@@ -120,6 +146,17 @@ class AdminAttendanceProvider extends ChangeNotifier {
     // apart from present/absent/pending (they are not absentees). On failure the
     // count is left untouched rather than reset, so a transient error can't blank
     // a previously-correct number.
+    if (guestsFuture != null) {
+      final guestsResult = await guestsFuture;
+      if (guestsResult case Ok(:final value)) {
+        _guests = value;
+        notifyListeners();
+      }
+    } else if (_guests.isNotEmpty) {
+      _guests = [];
+      notifyListeners();
+    }
+
     final vacationResult = await vacationFuture;
     if (vacationResult case Ok(:final value)) {
       _vacationUserIds = value.map((m) => m.id).toSet();

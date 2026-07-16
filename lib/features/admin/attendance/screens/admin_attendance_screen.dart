@@ -17,6 +17,7 @@ import 'package:smart_meal_management/features/admin/attendance/widgets/attendan
 import 'package:smart_meal_management/features/admin/attendance/widgets/member_attendance_row.dart';
 import 'package:smart_meal_management/shared/models/attendance_model.dart';
 import 'package:smart_meal_management/shared/models/group_model.dart';
+import 'package:smart_meal_management/shared/models/guest_model.dart';
 import 'package:smart_meal_management/shared/models/result.dart';
 import 'package:smart_meal_management/data/services/response_cache_service.dart';
 import 'package:smart_meal_management/shared/widgets/app_empty_state.dart';
@@ -128,9 +129,16 @@ class _AdminAttendanceScreenState extends State<AdminAttendanceScreen> {
 
   Future<void> _loadAttendance(String orgId) async {
     if (_selectedGroupId == null) return;
+    final guestsOn = _groups
+            .where((g) => g.id == _selectedGroupId)
+            .firstOrNull
+            ?.mealConfig
+            .guestsEnabled ??
+        false;
     await _provider.load(
       groupId: _selectedGroupId!,
       organizationId: orgId,
+      guestsEnabled: guestsOn,
     );
   }
 
@@ -366,6 +374,22 @@ class _AdminAttendanceScreenState extends State<AdminAttendanceScreen> {
                         count: _provider.vacationCount,
                         color: AppColors.vacation,
                         icon: Icons.beach_access_rounded),
+                    // Live-Test-5 (Guest Attendance Visibility policy): guest
+                    // meals surfaced separately — never inside Member Present.
+                    if (_provider.guests.isNotEmpty) ...[
+                      const SizedBox(width: 10),
+                      _StatBadge(
+                          label: 'Guests',
+                          count: _provider.confirmedGuestCount,
+                          color: AppColors.secondary,
+                          icon: Icons.group_add_rounded),
+                      const SizedBox(width: 10),
+                      _StatBadge(
+                          label: 'Total meals',
+                          count: _provider.totalMealsCount,
+                          color: AppColors.info,
+                          icon: Icons.restaurant_rounded),
+                    ],
                   ],
                 ),
               ),
@@ -399,7 +423,8 @@ class _AdminAttendanceScreenState extends State<AdminAttendanceScreen> {
                 key: ValueKey('att:$_loadingGroups:$_selectedGroupId:'
                     '${_provider.isLoading}:${_provider.error != null}:'
                     '${_provider.filterStatus}:'
-                    '${_provider.filteredRecords.length}'),
+                    '${_provider.filteredRecords.length}:'
+                    '${_provider.guests.length}'),
                 child: _loadingGroups
                 ? const AppTableSkeleton(rows: 7)
                 : _selectedGroupId == null
@@ -416,27 +441,40 @@ class _AdminAttendanceScreenState extends State<AdminAttendanceScreen> {
                             title: 'Something went wrong',
                             subtitle: _provider.error,
                           )
-                        : _provider.filteredRecords.isEmpty
+                        : _provider.filteredRecords.isEmpty &&
+                                _provider.guests.isEmpty
                             ? const AppEmptyState(
                                 icon: Icons.assignment_outlined,
                                 title: 'No records found',
                                 subtitle:
                                     'No attendance records match the current filter.',
                               )
-                            : ListView.separated(
-                                itemCount: _provider.filteredRecords.length,
-                                separatorBuilder: (_, _) => const Divider(
-                                  height: 1,
-                                  indent: 56,
-                                  endIndent: 16,
-                                ),
-                                itemBuilder: (context, i) {
-                                  final record = _provider.filteredRecords[i];
-                                  return MemberAttendanceRow(
-                                    record: record,
-                                    onTap: () => _showOwnershipInfo(record),
-                                  );
-                                },
+                            : ListView(
+                                children: [
+                                  for (var i = 0;
+                                      i < _provider.filteredRecords.length;
+                                      i++) ...[
+                                    if (i > 0)
+                                      const Divider(
+                                          height: 1,
+                                          indent: 56,
+                                          endIndent: 16),
+                                    MemberAttendanceRow(
+                                      record: _provider.filteredRecords[i],
+                                      onTap: () => _showOwnershipInfo(
+                                          _provider.filteredRecords[i]),
+                                    ),
+                                  ],
+                                  // Live-Test-5 (Guest Attendance Visibility
+                                  // policy): hosted guests are part of the
+                                  // day's attendance — a dedicated section
+                                  // BELOW the member list, never merged in.
+                                  if (_provider.guests.isNotEmpty)
+                                    _HostedGuestsSection(
+                                      guests: _provider.guests,
+                                      onManage: _openGuests,
+                                    ),
+                                ],
                               ),
               ),
             ),
@@ -489,6 +527,119 @@ class _QuickActionPill extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+// ── Hosted guests section ────────────────────────────────────────────────────
+// Live-Test-5 (Guest Attendance Visibility policy): guests are attendance
+// records and render directly on the Attendance screen — a dedicated section
+// below the member list (never merged into it; guests are not members). Each
+// row shows guest name, host, meal, type, preference and status; tapping the
+// header's manage action opens the full management sheet.
+
+class _HostedGuestsSection extends StatelessWidget {
+  const _HostedGuestsSection({required this.guests, required this.onManage});
+
+  final List<MealGuestModel> guests;
+  final VoidCallback onManage;
+
+  Color _statusColor(MealGuestModel g) {
+    if (g.isCancelled) return AppColors.absent;
+    if (g.isPending) return AppColors.warning;
+    return AppColors.present;
+  }
+
+  String _statusLabel(MealGuestModel g) {
+    if (g.isCancelled) return 'Cancelled';
+    if (g.isPending) return 'Pending';
+    if (g.status == 'no_show') return 'No-show';
+    return 'Present';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Divider(height: 24),
+        Padding(
+          padding: const EdgeInsets.symmetric(
+              horizontal: AppConstants.pagePaddingH),
+          child: Row(
+            children: [
+              const Icon(Icons.group_add_rounded,
+                  size: 18, color: AppColors.secondary),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text('Hosted Guests (${guests.length})',
+                    style: AppTypography.labelLarge
+                        .copyWith(fontWeight: FontWeight.w700)),
+              ),
+              TextButton(onPressed: onManage, child: const Text('Manage')),
+            ],
+          ),
+        ),
+        for (final g in guests)
+          Padding(
+            padding: const EdgeInsets.symmetric(
+                horizontal: AppConstants.pagePaddingH, vertical: 8),
+            child: Row(
+              children: [
+                CircleAvatar(
+                  radius: 16,
+                  backgroundColor:
+                      AppColors.secondary.withValues(alpha: 0.12),
+                  child: const Icon(Icons.person_outline_rounded,
+                      size: 16, color: AppColors.secondary),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        '${(g.displayName?.isNotEmpty ?? false) ? g.displayName! : 'Guest'} · ${g.typeLabel}',
+                        style: AppTypography.bodyMedium
+                            .copyWith(fontWeight: FontWeight.w600),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        [
+                          if (g.hostName != null) 'Host: ${g.hostName}',
+                          if (g.mealName != null) g.mealName!,
+                          if (g.mealPreference != null &&
+                              g.mealPreference!.isNotEmpty)
+                            g.mealPreference!,
+                        ].join(' · '),
+                        style: AppTypography.labelSmall.copyWith(
+                            color: isDark
+                                ? AppColors.textSecondaryDark
+                                : AppColors.textSecondary),
+                      ),
+                    ],
+                  ),
+                ),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 10, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: _statusColor(g).withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Text(
+                    _statusLabel(g),
+                    style: AppTypography.labelSmall.copyWith(
+                        color: _statusColor(g),
+                        fontWeight: FontWeight.w600),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        const SizedBox(height: 16),
+      ],
     );
   }
 }

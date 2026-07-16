@@ -22,6 +22,10 @@ class BillingMemberRow {
     this.guestAmount = 0,
     this.vacationDays = 0,
     this.adjustmentsTotal = 0,
+    this.debitsTotal = 0,
+    this.creditsTotal = 0,
+    this.refundsTotal = 0,
+    this.mealCharges,
     this.openingBalance = 0,
     int? netBill,
     this.email,
@@ -50,6 +54,15 @@ class BillingMemberRow {
   /// resulting net bill.
   final int adjustmentsTotal;
 
+  /// Live-Test-5 ISSUE-4: itemised ledger components (positive magnitudes;
+  /// REF-001 signs applied at display: debit +, credit −, refund +) and the
+  /// member's own meal charges (incl. policy-billed skipped/absent) as an
+  /// independent component — guest charges never merged in.
+  final int debitsTotal;
+  final int creditsTotal;
+  final int refundsTotal;
+  final int? mealCharges;
+
   /// CREDIT-001 (2026-07-13): balance carried forward from the previous
   /// FINALIZED billing period (credit negative, dues positive). Display
   /// item — ALREADY included in [netBill].
@@ -76,6 +89,10 @@ class BillingMemberRow {
         guestAmount: _asInt(j['guestAmount']),
         vacationDays: _asInt(j['vacationDays']),
         adjustmentsTotal: _asInt(j['adjustmentsTotal']),
+        debitsTotal: _asInt(j['debitsTotal']),
+        creditsTotal: _asInt(j['creditsTotal']),
+        refundsTotal: _asInt(j['refundsTotal']),
+        mealCharges: j['mealCharges'] != null ? _asInt(j['mealCharges']) : null,
         openingBalance: _asInt(j['openingBalance']),
         netBill: j['netBill'] != null ? _asInt(j['netBill']) : null,
         email: j['email']?.toString(),
@@ -143,6 +160,9 @@ class BillingSummaryV2 {
     required this.members,
     this.guestRevenue = 0,
     this.adjustmentsTotal = 0,
+    this.debitsTotal = 0,
+    this.creditsTotal = 0,
+    this.refundsTotal = 0,
     this.openingBalanceTotal = 0,
     int? netRevenue,
     this.vacationDays = 0,
@@ -167,6 +187,11 @@ class BillingSummaryV2 {
   /// per-slot rollup; period echoes what range the backend actually used
   /// (billing-cycle default when no explicit range was sent).
   final int adjustmentsTotal;
+
+  /// Live-Test-5 ISSUE-4: group-wide itemised ledger components.
+  final int debitsTotal;
+  final int creditsTotal;
+  final int refundsTotal;
 
   /// CREDIT-001: group-wide carried-forward total (each member's share is
   /// already inside their netBill).
@@ -202,6 +227,9 @@ class BillingSummaryV2 {
       averageBill: _asInt(s['averageBill']),
       guestRevenue: _asInt(s['guestRevenue']),
       adjustmentsTotal: _asInt(s['adjustmentsTotal']),
+      debitsTotal: _asInt(s['debitsTotal']),
+      creditsTotal: _asInt(s['creditsTotal']),
+      refundsTotal: _asInt(s['refundsTotal']),
       openingBalanceTotal: _asInt(s['openingBalanceTotal']),
       netRevenue: s['netRevenue'] != null ? _asInt(s['netRevenue']) : null,
       vacationDays: _asInt(s['vacationDays']),

@@ -27,7 +27,15 @@ class MealGuestModel {
     this.mealPreference,
     this.priceSnapshot,
     this.createdAt,
+    this.hostName,
+    this.mealName,
   });
+
+  /// Live-Test-5 (Guest Attendance Visibility policy): host + meal names,
+  /// server-joined on GET /attendance/guests so admin lists render without
+  /// client-side lookups. Null on older payloads.
+  final String? hostName;
+  final String? mealName;
 
   final String id;
   final String groupId;
@@ -81,6 +89,8 @@ class MealGuestModel {
         createdAt: j['createdAt'] != null
             ? DateTime.tryParse(j['createdAt'].toString())?.toLocal()
             : null,
+        hostName: j['hostName']?.toString(),
+        mealName: j['mealName']?.toString(),
       );
 
   Map<String, dynamic> toJson() => {
@@ -97,6 +107,8 @@ class MealGuestModel {
         'priceSnapshot': priceSnapshot,
         'createdBy': createdBy,
         'createdAt': createdAt?.toIso8601String(),
+        'hostName': hostName,
+        'mealName': mealName,
       };
 }
 

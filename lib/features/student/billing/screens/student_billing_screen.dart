@@ -379,10 +379,14 @@ class _StudentBillingScreenState extends State<StudentBillingScreen> {
   }
 
   Map<String, int> get _mealWiseTotals {
+    // Live-Test-5 ISSUE-4: per-meal detail includes policy-billed skipped or
+    // absent rows (Bill-Skip ON) so the split reconciles with the server's
+    // Meal-Charges component instead of silently omitting billed meals.
     final out = <String, int>{};
     for (final r in _rows) {
-      if (r.status == AttendanceStatus.present) {
-        out[r.mealName] = (out[r.mealName] ?? 0) + (r.price ?? 0);
+      final billed = _rowBilledAmount(r);
+      if (billed > 0) {
+        out[r.mealName] = (out[r.mealName] ?? 0) + billed;
       }
     }
     return out;
@@ -699,7 +703,7 @@ class _StudentBillingScreenState extends State<StudentBillingScreen> {
     final ordered = [...rows];
     int subtotal = 0;
     for (final r in rows) {
-      if (r.status == AttendanceStatus.present) subtotal += r.price ?? 0;
+      subtotal += _rowBilledAmount(r);
     }
     return Container(
       decoration: BoxDecoration(
@@ -733,6 +737,21 @@ class _StudentBillingScreenState extends State<StudentBillingScreen> {
         ],
       ),
     );
+  }
+
+  /// Live-Test-5 ISSUE-4 (enterprise display rules 1–4): the amount a row
+  /// actually contributes to the bill. Present = charged price; skipped or
+  /// absent = charged price ONLY when the group's Bill-Skip policy is ON;
+  /// everything else contributes ₹0.
+  int _rowBilledAmount(BillingRow r) {
+    if (r.status == AttendanceStatus.present) return r.price ?? 0;
+    final billSkips = _billSkippedMeals || (_serverBilling?.billSkippedMeals ?? false);
+    if (billSkips &&
+        (r.status == AttendanceStatus.skipped ||
+            r.status == AttendanceStatus.absent)) {
+      return r.price ?? 0;
+    }
+    return 0;
   }
 
   Widget _mealRow(bool isDark, BillingRow r) {
@@ -771,16 +790,31 @@ class _StudentBillingScreenState extends State<StudentBillingScreen> {
             ),
           ),
           if (_pricingEnabled)
-            Text(
-              r.status == AttendanceStatus.present
-                  ? _cur(r.price ?? 0)
-                  : _cur(0),
-              style: AppTypography.bodyMedium.copyWith(
-                fontWeight: FontWeight.w700,
-                color: r.status == AttendanceStatus.present
-                    ? AppColors.textPrimary
-                    : AppColors.textTertiary,
-              ),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                Text(
+                  _cur(_rowBilledAmount(r)),
+                  style: AppTypography.bodyMedium.copyWith(
+                    fontWeight: FontWeight.w700,
+                    color: _rowBilledAmount(r) > 0
+                        ? AppColors.textPrimary
+                        : AppColors.textTertiary,
+                  ),
+                ),
+                // Rules 2/3: a non-Present row states WHY it is (not) billed
+                // so the policy is understandable from the screen itself.
+                if (r.status == AttendanceStatus.skipped ||
+                    r.status == AttendanceStatus.absent)
+                  Text(
+                    _rowBilledAmount(r) > 0 ? 'Billed' : 'Not billed',
+                    style: AppTypography.labelSmall.copyWith(
+                      color: _rowBilledAmount(r) > 0
+                          ? AppColors.warning
+                          : AppColors.textTertiary,
+                    ),
+                  ),
+              ],
             ),
         ],
       ),
@@ -792,6 +826,11 @@ class _StudentBillingScreenState extends State<StudentBillingScreen> {
     final grand = totals.values.fold<int>(0, (a, b) => a + b);
     final sb = _serverBilling;
     final net = sb?.netBill ?? grand;
+    // Live-Test-5 ISSUE-4: the summary lines come from the SERVER components
+    // (meal charges include policy-billed skipped/absent meals), so the lines
+    // always sum exactly to Net Payable. The client-side per-meal split stays
+    // as detail rows under the server Meal-Charges line.
+    final mealCharges = sb?.mealCharges ?? grand;
     final entries = totals.entries.toList()
       ..sort((a, b) => b.value.compareTo(a.value));
     return Container(
@@ -820,30 +859,56 @@ class _StudentBillingScreenState extends State<StudentBillingScreen> {
               '${sb.openingBalance > 0 ? '+' : '−'}${_cur(sb.openingBalance.abs())}',
               sb.openingBalance > 0 ? AppColors.warning : AppColors.present,
             ),
-          if (entries.isEmpty)
+          if (entries.isEmpty && mealCharges == 0)
             Text('No charges yet.',
                 style: AppTypography.bodySmall
                     .copyWith(color: AppColors.textTertiary))
-          else
+          else ...[
+            // Enterprise policy: Meal Charges is ONE independent component
+            // (server figure — includes policy-billed skipped/absent meals).
+            _breakdownRow('Meal charges', _cur(mealCharges), null),
             for (final e in entries)
               Padding(
-                padding: const EdgeInsets.symmetric(vertical: 5),
-                child: Row(
-                  children: [
-                    Expanded(
-                        child: Text(e.key, style: AppTypography.bodySmall)),
-                    Text(_cur(e.value),
-                        style: AppTypography.bodySmall
-                            .copyWith(fontWeight: FontWeight.w700)),
-                  ],
+                padding: const EdgeInsets.only(left: 12),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 3),
+                  child: Row(
+                    children: [
+                      Expanded(
+                          child: Text(e.key,
+                              style: AppTypography.labelSmall.copyWith(
+                                  color: AppColors.textTertiary))),
+                      Text(_cur(e.value),
+                          style: AppTypography.labelSmall.copyWith(
+                              color: AppColors.textTertiary,
+                              fontWeight: FontWeight.w600)),
+                    ],
+                  ),
                 ),
               ),
-          // Issue 5: guest + adjustment components so the student's total
-          // reconciles exactly with what the admin bills. Shown only when set.
+          ],
+          // Each financial concept is its OWN line — never merged (policy).
           if (sb != null && sb.guestAmount != 0)
-            _breakdownRow('Hosted guests (${sb.guestCount})',
+            _breakdownRow('Guest charges (${sb.guestCount})',
                 _cur(sb.guestAmount), AppColors.secondary),
-          if (sb != null && sb.adjustmentsTotal != 0)
+          if (sb != null && sb.debitsTotal != 0)
+            _breakdownRow('Debits (approved charges)',
+                '+${_cur(sb.debitsTotal)}', AppColors.warning),
+          if (sb != null && sb.creditsTotal != 0)
+            _breakdownRow('Credits', '−${_cur(sb.creditsTotal)}',
+                AppColors.present),
+          if (sb != null && sb.refundsTotal != 0)
+            // REF-001: a refund = cash physically returned to the member —
+            // it consumes available credit, so Net Payable moves toward zero.
+            _breakdownRow('Refunds (cash returned)',
+                '+${_cur(sb.refundsTotal)}', AppColors.warning),
+          // Legacy fallback: server rows without the itemised fields still
+          // reconcile through the single signed adjustments line.
+          if (sb != null &&
+              sb.adjustmentsTotal != 0 &&
+              sb.debitsTotal == 0 &&
+              sb.creditsTotal == 0 &&
+              sb.refundsTotal == 0)
             _breakdownRow(
               sb.adjustmentsTotal > 0
                   ? 'Adjustments (charges)'
@@ -855,7 +920,7 @@ class _StudentBillingScreenState extends State<StudentBillingScreen> {
           Row(
             children: [
               Expanded(
-                child: Text(net != grand ? 'Net Total' : 'Grand Total',
+                child: Text('Net Payable',
                     style: AppTypography.labelLarge
                         .copyWith(fontWeight: FontWeight.w800)),
               ),
@@ -1071,7 +1136,7 @@ class _StudentBillingScreenState extends State<StudentBillingScreen> {
   // Negative-safe (credits can exceed the bill): -₹962, not ₹-962.
   String _cur(int v) => v < 0 ? '-₹${-v}' : '₹$v';
 
-  Widget _breakdownRow(String label, String value, Color color) => Padding(
+  Widget _breakdownRow(String label, String value, Color? color) => Padding(
         padding: const EdgeInsets.symmetric(vertical: 5),
         child: Row(
           children: [

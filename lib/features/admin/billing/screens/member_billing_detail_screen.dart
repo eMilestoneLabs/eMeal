@@ -30,6 +30,9 @@ class MemberBillingDetailScreen extends StatefulWidget {
     this.guestCount = 0,
     this.guestAmount = 0,
     this.adjustmentsTotal = 0,
+    this.debitsTotal = 0,
+    this.creditsTotal = 0,
+    this.refundsTotal = 0,
     this.openingBalance = 0,
   });
 
@@ -54,6 +57,14 @@ class MemberBillingDetailScreen extends StatefulWidget {
   final int guestCount;
   final int guestAmount;
   final int adjustmentsTotal;
+
+  /// Live-Test-5 ISSUE-4 (enterprise display policy): itemised ledger
+  /// components — Debits / Credits / Refunds are separate business concepts
+  /// and render as separate lines (positive magnitudes; display applies the
+  /// REF-001 signs: debit +, credit −, refund + as credit-returned-as-cash).
+  final int debitsTotal;
+  final int creditsTotal;
+  final int refundsTotal;
 
   /// CREDIT-001 (2026-07-13): balance carried forward from the previous
   /// finalized billing period — included in the net headline, itemised below.
@@ -611,27 +622,28 @@ class _MemberBillingDetailScreenState extends State<MemberBillingDetailScreen> {
                 ],
               ),
             ),
-          if (widget.adjustmentsTotal != 0)
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 5),
-              child: Row(
-                children: [
-                  Expanded(
-                      child: Text('Adjustments (credits / refunds)',
-                          style: AppTypography.bodySmall.copyWith(
-                              color: widget.adjustmentsTotal > 0
-                                  ? AppColors.warning
-                                  : AppColors.present))),
-                  Text(
-                      '${widget.adjustmentsTotal > 0 ? '+' : '−'}₹${widget.adjustmentsTotal.abs()}',
-                      style: AppTypography.bodySmall.copyWith(
-                          fontWeight: FontWeight.w700,
-                          color: widget.adjustmentsTotal > 0
-                              ? AppColors.warning
-                              : AppColors.present)),
-                ],
-              ),
-            ),
+          // Live-Test-5 ISSUE-4: Debits / Credits / Refunds as independent
+          // line items (never merged). Falls back to the single signed
+          // adjustments line only when the itemised fields are absent.
+          if (widget.debitsTotal != 0)
+            _ledgerLine('Debits (approved charges)',
+                '+₹${widget.debitsTotal}', AppColors.warning),
+          if (widget.creditsTotal != 0)
+            _ledgerLine('Credits', '−₹${widget.creditsTotal}',
+                AppColors.present),
+          if (widget.refundsTotal != 0)
+            _ledgerLine('Refunds (cash returned)',
+                '+₹${widget.refundsTotal}', AppColors.warning),
+          if (widget.adjustmentsTotal != 0 &&
+              widget.debitsTotal == 0 &&
+              widget.creditsTotal == 0 &&
+              widget.refundsTotal == 0)
+            _ledgerLine(
+                'Adjustments (credits / refunds)',
+                '${widget.adjustmentsTotal > 0 ? '+' : '−'}₹${widget.adjustmentsTotal.abs()}',
+                widget.adjustmentsTotal > 0
+                    ? AppColors.warning
+                    : AppColors.present),
           const Divider(height: 18),
           Row(
             children: [
@@ -649,6 +661,21 @@ class _MemberBillingDetailScreenState extends State<MemberBillingDetailScreen> {
       ),
     );
   }
+
+  Widget _ledgerLine(String label, String value, Color color) => Padding(
+        padding: const EdgeInsets.symmetric(vertical: 5),
+        child: Row(
+          children: [
+            Expanded(
+                child: Text(label,
+                    style:
+                        AppTypography.bodySmall.copyWith(color: color))),
+            Text(value,
+                style: AppTypography.bodySmall
+                    .copyWith(fontWeight: FontWeight.w700, color: color)),
+          ],
+        ),
+      );
 
   Widget _timelineTile(ColorScheme cs, BillingRow r) {
     final meal = _mealById[r.mealId];

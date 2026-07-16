@@ -50,8 +50,13 @@ class AttendanceRepository implements IAttendanceRepository {
         orElse: () => record.status,
       ),
       date: j['date'] != null ? DateTime.parse(j['date']) : record.date,
-      markedAt:
-          j['markedAt'] != null ? DateTime.parse(j['markedAt']) : DateTime.now(),
+      // Live-Test-5 ISSUE-3: the server sends markedAt in UTC ('Z' suffix).
+      // Without .toLocal() the merged record displayed raw UTC clock fields —
+      // the "Submitted at" line visibly jumped 5:30 h back (IST) right after
+      // the optimistic (local-time) paint was reconciled.
+      markedAt: j['markedAt'] != null
+          ? DateTime.parse(j['markedAt']).toLocal()
+          : DateTime.now(),
       preference: j['preference'] ?? record.preference,
       note: record.note,
       mealName: record.mealName,
