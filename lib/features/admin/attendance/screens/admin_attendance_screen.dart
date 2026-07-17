@@ -18,7 +18,9 @@ import 'package:smart_meal_management/features/admin/attendance/widgets/member_a
 import 'package:smart_meal_management/shared/models/attendance_model.dart';
 import 'package:smart_meal_management/shared/models/group_model.dart';
 import 'package:smart_meal_management/shared/models/guest_model.dart';
+import 'package:smart_meal_management/shared/models/preference_group_model.dart';
 import 'package:smart_meal_management/shared/models/result.dart';
+import 'package:smart_meal_management/shared/widgets/preference_group_selector.dart';
 import 'package:smart_meal_management/data/services/response_cache_service.dart';
 import 'package:smart_meal_management/shared/widgets/app_empty_state.dart';
 import 'package:smart_meal_management/features/auth/providers/auth_provider.dart';
@@ -612,6 +614,8 @@ class _HostedGuestsSection extends StatelessWidget {
                           if (g.mealPreference != null &&
                               g.mealPreference!.isNotEmpty)
                             g.mealPreference!,
+                          // ISSUE-2: the guest's preference-group picks.
+                          if (g.preferencesLabel.isNotEmpty) g.preferencesLabel,
                         ].join(' · '),
                         style: AppTypography.labelSmall.copyWith(
                             color: isDark
@@ -797,6 +801,11 @@ class _MyAttendanceSheetState extends State<_MyAttendanceSheet> {
   // Issue 1/2 parity: track each meal's chosen preference like the student
   // flow, seeded from any existing record so the admin sees what they picked.
   final Map<String, String?> _selectedPref = {};
+  // Live-Test-6 ISSUE-2: per-meal preference-GROUP picks (mirrors the member
+  // Present gate — Present stays disabled until required groups are chosen;
+  // previously this sheet sent no selections and the server 422'd).
+  final Map<String, List<PreferenceSelection>> _selections = {};
+  final Map<String, bool> _selectionsComplete = {};
   String? _savingMealId;
   // Issue 2: which action is in flight, so only the tapped button animates.
   AttendanceStatus? _savingStatus;
@@ -838,7 +847,7 @@ class _MyAttendanceSheetState extends State<_MyAttendanceSheet> {
   }
 
   Future<void> _mark(MealModel meal, AttendanceStatus status,
-      {String? preference}) async {
+      {String? preference, List<PreferenceSelection>? selections}) async {
     if (_savingMealId != null) return;
     setState(() {
       _savingMealId = meal.id;
@@ -862,6 +871,8 @@ class _MyAttendanceSheetState extends State<_MyAttendanceSheet> {
       status: status,
       date: markDate,
       preference: preference,
+      // ISSUE-2: group selections travel exactly like the member mark path.
+      selections: selections,
     );
     final res = await _attendanceRepo.adminOverride(record: record);
     if (!mounted) return;
@@ -947,6 +958,14 @@ class _MyAttendanceSheetState extends State<_MyAttendanceSheet> {
                               meal: meal,
                               status: st,
                               selectedPref: _selectedPref[meal.id],
+                              // ISSUE-2: required-group completeness gates
+                              // Present exactly like the student card — the
+                              // shared no-picks rule (respects visibleWhen +
+                              // the fail-safe), refined live by the selector.
+                              selectionsComplete: _selectionsComplete[
+                                      meal.id] ??
+                                  PreferenceGroupSelector.initialComplete(
+                                      meal.preferenceGroups),
                               savingStatus: _savingMealId == meal.id
                                   ? _savingStatus
                                   : null,
@@ -955,8 +974,21 @@ class _MyAttendanceSheetState extends State<_MyAttendanceSheet> {
                                 _selectedPref[meal.id] =
                                     _selectedPref[meal.id] == opt ? null : opt;
                               }),
-                              onMark: (newStatus, pref) =>
-                                  _mark(meal, newStatus, preference: pref),
+                              onSelectionsChanged:
+                                  (selections, delta, complete) => setState(() {
+                                _selections[meal.id] = selections;
+                                _selectionsComplete[meal.id] = complete;
+                              }),
+                              onMark: (newStatus, pref) => _mark(
+                                meal,
+                                newStatus,
+                                preference: pref,
+                                selections:
+                                    newStatus == AttendanceStatus.present &&
+                                            meal.preferenceGroups.isNotEmpty
+                                        ? (_selections[meal.id] ?? const [])
+                                        : null,
+                              ),
                             );
                           },
                         ),
@@ -977,6 +1009,8 @@ class _MySelfMealCard extends StatelessWidget {
     required this.busy,
     required this.onSelectPref,
     required this.onMark,
+    this.selectionsComplete = true,
+    this.onSelectionsChanged,
   });
 
   final MealModel meal;
@@ -990,12 +1024,20 @@ class _MySelfMealCard extends StatelessWidget {
   final void Function(String option) onSelectPref;
   final void Function(AttendanceStatus status, String? preference) onMark;
 
+  /// ISSUE-2: preference-GROUP completeness (Present gate) + change sink.
+  final bool selectionsComplete;
+  final void Function(
+          List<PreferenceSelection> selections, int delta, bool complete)?
+      onSelectionsChanged;
+
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final prefsOn =
         meal.preferencesEnabled && meal.enabledPreferences.isNotEmpty;
-    final canPresent = !prefsOn || selectedPref != null;
+    final groupsOn = meal.preferenceGroups.isNotEmpty;
+    final canPresent =
+        (!prefsOn || selectedPref != null) && (!groupsOn || selectionsComplete);
     final menu = meal.menuItems.where((e) => e.trim().isNotEmpty).toList();
 
     return Container(
@@ -1095,6 +1137,18 @@ class _MySelfMealCard extends StatelessWidget {
                   ),
                 );
               }).toList(),
+            ),
+          ],
+          // ISSUE-2: multi-preference groups — the SAME selector the student
+          // attendance card uses, so admin self-marks satisfy required groups
+          // instead of 422-ing at the server.
+          if (groupsOn) ...[
+            const SizedBox(height: 12),
+            PreferenceGroupSelector(
+              groups: meal.preferenceGroups,
+              enabled: !busy,
+              onChanged: (selections, delta, complete) =>
+                  onSelectionsChanged?.call(selections, delta, complete),
             ),
           ],
           const SizedBox(height: 12),

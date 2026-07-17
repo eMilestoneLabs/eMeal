@@ -251,12 +251,18 @@ class BillingService {
             present++;
             bill += r.price ?? 0;
             consumed[r.mealName] = (consumed[r.mealName] ?? 0) + 1;
+          // Live-Test-6 ISSUE-4 (billing display parity): only REAL attendance
+          // records are ever billed — the backend billing engine bills the
+          // system-generated Skip records its close-time sweep writes, never
+          // the client's virtual placeholder rows (autoSkipped). Billing the
+          // placeholders here inflated the detail/export total for the whole
+          // period grid (e.g. ₹5435 vs the engine's ₹180).
           case AttendanceStatus.absent:
             absent++;
-            if (billSkippedMeals) bill += r.price ?? 0;
+            if (billSkippedMeals && !r.autoSkipped) bill += r.price ?? 0;
           case AttendanceStatus.skipped:
             skipped++;
-            if (billSkippedMeals) bill += r.price ?? 0;
+            if (billSkippedMeals && !r.autoSkipped) bill += r.price ?? 0;
           default:
             break;
         }

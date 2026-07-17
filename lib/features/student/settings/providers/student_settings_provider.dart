@@ -67,10 +67,22 @@ class StudentSettingsProvider extends ChangeNotifier {
     return null;
   }
 
-  Future<void> setDefaultAttendance(bool value) async {
+  /// Returns null on success, or the backend's failure message (same contract
+  /// as [setVacationMode]). Live-Test-6 ISSUE-6: this was an in-memory-only
+  /// refreshUser — the server value came back on every /auth/me refresh, so
+  /// the toggle "randomly" re-enabled / refused to turn off. updateProfile
+  /// persists it (PATCH /users/me — backend already accepts
+  /// isDefaultAttendance) and updates the live session in one step.
+  Future<String?> setDefaultAttendance(bool value) async {
     final user = _user;
-    if (user == null) return;
-    await _auth.refreshUser(user.copyWith(isDefaultAttendance: value));
+    if (user == null) return 'Not signed in';
+    final ok =
+        await _auth.updateProfile(user.copyWith(isDefaultAttendance: value));
+    if (!ok) {
+      return _auth.lastProfileError ??
+          'Could not update auto-attendance — please try again';
+    }
+    return null;
   }
 
   void setReminders(bool value) {

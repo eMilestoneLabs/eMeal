@@ -208,7 +208,10 @@ class _TodayMealsScreenState extends State<TodayMealsScreen> {
                                     .snapshotPriceForMeal(meal.id),
                                 isWindowOpen: isOpen,
                                 isWindowPast: isPast,
-                                isVacationMode: isVacation,
+                                // FR-VACX-003: per-MEAL coverage — boundary
+                                // days lock only the covered meals.
+                                isVacationMode:
+                                    dashboardProvider.isMealOnVacation(meal),
                                 // SRS Module 03 ATT-011: Personal
                                 // Auto-Attendance is SUSPENDED on
                                 // preference-required meals — manual marking

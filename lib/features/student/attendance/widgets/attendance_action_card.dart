@@ -105,8 +105,12 @@ class _AttendanceActionCardState extends State<AttendanceActionCard> {
   String? _selectedPreference;
 
   // Module 36: grouped-selection state (explicit preference groups).
+  // Live-Test-6 ISSUE-2: completeness starts from the shared no-picks rule
+  // (all-optional / fail-safe meals must not lock Present); the selector
+  // re-reports on mount and on every change, so this can never go stale.
   List<PreferenceSelection> _groupSelections = const [];
-  bool _groupSelectionComplete = false;
+  late bool _groupSelectionComplete =
+      PreferenceGroupSelector.initialComplete(widget.meal.preferenceGroups);
 
   bool get _hasPreferenceGroups =>
       widget.meal.preferenceGroups.isNotEmpty &&

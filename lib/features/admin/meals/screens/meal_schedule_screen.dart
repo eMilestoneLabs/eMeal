@@ -1,8 +1,6 @@
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
-import 'package:flutter_image_compress/flutter_image_compress.dart';
-import 'package:image_picker/image_picker.dart';
 import 'package:smart_meal_management/core/constants/app_constants.dart';
 import 'package:smart_meal_management/core/theme/app_colors.dart';
 import 'package:smart_meal_management/core/theme/app_typography.dart';
@@ -1367,7 +1365,6 @@ class _DayMealEditSheet extends StatefulWidget {
 }
 
 class _DayMealEditSheetState extends State<_DayMealEditSheet> {
-  late final TextEditingController _nameCtrl;
   late final TextEditingController _descCtrl;
   late final TextEditingController _itemCtrl;
   late final TextEditingController _openCtrl;
@@ -1380,10 +1377,9 @@ class _DayMealEditSheetState extends State<_DayMealEditSheet> {
   // #3: per-day subset of master preference group ids that apply this day.
   late Set<String> _selectedGroupIds;
 
-  // Per-day photo (max 1, ≤100 KB) — mirrors the master meal editor.
-  late List<Uint8List> _imageBytes;
-  bool _isPickingImage = false;
-  String? _imageError;
+  // Live-Test-6 ISSUE-3 (user decision 2026-07-17): meal NAME and meal IMAGE
+  // are editable ONLY in the Master Meal Template — the per-day name field and
+  // photo picker were removed. Day entries always inherit both from master.
 
   // Stored values stay strict 24-hour "HH:mm" (backend contract). The visible
   // controllers show the AM/PM label only — saving reads these vars, never the
@@ -1394,14 +1390,9 @@ class _DayMealEditSheetState extends State<_DayMealEditSheet> {
   @override
   void initState() {
     super.initState();
-    _nameCtrl = TextEditingController(text: widget.entry.name);
     _descCtrl = TextEditingController(
       text: widget.entry.description ?? '',
     );
-    // Preload this entry's OWN per-day photo (decoded from its imageUrl data
-    // URI). Empty = no per-day override → the meal inherits the master photo.
-    final existing = widget.entry.displayImageBytes;
-    _imageBytes = existing != null ? <Uint8List>[existing] : <Uint8List>[];
     _itemCtrl = TextEditingController();
     _useCustomTiming = widget.entry.hasCustomTiming;
     _openHHmm = widget.entry.openTime ?? widget.templateOpenTime;
@@ -1423,66 +1414,12 @@ class _DayMealEditSheetState extends State<_DayMealEditSheet> {
 
   @override
   void dispose() {
-    _nameCtrl.dispose();
     _descCtrl.dispose();
     _itemCtrl.dispose();
     _openCtrl.dispose();
     _closeCtrl.dispose();
     _priceCtrl.dispose();
     super.dispose();
-  }
-
-  /// Pick a single photo and compress to ≤100 KB (replaces any existing).
-  /// Mirrors the master meal editor's behaviour exactly.
-  Future<void> _pickImage() async {
-    setState(() {
-      _isPickingImage = true;
-      _imageError = null;
-    });
-    try {
-      final file =
-          await ImagePicker().pickImage(source: ImageSource.gallery);
-      // The gallery picker backgrounds the activity; on aggressive OEMs (MIUI)
-      // this sheet's state can be disposed before the pick returns. Every
-      // resume point below re-checks `mounted` — a setState on a disposed
-      // state throws into the global error handler.
-      if (!mounted) return;
-      if (file == null) {
-        setState(() => _isPickingImage = false);
-        return;
-      }
-      final raw = await file.readAsBytes();
-      Uint8List? out;
-      for (final q in const [70, 55, 40, 30, 20]) {
-        final c = await FlutterImageCompress.compressWithList(
-          raw,
-          quality: q,
-          minWidth: 1080,
-          minHeight: 720,
-          format: CompressFormat.jpeg,
-          keepExif: false,
-        );
-        if (c.isEmpty) continue;
-        out = c;
-        if (c.length <= AppConstants.maxMealImageBytes) break;
-      }
-      if (!mounted) return;
-      if (out == null || out.isEmpty) {
-        setState(() => _imageError = 'Could not process this photo.');
-        return;
-      }
-      if (out.length > AppConstants.maxMealImageBytes) {
-        setState(() => _imageError =
-            'Photo too large even after compression (limit '
-            '${AppConstants.maxMealImageBytes ~/ 1024} KB).');
-        return;
-      }
-      setState(() => _imageBytes = [out!]);
-    } catch (_) {
-      if (mounted) setState(() => _imageError = 'Could not pick the photo.');
-    } finally {
-      if (mounted) setState(() => _isPickingImage = false);
-    }
   }
 
   void _addItem() {
@@ -1563,14 +1500,15 @@ class _DayMealEditSheetState extends State<_DayMealEditSheet> {
   }
 
   void _save() {
-    final name = _nameCtrl.text.trim();
-    if (name.isEmpty) return;
     final desc = _descCtrl.text.trim();
     widget.onSave(
-      name: name,
+      // ISSUE-3: the day entry always carries the MASTER meal name; the
+      // per-day photo override is gone (empty = inherit the master photo).
+      // The backend coerces both to inherit as well (defence in depth).
+      name: widget.templateName,
       menuItems: List<String>.from(_menuItems),
       description: desc.isEmpty ? null : desc,
-      imageBytes: List<Uint8List>.from(_imageBytes),
+      imageBytes: const <Uint8List>[],
       openTime: _useCustomTiming ? _openHHmm : null,
       closeTime: _useCustomTiming ? _closeHHmm : null,
       preferencesEnabled: _prefsEnabled,
@@ -1647,27 +1585,58 @@ class _DayMealEditSheetState extends State<_DayMealEditSheet> {
             ),
             const SizedBox(height: 20),
 
-            // ── Meal name override ───────────────────────────────────────────
-            Text(
-              'Meal name for this day',
-              style: AppTypography.labelMedium.copyWith(
+            // ── Meal name (immutable — ISSUE-3) ─────────────────────────────
+            // The name (and photo) live ONLY in the Master Meal Template; a
+            // day entry always inherits them. Shown read-only for context.
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(
+                  horizontal: 14, vertical: 12),
+              decoration: BoxDecoration(
                 color: isDark
-                    ? AppColors.textSecondaryDark
-                    : AppColors.textSecondary,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-            const SizedBox(height: 6),
-            TextField(
-              controller: _nameCtrl,
-              decoration: InputDecoration(
-                hintText: widget.templateName,
-                helperText:
-                    'Template: "${widget.templateName}"',
-                border: OutlineInputBorder(
-                  borderRadius:
-                      BorderRadius.circular(AppConstants.inputRadius),
+                    ? AppColors.surfaceVariantDark
+                    : AppColors.surfaceVariant,
+                borderRadius:
+                    BorderRadius.circular(AppConstants.inputRadius),
+                border: Border.all(
+                  color: isDark
+                      ? AppColors.borderDark.withValues(alpha: 0.5)
+                      : AppColors.border,
                 ),
+              ),
+              child: Row(
+                children: [
+                  Icon(Icons.lock_outline_rounded,
+                      size: 16,
+                      color: isDark
+                          ? AppColors.textSecondaryDark
+                          : AppColors.textSecondary),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          widget.templateName,
+                          style: AppTypography.bodyMedium.copyWith(
+                            color: isDark
+                                ? AppColors.textPrimaryDark
+                                : AppColors.textPrimary,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        Text(
+                          'Name & photo come from the Master Meal Template',
+                          style: AppTypography.labelSmall.copyWith(
+                            color: isDark
+                                ? AppColors.textSecondaryDark
+                                : AppColors.textSecondary,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
               ),
             ),
             const SizedBox(height: 16),
@@ -1697,20 +1666,6 @@ class _DayMealEditSheetState extends State<_DayMealEditSheet> {
                       BorderRadius.circular(AppConstants.inputRadius),
                 ),
               ),
-            ),
-            const SizedBox(height: 16),
-
-            // ── Photo (1 only, ≤100 KB) — parity with master meal config ─────
-            _DayPhotoField(
-              imageBytes: _imageBytes,
-              isPicking: _isPickingImage,
-              error: _imageError,
-              onPick: _pickImage,
-              onRemove: () => setState(() {
-                _imageBytes = const [];
-                _imageError = null;
-              }),
-              isDark: isDark,
             ),
             const SizedBox(height: 16),
 
@@ -2086,150 +2041,6 @@ class _DayMealEditSheetState extends State<_DayMealEditSheet> {
           ],
         ),
       ),
-    );
-  }
-}
-
-// ── Per-day photo field ─────────────────────────────────────────────────────
-
-/// Single-photo (≤100 KB) picker for the per-day meal editor. Mirrors the
-/// master meal config image rule: exactly one photo, replaced on each upload.
-class _DayPhotoField extends StatelessWidget {
-  const _DayPhotoField({
-    required this.imageBytes,
-    required this.isPicking,
-    required this.error,
-    required this.onPick,
-    required this.onRemove,
-    required this.isDark,
-  });
-
-  final List<Uint8List> imageBytes;
-  final bool isPicking;
-  final String? error;
-  final VoidCallback onPick;
-  final VoidCallback onRemove;
-  final bool isDark;
-
-  String _kb(int bytes) => '${(bytes / 1024).toStringAsFixed(1)} KB';
-
-  @override
-  Widget build(BuildContext context) {
-    final hasImage = imageBytes.isNotEmpty;
-    final border = isDark ? AppColors.borderDark : AppColors.border;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          children: [
-            Expanded(
-              child: Text(
-                'Meal photo for this day',
-                style: AppTypography.labelMedium.copyWith(
-                  color: isDark
-                      ? AppColors.textSecondaryDark
-                      : AppColors.textSecondary,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ),
-            Text(
-              '1 photo · 100 KB',
-              style: AppTypography.labelSmall.copyWith(
-                color: isDark
-                    ? AppColors.textSecondaryDark
-                    : AppColors.textTertiary,
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 6),
-        if (isPicking)
-          Container(
-            height: 64,
-            alignment: Alignment.center,
-            child: const SizedBox(
-              width: 20,
-              height: 20,
-              child: CircularProgressIndicator(strokeWidth: 2),
-            ),
-          )
-        else if (hasImage)
-          Row(
-            children: [
-              ClipRRect(
-                borderRadius: BorderRadius.circular(10),
-                child: Image.memory(
-                  imageBytes.first,
-                  width: 64,
-                  height: 64,
-                  fit: BoxFit.cover,
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Text(
-                  _kb(imageBytes.first.length),
-                  style: AppTypography.labelSmall.copyWith(
-                    color: isDark
-                        ? AppColors.textSecondaryDark
-                        : AppColors.textTertiary,
-                  ),
-                ),
-              ),
-              TextButton.icon(
-                onPressed: onPick,
-                icon: const Icon(Icons.swap_horiz_rounded, size: 16),
-                label: const Text('Replace'),
-              ),
-              IconButton(
-                onPressed: onRemove,
-                icon: const Icon(Icons.delete_outline_rounded, size: 18),
-                color: AppColors.error,
-                tooltip: 'Remove photo',
-              ),
-            ],
-          )
-        else
-          GestureDetector(
-            onTap: onPick,
-            child: Container(
-              height: 60,
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: border),
-              ),
-              child: Center(
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(Icons.add_photo_alternate_outlined,
-                        size: 18,
-                        color: isDark
-                            ? AppColors.textSecondaryDark
-                            : AppColors.textSecondary),
-                    const SizedBox(width: 8),
-                    Text(
-                      'Tap to add photo',
-                      style: AppTypography.bodySmall.copyWith(
-                        color: isDark
-                            ? AppColors.textSecondaryDark
-                            : AppColors.textSecondary,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-        if (error != null) ...[
-          const SizedBox(height: 6),
-          Text(
-            error!,
-            style: AppTypography.labelSmall.copyWith(color: AppColors.error),
-          ),
-        ],
-      ],
     );
   }
 }

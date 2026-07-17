@@ -89,8 +89,10 @@ class _CorrectionRequestSheetState extends State<_CorrectionRequestSheet> {
         widget.initialDate ?? _parseOrgDate(_meal.orgDate) ?? DateTime.now();
     _date = DateTime(base.year, base.month, base.day);
     // COR-006: a meal with REQUIRED preference groups starts incomplete until
-    // the selector reports every required group satisfied.
-    _selectionsComplete = !_meal.preferenceGroups.any((g) => g.required);
+    // the selector reports every required group satisfied (shared no-picks
+    // rule — visibleWhen + fail-safe aware, Live-Test-6 ISSUE-2).
+    _selectionsComplete =
+        PreferenceGroupSelector.initialComplete(_meal.preferenceGroups);
   }
 
   /// "YYYY-MM-DD" → local-midnight DateTime; null on missing/unparsable input.
@@ -238,7 +240,8 @@ class _CorrectionRequestSheetState extends State<_CorrectionRequestSheet> {
                           _preference = null;
                           _selections = const [];
                           _selectionsComplete =
-                              !m.first.preferenceGroups.any((g) => g.required);
+                              PreferenceGroupSelector.initialComplete(
+                                  m.first.preferenceGroups);
                         });
                       }
                     },

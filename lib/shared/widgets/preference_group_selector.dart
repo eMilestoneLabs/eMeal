@@ -29,6 +29,27 @@ class PreferenceGroupSelector extends StatefulWidget {
     bool complete,
   ) onChanged;
 
+  /// Live-Test-6 ISSUE-2: whether an EMPTY selection set already satisfies
+  /// `groups` — i.e. the Present/submit gate's correct value BEFORE the user
+  /// taps anything. Exact no-picks mirror of the selector's `_complete`
+  /// (and of the server fail-safe): initially-hidden dependent groups and
+  /// required groups with no selectable options don't block. This is the ONE
+  /// shared rule — parents must use it instead of hand-rolling approximations.
+  static bool initialComplete(List<PreferenceGroupModel> groups) {
+    for (final g in groups) {
+      // With no picks yet, a dependent group is not visible (FR-PG-060).
+      if (g.visibleWhenGroupId != null && g.visibleWhenOptionKey != null) {
+        continue;
+      }
+      if (!g.required) continue;
+      final selectable =
+          g.vegOnly ? g.options.where((o) => o.isVeg) : g.options;
+      if (selectable.isEmpty) continue; // fail-safe (FR-PG-031)
+      return false;
+    }
+    return true;
+  }
+
   @override
   State<PreferenceGroupSelector> createState() =>
       _PreferenceGroupSelectorState();
@@ -37,6 +58,53 @@ class PreferenceGroupSelector extends StatefulWidget {
 class _PreferenceGroupSelectorState extends State<PreferenceGroupSelector> {
   /// groupId → (optionKey → quantity)
   final Map<String, Map<String, int>> _picked = {};
+
+  /// Structural signature of the groups this state last reported for —
+  /// detects silent SWR refreshes that swap the meal's groups in place.
+  String _groupsSig = '';
+
+  static String _sigOf(List<PreferenceGroupModel> groups) => groups
+      .map((g) =>
+          '${g.id}|${g.required}|${g.vegOnly}|${g.minSelect}|${g.maxSelect}|'
+          '${g.visibleWhenGroupId ?? ''}~${g.visibleWhenOptionKey ?? ''}|'
+          '${g.options.map((o) => '${o.key}:${o.isVeg}:${o.priceDelta}').join(',')}')
+      .join(';');
+
+  @override
+  void initState() {
+    super.initState();
+    _groupsSig = _sigOf(widget.groups);
+    // Live-Test-6 ISSUE-2 root cause: the selector only reported on TAPS, so
+    // a parent whose gate starts `false` (e.g. the student Present button)
+    // stayed locked forever on meals whose groups need no picks (all-optional
+    // or fail-safe-satisfied). Report the initial state once, post-frame.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _emit();
+    });
+  }
+
+  @override
+  void didUpdateWidget(PreferenceGroupSelector oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final sig = _sigOf(widget.groups);
+    if (sig == _groupsSig) return;
+    // Groups changed under us (silent refresh / per-day override arriving):
+    // drop picks that no longer exist, then re-report so the parent's
+    // completeness gate can never go stale against the new rules.
+    _groupsSig = sig;
+    final known = {
+      for (final g in widget.groups) g.id: {for (final o in g.options) o.key},
+    };
+    _picked.removeWhere((gid, picks) {
+      final opts = known[gid];
+      if (opts == null) return true;
+      picks.removeWhere((k, _) => !opts.contains(k));
+      return picks.isEmpty;
+    });
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _emit();
+    });
+  }
 
   bool _isVisible(PreferenceGroupModel g) {
     if (g.visibleWhenGroupId == null || g.visibleWhenOptionKey == null) {

@@ -107,8 +107,16 @@ GoRouter buildRouter(AuthProvider auth) {
         return RouteNames.roleSelect;
       }
 
-      // Authenticated on auth/entry screen
-      if (authenticated && isAuthRoute(location)) {
+      // Authenticated on auth/entry screen. /otp is exempt: signed-in users
+      // legitimately open it to verify their email ("Verify now" from the
+      // profile badge / participation gate). Without the exemption this
+      // redirect bounced every push to /otp back to the dashboard in the same
+      // frame — Verify now looked dead (Live-Test-6 ISSUE-5). OtpScreen owns
+      // its success navigation (pop for verification, go() after OTP login),
+      // so no post-login redirect is lost by the exemption.
+      if (authenticated &&
+          isAuthRoute(location) &&
+          location != RouteNames.otp) {
         return dashboardFor(auth);
       }
 

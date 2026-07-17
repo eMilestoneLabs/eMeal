@@ -5,8 +5,10 @@ import 'package:smart_meal_management/core/theme/app_typography.dart';
 import 'package:smart_meal_management/data/repositories/guest_repository.dart';
 import 'package:smart_meal_management/shared/models/group_model.dart';
 import 'package:smart_meal_management/shared/models/guest_model.dart';
+import 'package:smart_meal_management/shared/models/preference_group_model.dart';
 import 'package:smart_meal_management/shared/models/result.dart';
 import 'package:smart_meal_management/shared/widgets/app_skeleton.dart';
+import 'package:smart_meal_management/shared/widgets/preference_group_selector.dart';
 
 /// Module 22 (Pass 9) — hosted-guest management sheet (FR-HG-031/033/034/062).
 ///
@@ -26,6 +28,7 @@ Future<bool?> showGuestSheet(
   required GroupGuestConfig config,
   required bool pricingEnabled,
   required List<String> enabledPreferences,
+  List<PreferenceGroupModel> preferenceGroups = const [],
   int? mealPrice,
   String? hostUserId,
   String? hostName,
@@ -43,6 +46,7 @@ Future<bool?> showGuestSheet(
       config: config,
       pricingEnabled: pricingEnabled,
       enabledPreferences: enabledPreferences,
+      preferenceGroups: preferenceGroups,
       mealPrice: mealPrice,
       hostUserId: hostUserId,
       hostName: hostName,
@@ -60,6 +64,7 @@ class _GuestSheet extends StatefulWidget {
     required this.config,
     required this.pricingEnabled,
     required this.enabledPreferences,
+    this.preferenceGroups = const [],
     this.mealPrice,
     this.hostUserId,
     this.hostName,
@@ -73,6 +78,11 @@ class _GuestSheet extends StatefulWidget {
   final GroupGuestConfig config;
   final bool pricingEnabled;
   final List<String> enabledPreferences;
+
+  /// Live-Test-6 ISSUE-2: the meal's effective multi-preference groups —
+  /// every guest picks their own options (Staple: Ruti/Rice, …), exactly like
+  /// a member marking Present. Empty = legacy flat-preference behaviour.
+  final List<PreferenceGroupModel> preferenceGroups;
   final int? mealPrice;
 
   /// Admin flow: the member being hosted for. Null = the caller hosts.
@@ -94,6 +104,12 @@ class _GuestSheetState extends State<_GuestSheet> {
   String? _error;
   List<MealGuestModel> _guests = const [];
   List<GuestDraft> _drafts = [];
+
+  // ISSUE-2: stable per-draft widget keys. Index-based keys desynced each
+  // row's stateful widgets (name field, PreferenceGroupSelector) from the
+  // shifted draft data when a middle draft was removed.
+  final List<int> _draftKeys = [];
+  int _draftSeq = 0;
 
   @override
   void initState() {
@@ -135,21 +151,45 @@ class _GuestSheetState extends State<_GuestSheet> {
       );
 
   /// FR-HG-034: live cost preview for the drafts about to be booked.
+  /// ISSUE-2: option price deltas (paise) ride on top of the base guest price
+  /// — same ₹/paise unit boundary as attendance marking.
   int get _draftCost => _drafts.fold(
-      0, (sum, d) => sum + (_priceFor(d.isAdult) ?? 0));
+      0,
+      (sum, d) =>
+          sum +
+          (_priceFor(d.isAdult) == null
+              ? 0
+              : _priceFor(d.isAdult)! + (d.selectionsDelta / 100).round()));
+
+  /// ISSUE-2: whether a brand-new draft already satisfies the meal's groups —
+  /// the shared no-picks rule (visibleWhen + fail-safe aware).
+  bool get _newDraftComplete =>
+      PreferenceGroupSelector.initialComplete(widget.preferenceGroups);
 
   /// Booked (confirmed) guest cost already committed for this meal.
   int get _bookedCost => _guests
       .where((g) => g.isConfirmed)
       .fold(0, (sum, g) => sum + (g.priceSnapshot ?? 0));
 
+  /// The flat "preference required" rule applies only when the guest can
+  /// actually satisfy it: with no flat options there is nothing to tap, and
+  /// on preference-GROUP meals the group picks (gated by _groupsSatisfied)
+  /// ARE the guest's meal choice — mirrors the server rule exactly.
   bool get _prefsSatisfied =>
       !widget.config.guestPreferenceRequired ||
+      widget.enabledPreferences.isEmpty ||
+      widget.preferenceGroups.isNotEmpty ||
       _drafts.every(
           (d) => d.mealPreference != null && d.mealPreference!.isNotEmpty);
 
+  /// ISSUE-2: every draft must satisfy the meal's required preference groups
+  /// (mirrors the member Present gate; the server re-validates regardless).
+  bool get _groupsSatisfied =>
+      widget.preferenceGroups.isEmpty ||
+      _drafts.every((d) => d.selectionsComplete);
+
   bool get _canSubmit =>
-      _drafts.isNotEmpty && !_submitting && _prefsSatisfied;
+      _drafts.isNotEmpty && !_submitting && _prefsSatisfied && _groupsSatisfied;
 
   // ── Actions ────────────────────────────────────────────────────────────────
 
@@ -176,6 +216,7 @@ class _GuestSheetState extends State<_GuestSheet> {
       case Ok(:final value):
         _changed = true;
         _drafts = [];
+        _draftKeys.clear();
         final pending = value.pendingApproval > 0;
         _snack(pending
             ? (widget.asAdmin
@@ -557,6 +598,8 @@ class _GuestSheetState extends State<_GuestSheet> {
       g.typeLabel,
       if (g.mealPreference != null)
         MealPreferenceOption.display(g.mealPreference!).label,
+      // ISSUE-2: the guest's preference-group picks (e.g. "Ruti · Chicken").
+      if (g.preferencesLabel.isNotEmpty) g.preferencesLabel,
       if (g.priceSnapshot != null) '₹${g.priceSnapshot}',
     ];
     return Column(
@@ -598,22 +641,36 @@ class _GuestSheetState extends State<_GuestSheet> {
       ),
       const SizedBox(height: AppConstants.space8),
       ..._drafts.asMap().entries.map((e) => _DraftRow(
-            key: ValueKey('draft_${e.key}'),
+            key: ValueKey('draft_${_draftKeys[e.key]}'),
             draft: e.value,
             index: e.key,
             isDark: isDark,
             enabledPreferences: widget.enabledPreferences,
-            preferenceRequired: widget.config.guestPreferenceRequired,
+            preferenceGroups: widget.preferenceGroups,
+            // Flat tag is "required" only when it is the ONLY choice — on
+            // group meals the group picks govern (mirrors _prefsSatisfied).
+            preferenceRequired: widget.config.guestPreferenceRequired &&
+                widget.preferenceGroups.isEmpty,
             price: _priceFor(e.value.isAdult),
             onChanged: (d) => setState(() => _drafts[e.key] = d),
-            onRemove: () => setState(() => _drafts.removeAt(e.key)),
+            onRemove: () => setState(() {
+              _drafts.removeAt(e.key);
+              _draftKeys.removeAt(e.key);
+            }),
           )),
       if (_drafts.length < _remainingAllowance)
         Align(
           alignment: Alignment.centerLeft,
           child: TextButton.icon(
-            onPressed: () =>
-                setState(() => _drafts = [..._drafts, const GuestDraft()]),
+            onPressed: () => setState(() {
+              // ISSUE-2: with required groups a fresh draft starts
+              // incomplete — the Add button unlocks once options are picked.
+              _drafts = [
+                ..._drafts,
+                GuestDraft(selectionsComplete: _newDraftComplete),
+              ];
+              _draftKeys.add(_draftSeq++);
+            }),
             icon: const Icon(Icons.person_add_alt_rounded, size: 17),
             label: Text(_drafts.isEmpty ? 'Add a guest' : 'Add another guest'),
             style: TextButton.styleFrom(foregroundColor: AppColors.primary),
@@ -769,12 +826,17 @@ class _DraftRow extends StatelessWidget {
     required this.price,
     required this.onChanged,
     required this.onRemove,
+    this.preferenceGroups = const [],
   });
 
   final GuestDraft draft;
   final int index;
   final bool isDark;
   final List<String> enabledPreferences;
+
+  /// ISSUE-2: the meal's effective preference groups — rendered with the SAME
+  /// selector members use when marking Present (one UX everywhere).
+  final List<PreferenceGroupModel> preferenceGroups;
   final bool preferenceRequired;
   final int? price;
   final ValueChanged<GuestDraft> onChanged;
@@ -852,10 +914,16 @@ class _DraftRow extends StatelessWidget {
                 final selected = draft.mealPreference == opt;
                 final disp = MealPreferenceOption.display(opt);
                 return GestureDetector(
+                  // ISSUE-2: keep the draft's group selections when the flat
+                  // preference chip toggles (this used to rebuild the draft
+                  // from scratch, which would drop them).
                   onTap: () => onChanged(GuestDraft(
                     isAdult: draft.isAdult,
                     displayName: draft.displayName,
                     mealPreference: selected ? null : opt,
+                    selections: draft.selections,
+                    selectionsComplete: draft.selectionsComplete,
+                    selectionsDelta: draft.selectionsDelta,
                   )),
                   child: Container(
                     padding: const EdgeInsets.symmetric(
@@ -899,6 +967,30 @@ class _DraftRow extends StatelessWidget {
                   ),
                 );
               }).toList(),
+            ),
+          ],
+          // ISSUE-2: multi-preference groups — every guest makes the same
+          // choices a member makes when marking Present (Staple, Non-Veg, …).
+          // The server validates + prices the picks at booking.
+          if (preferenceGroups.isNotEmpty) ...[
+            const SizedBox(height: AppConstants.space8),
+            Text(
+              'Meal choices for this guest',
+              style: AppTypography.labelSmall.copyWith(
+                color: isDark
+                    ? AppColors.textSecondaryDark
+                    : AppColors.textSecondary,
+              ),
+            ),
+            const SizedBox(height: 6),
+            PreferenceGroupSelector(
+              groups: preferenceGroups,
+              onChanged: (selections, delta, complete) =>
+                  onChanged(draft.copyWith(
+                selections: selections,
+                selectionsComplete: complete,
+                selectionsDelta: delta,
+              )),
             ),
           ],
         ],

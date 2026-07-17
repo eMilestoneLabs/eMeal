@@ -722,6 +722,69 @@ class StudentDashboardProvider extends ChangeNotifier {
     return nowMinutes >= openMinutes && nowMinutes <= closeMinutes;
   }
 
+  /// Open minutes for vacation-boundary math. The all-day 00:00–23:59 shape is
+  /// the client rendering of "no window" — treated as windowless (null), the
+  /// same fail-safe the server applies to a null attendanceWindowOpen.
+  int? _openMinutesOrNull(MealModel meal) {
+    final w = meal.attendanceWindow;
+    if (w.openTime == '00:00' && w.closeTime == '23:59') return null;
+    if (w.openTime.isEmpty) return null;
+    return _minutesOf(_parseTime(w.openTime));
+  }
+
+  /// "Today" as the ORG business date (from the live payload) — falls back to
+  /// the device date for cached paints.
+  DateTime _vacationToday() {
+    final s = _todayMeals.isNotEmpty ? _todayMeals.first.orgDate : null;
+    if (s != null && s.length >= 10) {
+      final y = int.tryParse(s.substring(0, 4));
+      final m = int.tryParse(s.substring(5, 7));
+      final d = int.tryParse(s.substring(8, 10));
+      if (y != null && m != null && d != null) return DateTime.utc(y, m, d);
+    }
+    final now = DateTime.now();
+    return DateTime.utc(now.year, now.month, now.day);
+  }
+
+  /// FR-VACX-003: per-MEAL vacation coverage. On a slot-bounded boundary day
+  /// ("leaving after Evening Tea") only meals AT/AFTER the boundary lock —
+  /// earlier meals stay markable. Whole-day coverage still applies for the
+  /// instant toggle, for requests without slot bounds, and whenever the
+  /// governing request cannot be resolved (fail-safe = covered). Exact mirror
+  /// of the server's vacation-coverage.util rule, so what the member can tap
+  /// always matches what the sweep/billing will do.
+  bool isMealOnVacation(MealModel meal) {
+    if (!_isVacationMode) return false;
+    final v = _activeVacation;
+    if (v == null) return true; // instant toggle → whole day (FR-VACX-001)
+    // Group-scoped requests only govern their own group — a foreign-group
+    // request leaves the day-level flag in charge here.
+    if (v.groupId != null &&
+        meal.groupId.isNotEmpty &&
+        v.groupId != meal.groupId) {
+      return true;
+    }
+    final today = _vacationToday();
+    // A fallback row that does not cover today (badge-only) means the flag
+    // itself governs — whole day, exactly the server's toggle semantics.
+    DateTime d(DateTime x) => DateTime.utc(x.year, x.month, x.day);
+    if (today.isBefore(d(v.startDate)) || today.isAfter(d(v.endDate))) {
+      return true;
+    }
+    int? slotOpen(String slotKey) {
+      for (final m in _todayMeals) {
+        if (m.slotKey == slotKey) return _openMinutesOrNull(m);
+      }
+      return null;
+    }
+
+    return v.coversMealOn(
+      today,
+      mealOpenMinutes: _openMinutesOrNull(meal),
+      slotOpenMinutes: slotOpen,
+    );
+  }
+
   bool isWindowPast(MealModel meal) {
     final w = meal.attendanceWindow;
     if (w.openTime == '00:00' && w.closeTime == '23:59') return false;

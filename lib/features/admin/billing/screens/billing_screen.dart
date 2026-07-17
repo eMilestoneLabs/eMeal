@@ -83,6 +83,11 @@ class _BillingScreenState extends State<BillingScreen> {
           // CREDIT-001: carried-forward balance rides along so the detail
           // headline matches this list's netBill exactly.
           openingBalance: m.openingBalance,
+          // Live-Test-6 ISSUE-4 (billing display parity): the billing
+          // ENGINE's own figures are the detail headline's source of truth —
+          // the detail screen never re-derives money from its display grid.
+          engineMealCharges: m.mealCharges,
+          engineNetBill: m.netBill,
         ),
       ),
     );

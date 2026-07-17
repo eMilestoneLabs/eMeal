@@ -55,6 +55,47 @@ class VacationRequestModel {
   bool get isRejected => status == 'rejected';
   bool get isCancelled => status == 'cancelled';
 
+  /// FR-VACX-003 — exact Dart mirror of the server's `requestCoversMeal`
+  /// boundary math (vacation-coverage.util.ts): on the start date only meals
+  /// opening AT/AFTER the startSlotKey meal's open time are covered; on the
+  /// end date only meals opening AT/BEFORE the endSlotKey meal's open time;
+  /// interior days are fully covered. Unknown open times resolve to COVERED
+  /// (fail-safe — coverage only ever suppresses marking, never forces it).
+  /// [day] is compared by calendar date components only.
+  bool coversMealOn(
+    DateTime day, {
+    required int? mealOpenMinutes,
+    required int? Function(String slotKey) slotOpenMinutes,
+  }) {
+    DateTime d(DateTime x) => DateTime.utc(x.year, x.month, x.day);
+    final t = d(day);
+    final start = d(startDate);
+    final end = d(endDate);
+    if (t.isBefore(start) || t.isAfter(end)) return false;
+
+    final isStartDay = t == start;
+    final isEndDay = t == end;
+    if ((!isStartDay || startSlotKey == null) &&
+        (!isEndDay || endSlotKey == null)) {
+      return true; // interior day, or boundary day without a slot bound
+    }
+    if (mealOpenMinutes == null) return true; // windowless meal → fail-safe
+
+    if (isStartDay && startSlotKey != null) {
+      final bound = slotOpenMinutes(startSlotKey!);
+      if (bound != null && mealOpenMinutes < bound) {
+        return false; // before vacation starts
+      }
+    }
+    if (isEndDay && endSlotKey != null) {
+      final bound = slotOpenMinutes(endSlotKey!);
+      if (bound != null && mealOpenMinutes > bound) {
+        return false; // after vacation ends
+      }
+    }
+    return true;
+  }
+
   static DateTime _parseDate(dynamic v) {
     if (v == null) return DateTime.now();
     final s = v.toString();

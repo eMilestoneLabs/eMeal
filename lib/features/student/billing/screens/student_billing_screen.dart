@@ -746,7 +746,12 @@ class _StudentBillingScreenState extends State<StudentBillingScreen> {
   int _rowBilledAmount(BillingRow r) {
     if (r.status == AttendanceStatus.present) return r.price ?? 0;
     final billSkips = _billSkippedMeals || (_serverBilling?.billSkippedMeals ?? false);
+    // Live-Test-6 ISSUE-4: only REAL records are ever billed — the engine
+    // bills its own system-generated Skip records, never the client's virtual
+    // placeholder rows (autoSkipped). Labelling placeholders "Billed" showed
+    // phantom charges the engine never applied.
     if (billSkips &&
+        !r.autoSkipped &&
         (r.status == AttendanceStatus.skipped ||
             r.status == AttendanceStatus.absent)) {
       return r.price ?? 0;

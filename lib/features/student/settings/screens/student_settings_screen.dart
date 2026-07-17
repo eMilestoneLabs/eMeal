@@ -125,7 +125,21 @@ class _StudentSettingsScreenState extends State<StudentSettingsScreen> {
                     subtitle:
                         'Automatically marked present every day. Toggle off only when you are absent.',
                     value: provider.isDefaultAttendance,
-                    onChanged: provider.setDefaultAttendance,
+                    // Live-Test-6 ISSUE-6: the toggle now persists to the
+                    // backend; surface a failure instead of silently snapping
+                    // back (same pattern as the vacation toggle).
+                    onChanged: (v) async {
+                      final error = await provider.setDefaultAttendance(v);
+                      if (error != null && context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text(error),
+                            behavior: SnackBarBehavior.floating,
+                            backgroundColor: AppColors.error,
+                          ),
+                        );
+                      }
+                    },
                     isDark: isDark,
                   ),
                 ],

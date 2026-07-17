@@ -656,26 +656,27 @@ class _GroupEditorSheetState extends State<_GroupEditorSheet> {
                 onChanged: (v) => setState(() => _vegOnly = v),
               ),
               const SizedBox(height: 8),
-              Text('Options', style: AppTypography.labelMedium),
+              Text(
+                'Options',
+                style: AppTypography.labelMedium.copyWith(
+                  color: isDark
+                      ? AppColors.textPrimaryDark
+                      : AppColors.textPrimary,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
               const SizedBox(height: 8),
+              // Live-Test-6 ISSUE-1: premium high-contrast draft chips —
+              // explicit colors for BOTH themes (the raw InputChip/ActionChip
+              // labels were washed out / invisible in light mode). Mirrors the
+              // group-card option chips: veg dot + label + optional +₹ pill.
               Wrap(
                 spacing: 8,
                 runSpacing: 8,
                 children: [
                   for (var i = 0; i < _options.length; i++)
-                    InputChip(
-                      label: Text(_options[i]['label'] as String,
-                          style: AppTypography.labelSmall),
-                      onDeleted: () => setState(() => _options.removeAt(i)),
-                    ),
-                  ActionChip(
-                    avatar: const Icon(Icons.add_rounded,
-                        size: 16, color: AppColors.primary),
-                    label: Text('Add option',
-                        style: AppTypography.labelSmall
-                            .copyWith(color: AppColors.primary)),
-                    onPressed: _addOptionRow,
-                  ),
+                    _draftOptionChip(i, isDark),
+                  _addOptionCta(),
                 ],
               ),
               if (_error != null)
@@ -693,6 +694,100 @@ class _GroupEditorSheetState extends State<_GroupEditorSheet> {
                   child: const Text('Create group'),
                 ),
               ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// Premium draft-option chip (Live-Test-6 ISSUE-1): explicit surface, border
+  /// and text colors per theme + veg/non-veg dot + optional +₹ pill + remove ×.
+  Widget _draftOptionChip(int index, bool isDark) {
+    final o = _options[index];
+    final label = (o['label'] as String?) ?? '';
+    final emoji = (o['emoji'] as String?) ?? '';
+    final isVeg = o['isVeg'] != false;
+    final deltaPaise = (o['priceDelta'] as int?) ?? 0;
+    final priceStr =
+        '+₹${(deltaPaise / 100).toStringAsFixed(deltaPaise % 100 == 0 ? 0 : 2)}';
+    return Container(
+      padding: const EdgeInsets.only(left: 10, right: 4, top: 6, bottom: 6),
+      decoration: BoxDecoration(
+        color: isDark ? AppColors.backgroundDark : AppColors.background,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+            color: isDark ? AppColors.borderDark : AppColors.border),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 8,
+            height: 8,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: isVeg ? AppColors.present : AppColors.error,
+            ),
+          ),
+          const SizedBox(width: 6),
+          Text(
+            emoji.isNotEmpty ? '$emoji $label' : label,
+            style: AppTypography.labelMedium.copyWith(
+              fontWeight: FontWeight.w600,
+              color:
+                  isDark ? AppColors.textPrimaryDark : AppColors.textPrimary,
+            ),
+          ),
+          if (deltaPaise > 0) ...[
+            const SizedBox(width: 6),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+              decoration: BoxDecoration(
+                color: AppColors.primary.withValues(alpha: isDark ? 0.22 : 0.12),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Text(priceStr,
+                  style: AppTypography.labelSmall.copyWith(
+                      color: AppColors.primary, fontWeight: FontWeight.w700)),
+            ),
+          ],
+          InkWell(
+            onTap: () => setState(() => _options.removeAt(index)),
+            borderRadius: BorderRadius.circular(20),
+            child: const Padding(
+              padding: EdgeInsets.all(4),
+              child: Icon(Icons.close_rounded,
+                  size: 15, color: AppColors.textTertiary),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Outlined "+ Add option" CTA — same premium affordance as the group card.
+  Widget _addOptionCta() {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: _addOptionRow,
+        borderRadius: BorderRadius.circular(12),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+                color: AppColors.primary.withValues(alpha: 0.5), width: 1.2),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.add_rounded, size: 16, color: AppColors.primary),
+              const SizedBox(width: 4),
+              Text('Add option',
+                  style: AppTypography.labelMedium.copyWith(
+                      color: AppColors.primary, fontWeight: FontWeight.w700)),
             ],
           ),
         ),

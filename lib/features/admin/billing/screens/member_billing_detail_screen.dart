@@ -34,6 +34,8 @@ class MemberBillingDetailScreen extends StatefulWidget {
     this.creditsTotal = 0,
     this.refundsTotal = 0,
     this.openingBalance = 0,
+    this.engineMealCharges,
+    this.engineNetBill,
   });
 
   final String userId;
@@ -69,6 +71,14 @@ class MemberBillingDetailScreen extends StatefulWidget {
   /// CREDIT-001 (2026-07-13): balance carried forward from the previous
   /// finalized billing period — included in the net headline, itemised below.
   final int openingBalance;
+
+  /// Live-Test-6 ISSUE-4 (billing display parity): the billing ENGINE's own
+  /// figures for this member (mealCharges = own meals incl. policy-billed
+  /// skips; netBill = the full net), passed straight from the Member Billing
+  /// list row. When present they are the headline source of truth — the
+  /// screen never re-derives money the engine already computed.
+  final int? engineMealCharges;
+  final int? engineNetBill;
 
   @override
   State<MemberBillingDetailScreen> createState() =>
@@ -276,22 +286,26 @@ class _MemberBillingDetailScreenState extends State<MemberBillingDetailScreen> {
   int get _avgDailyCost {
     final days =
         _byDate.entries.where((e) => e.value.any((r) => r.isPresent)).length;
-    final bill = _summary?.totalBill ?? 0;
+    // ISSUE-4: derived from the engine's own-meal charges, never the client
+    // grid re-computation.
+    final bill = _mealsBill;
     return days == 0 ? 0 : (bill / days).round();
   }
 
-  /// Meals-only charge (sum of PRESENT rows) — matches the "Meals by date"
-  /// table below.
-  int get _mealsBill => _summary?.totalBill ?? 0;
+  /// Own-meal charges. Live-Test-6 ISSUE-4: the billing ENGINE's figure wins
+  /// whenever the list passed it — the client grid (with its virtual
+  /// placeholder rows) is display-only and must never set the money headline.
+  int get _mealsBill =>
+      widget.engineMealCharges ?? _summary?.totalBill ?? 0;
 
-  /// The bill: meals + hosted guests + signed adjustments. Computed from the
-  /// figures shown on this screen so the on-screen math always adds up, and
-  /// identical to the backend's netBill / the member's own My Billing total.
+  /// The net bill. Engine figure verbatim when available; the local sum is
+  /// only a fallback for legacy callers that didn't pass it.
   int get _netBill =>
-      widget.openingBalance +
-      _mealsBill +
-      widget.guestAmount +
-      widget.adjustmentsTotal;
+      widget.engineNetBill ??
+      (widget.openingBalance +
+          _mealsBill +
+          widget.guestAmount +
+          widget.adjustmentsTotal);
 
   bool get _hasFinancialExtras =>
       widget.guestAmount != 0 ||
@@ -480,9 +494,18 @@ class _MemberBillingDetailScreenState extends State<MemberBillingDetailScreen> {
   Widget _sectionTitle(String t) => Text(t,
       style: AppTypography.titleSmall.copyWith(fontWeight: FontWeight.w700));
 
+  /// Live-Test-6 ISSUE-4: a REAL skipped/absent record billed by the group's
+  /// Bill-Skip policy — virtual placeholder rows (autoSkipped) are never
+  /// billed, matching the billing engine exactly.
+  bool _isPolicyBilled(BillingRow r) =>
+      widget.billSkippedMeals &&
+      !r.autoSkipped &&
+      (r.status == AttendanceStatus.skipped ||
+          r.status == AttendanceStatus.absent);
+
   Widget _dateGroup(ColorScheme cs, DateTime date, List<BillingRow> rows) {
     final subtotal = rows
-        .where((r) => r.isPresent)
+        .where((r) => r.isPresent || _isPolicyBilled(r))
         .fold<int>(0, (s, r) => s + (r.price ?? 0));
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
@@ -534,16 +557,21 @@ class _MemberBillingDetailScreenState extends State<MemberBillingDetailScreen> {
                               fontWeight: FontWeight.w700,
                               color: _statusColor(r))),
                     ),
-                    // Fixed-width right-aligned price column ('—' when no charge).
+                    // Fixed-width right-aligned price column. ISSUE-4: real
+                    // policy-billed Skip/Absent rows show their charge so the
+                    // on-screen math adds up; unbilled rows show '—'.
                     if (widget.pricingEnabled)
                       SizedBox(
                         width: 64,
-                        child: Text(r.isPresent ? '₹${r.price ?? 0}' : '—',
+                        child: Text(
+                            r.isPresent || _isPolicyBilled(r)
+                                ? '₹${r.price ?? 0}'
+                                : '—',
                             textAlign: TextAlign.right,
                             maxLines: 1,
                             style: AppTypography.labelSmall.copyWith(
                                 fontWeight: FontWeight.w700,
-                                color: r.isPresent
+                                color: r.isPresent || _isPolicyBilled(r)
                                     ? AppColors.textPrimary
                                     : AppColors.textTertiary)),
                       ),
@@ -558,6 +586,11 @@ class _MemberBillingDetailScreenState extends State<MemberBillingDetailScreen> {
 
   Widget _breakdownCard(ColorScheme cs) {
     final b = _mealBreakdown;
+    // ISSUE-4: the engine's own-meal charges minus the visible Present lines =
+    // the policy-billed Skipped/Absent charge — itemised so every rupee of the
+    // Net Total is accounted for on screen.
+    final presentTotal = b.values.fold<int>(0, (s, v) => s + v);
+    final policyBilled = _mealsBill - presentTotal;
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
@@ -578,6 +611,24 @@ class _MemberBillingDetailScreenState extends State<MemberBillingDetailScreen> {
                   ],
                 ),
               )),
+          // ISSUE-4: Bill-Skip policy charges as their own line (only when the
+          // policy actually billed something this period).
+          if (policyBilled > 0)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 5),
+              child: Row(
+                children: [
+                  Expanded(
+                      child: Text('Skipped/Absent (billed by policy)',
+                          style: AppTypography.bodySmall
+                              .copyWith(color: AppColors.skipped))),
+                  Text('₹$policyBilled',
+                      style: AppTypography.bodySmall.copyWith(
+                          fontWeight: FontWeight.w700,
+                          color: AppColors.skipped)),
+                ],
+              ),
+            ),
           // Same structure as the member's own My Billing breakdown, so admin
           // and member always reconcile line-by-line to the same net figure.
           // CREDIT-001: carried-forward opening balance — already included in
@@ -738,7 +789,10 @@ class _MemberBillingDetailScreenState extends State<MemberBillingDetailScreen> {
       case AttendanceStatus.absent:
         return 'Absent';
       case AttendanceStatus.skipped:
-        return r.autoSkipped ? 'Skipped (auto)' : 'Skipped';
+        // ISSUE-4: distinguish the unbilled placeholder from a real record
+        // billed by the Bill-Skip policy.
+        if (r.autoSkipped) return 'Skipped (auto)';
+        return _isPolicyBilled(r) ? 'Skipped (billed)' : 'Skipped';
       default:
         return '—';
     }

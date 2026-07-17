@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart';
+import 'package:smart_meal_management/shared/models/preference_group_model.dart';
 
 /// Module 22 (Pass 9) — Member-Hosted Guests (+N).
 ///
@@ -29,6 +30,7 @@ class MealGuestModel {
     this.createdAt,
     this.hostName,
     this.mealName,
+    this.preferences = const [],
   });
 
   /// Live-Test-5 (Guest Attendance Visibility policy): host + meal names,
@@ -58,6 +60,22 @@ class MealGuestModel {
   final int? priceSnapshot;
   final String createdBy;
   final DateTime? createdAt;
+
+  /// Live-Test-6 ISSUE-2 (additive): this guest's preference-group snapshot —
+  /// [{groupId, groupLabel, optionKey, optionLabel, isVeg, priceDelta,
+  /// quantity}]. Empty on legacy rows / meals without groups.
+  final List<Map<String, dynamic>> preferences;
+
+  /// Compact display of the group selections, e.g. "Staple: Ruti · Non-Veg:
+  /// Chicken ×2". Empty string when the guest has none.
+  String get preferencesLabel => preferences
+      .map((s) {
+        final label = s['optionLabel']?.toString() ?? '';
+        final qty = _asIntOrNull(s['quantity']) ?? 1;
+        return qty > 1 ? '$label ×$qty' : label;
+      })
+      .where((s) => s.isNotEmpty)
+      .join(' · ');
 
   bool get isBooked => status == 'booked';
   bool get isCancelled => status == 'cancelled';
@@ -91,6 +109,10 @@ class MealGuestModel {
             : null,
         hostName: j['hostName']?.toString(),
         mealName: j['mealName']?.toString(),
+        preferences: ((j['preferences'] as List?) ?? const [])
+            .whereType<Map>()
+            .map((e) => e.cast<String, dynamic>())
+            .toList(),
       );
 
   Map<String, dynamic> toJson() => {
@@ -109,6 +131,7 @@ class MealGuestModel {
         'createdAt': createdAt?.toIso8601String(),
         'hostName': hostName,
         'mealName': mealName,
+        if (preferences.isNotEmpty) 'preferences': preferences,
       };
 }
 
@@ -119,21 +142,41 @@ class GuestDraft {
     this.isAdult = true,
     this.displayName,
     this.mealPreference,
+    this.selections = const [],
+    this.selectionsComplete = true,
+    this.selectionsDelta = 0,
   });
 
   final bool isAdult;
   final String? displayName;
   final String? mealPreference;
 
+  /// Live-Test-6 ISSUE-2: this guest's preference-group picks (validated
+  /// server-side at booking, exactly like a member's own Present mark).
+  final List<PreferenceSelection> selections;
+
+  /// Whether every required visible group is satisfied (Present-gate mirror).
+  final bool selectionsComplete;
+
+  /// Σ option price deltas in paise — live cost preview only; the server
+  /// snapshot is authoritative.
+  final int selectionsDelta;
+
   GuestDraft copyWith({
     bool? isAdult,
     String? displayName,
     String? mealPreference,
+    List<PreferenceSelection>? selections,
+    bool? selectionsComplete,
+    int? selectionsDelta,
   }) =>
       GuestDraft(
         isAdult: isAdult ?? this.isAdult,
         displayName: displayName ?? this.displayName,
         mealPreference: mealPreference ?? this.mealPreference,
+        selections: selections ?? this.selections,
+        selectionsComplete: selectionsComplete ?? this.selectionsComplete,
+        selectionsDelta: selectionsDelta ?? this.selectionsDelta,
       );
 
   Map<String, dynamic> toJson() => {
@@ -141,6 +184,8 @@ class GuestDraft {
         if (displayName != null && displayName!.trim().isNotEmpty)
           'displayName': displayName!.trim(),
         if (mealPreference != null) 'mealPreference': mealPreference,
+        if (selections.isNotEmpty)
+          'selections': selections.map((s) => s.toJson()).toList(),
       };
 }
 

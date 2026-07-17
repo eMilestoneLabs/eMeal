@@ -174,6 +174,8 @@ class _AdminGuestsSheetState extends State<_AdminGuestsSheet> {
       enabledPreferences: picked.meal.enabledPreferences.isNotEmpty
           ? picked.meal.enabledPreferences
           : cfg.enabledPreferences.map((e) => e.name).toList(),
+      // Live-Test-6 ISSUE-2: each guest picks the meal's preference groups.
+      preferenceGroups: picked.meal.preferenceGroups,
       mealPrice: picked.meal.price,
       hostUserId: picked.member.id,
       hostName: picked.member.name,

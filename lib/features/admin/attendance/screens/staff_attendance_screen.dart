@@ -354,8 +354,10 @@ class _StaffAttendanceScreenState extends State<StaffAttendanceScreen> {
     // once every required group is satisfied (meals with no required group
     // start unlocked, mirroring the correction sheet).
     final hasGroups = meal.preferenceGroups.isNotEmpty;
+    // Live-Test-6 ISSUE-2: the shared no-picks rule (visibleWhen + fail-safe
+    // aware) — the selector re-reports on mount and every change.
     final groupsComplete = _groupSelectionsComplete[meal.id] ??
-        !meal.preferenceGroups.any((g) => g.required);
+        PreferenceGroupSelector.initialComplete(meal.preferenceGroups);
 
     // Issue 5: preference parity. When the meal has preferences enabled, the
     // admin must pick one before "Present" — identical to the member flow.

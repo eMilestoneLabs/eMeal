@@ -127,6 +127,8 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
       config: config.guestConfig,
       pricingEnabled: config.mealPricingEnabled,
       enabledPreferences: enabledPrefs,
+      // Live-Test-6 ISSUE-2: each guest picks the meal's preference groups.
+      preferenceGroups: meal.preferenceGroups,
       mealPrice: record?.price ?? meal.price,
       currentUserId: user?.id,
     );
@@ -319,7 +321,12 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
                                 isWindowOpen: dashProvider.isWindowOpen(meal),
                                 isWindowClosed:
                                     dashProvider.isWindowPast(meal),
-                                isVacationMode: isVacation,
+                                // FR-VACX-003: per-MEAL coverage — on a
+                                // slot-bounded boundary day only meals inside
+                                // the vacation range lock; earlier meals stay
+                                // markable ("leaving after Evening Tea").
+                                isVacationMode:
+                                    dashProvider.isMealOnVacation(meal),
                                 // SRS Module 03 ATT-011: Personal
                                 // Auto-Attendance is SUSPENDED on
                                 // preference-required meals — those stay
@@ -337,16 +344,18 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
                                 onMarkWithSelections: (s, selections) =>
                                     _mark(meal, s, selections: selections),
                                 // Module 33 (ISSUE-17): post-window correction
-                                // request — hidden during vacation mode.
-                                onRequestCorrection: isVacation
-                                    ? null
-                                    : () => _openCorrectionSheet(meal),
+                                // request — hidden while THIS meal is covered
+                                // by vacation (per-meal, FR-VACX-003).
+                                onRequestCorrection:
+                                    dashProvider.isMealOnVacation(meal)
+                                        ? null
+                                        : () => _openCorrectionSheet(meal),
                                 // Module 22 (Pass 9): hosted guests — only in
-                                // guest-enabled Meal Mode groups, never during
-                                // vacation (FR-HG-043).
+                                // guest-enabled Meal Mode groups, never on a
+                                // vacation-covered meal (FR-HG-043/VACX-008).
                                 onManageGuests: (dashProvider
                                             .groupConfig.guestsEnabled &&
-                                        !isVacation)
+                                        !dashProvider.isMealOnVacation(meal))
                                     ? () => _openGuestSheet(meal)
                                     : null,
                               );

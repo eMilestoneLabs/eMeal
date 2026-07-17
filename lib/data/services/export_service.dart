@@ -134,19 +134,26 @@ class ExportService {
     // The bundled PDF font cannot render the ₹ glyph, so the PDF passes 'Rs '.
     // CSV/Excel keep '₹' (those render it correctly).
     String currency = '₹',
+    // Live-Test-6 ISSUE-4: when the group's Bill-Skip policy is ON, a REAL
+    // Skipped/Absent record carries its charge in this column too, so the
+    // per-row column sums exactly to the member's billed total. Virtual
+    // placeholder rows (autoSkipped) are never billed — parity with the
+    // billing engine.
+    bool billSkippedMeals = false,
   }) {
+    final billed = r.status == AttendanceStatus.present ||
+        (billSkippedMeals &&
+            !r.autoSkipped &&
+            (r.status == AttendanceStatus.skipped ||
+                r.status == AttendanceStatus.absent));
     return [
       r.userName,
       groupName,
       r.mealName,
       _statusLabel(r.status),
       r.preference ?? '',
-      // Only PRESENT meals carry a charge — Skip / Absent show 0 so the column
-      // matches the billing total.
       if (pricingEnabled)
-        (r.status == AttendanceStatus.present
-            ? '$currency${r.price ?? 0}'
-            : '${currency}0'),
+        (billed ? '$currency${r.price ?? 0}' : '${currency}0'),
       _formatDate(r.date),
       r.markedAt != null ? _formatDateTime(r.markedAt!) : '',
     ];
@@ -229,8 +236,8 @@ class ExportService {
           pw.TableHelper.fromTextArray(
             headers: _headers(pricingEnabled),
             data: rows
-                .map((r) =>
-                    _rowCells(r, groupName, pricingEnabled, currency: 'Rs '))
+                .map((r) => _rowCells(r, groupName, pricingEnabled,
+                    currency: 'Rs ', billSkippedMeals: billSkippedMeals))
                 .toList(),
             headerStyle:
                 pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 9),
@@ -415,7 +422,8 @@ class ExportService {
     );
     for (final r in rows) {
       sheet.appendRow(
-        _rowCells(r, groupName, pricingEnabled)
+        _rowCells(r, groupName, pricingEnabled,
+                billSkippedMeals: billSkippedMeals)
             .map((c) => xls.TextCellValue(c))
             .toList(),
       );
