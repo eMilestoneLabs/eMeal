@@ -1,19 +1,26 @@
 import 'package:flutter/material.dart';
 import 'package:smart_meal_management/core/theme/app_colors.dart';
 import 'package:smart_meal_management/core/theme/app_typography.dart';
+import 'package:smart_meal_management/data/repositories/meal_repository.dart';
 import 'package:smart_meal_management/data/repositories/preference_repository.dart';
 import 'package:smart_meal_management/shared/models/meal_model.dart';
 import 'package:smart_meal_management/shared/models/preference_group_model.dart';
 import 'package:smart_meal_management/shared/models/result.dart';
 import 'package:smart_meal_management/shared/widgets/app_skeleton.dart';
 
-/// Module 36 (FR-PG-080): per-meal preference-group builder.
+/// Module 36 (FR-PG-080) + Live-Test-7 ISSUE-1: the Meal Preference Builder.
 ///
-/// Admins compose choice dimensions for one meal — e.g. Staple (choose 1:
-/// Ruti/Rice) + Non-Veg (choose 1: Chicken +₹0 / Mutton +₹30) — with rules,
-/// veg flags and price deltas. Deletes are soft server-side; history and past
-/// bills never change (FR-PG-072). The kitchen-counts action shows today's
-/// per-option totals (FR-PG-050/051).
+/// ONE screen composes everything preference-related for a meal, split into
+/// two clearly separated, mutually exclusive modes (premium selection cards):
+///
+///  • STANDALONE — one simple tag list (Veg / Chicken / …); members pick one.
+///    2–5 options, edited inline, saved straight to the meal.
+///  • PREFERENCE GROUPS — multi-dimension choices with rules, veg flags and
+///    price add-ons (Staple: Ruti/Rice · Non-Veg: Chicken/Mutton +₹30).
+///
+/// Enabling one mode automatically disables the other (destructive switches
+/// confirm first). Deletes are soft server-side; history and past bills never
+/// change (FR-PG-072). Kitchen counts show today's per-option totals.
 class PreferenceGroupsScreen extends StatefulWidget {
   const PreferenceGroupsScreen({super.key, required this.meal});
 
@@ -25,14 +32,121 @@ class PreferenceGroupsScreen extends StatefulWidget {
 
 class _PreferenceGroupsScreenState extends State<PreferenceGroupsScreen> {
   final _repo = PreferenceRepository();
+  final _mealRepo = MealRepository();
   bool _loading = true;
+  bool _saving = false;
   String? _error;
   List<PreferenceGroupModel> _groups = [];
+  late MealModel _meal;
+
+  /// ISSUE-2: standalone preference sets carry 2–5 options (server-enforced;
+  /// mirrored here so the admin sees the rule before a round-trip).
+  static const int _minStandalone = 2;
+  static const int _maxStandalone = 5;
+
+  bool get _standaloneActive =>
+      _meal.preferencesEnabled && _groups.isEmpty;
+  bool get _groupsActive => _groups.isNotEmpty;
 
   @override
   void initState() {
     super.initState();
+    _meal = widget.meal;
     _load();
+  }
+
+  /// Persists a standalone-preference change and keeps the local meal fresh.
+  Future<bool> _patchStandalone({List<String>? tags}) async {
+    setState(() => _saving = true);
+    final res = await _mealRepo.updateMeal(
+      organizationId: _meal.organizationId,
+      groupId: _meal.groupId,
+      mealId: _meal.id,
+      availablePreferences: tags,
+    );
+    if (!mounted) return false;
+    switch (res) {
+      case Ok(:final value):
+        setState(() {
+          _meal = value;
+          _saving = false;
+        });
+        return true;
+      case Err(:final failure):
+        setState(() => _saving = false);
+        _toast(failure.message);
+        return false;
+    }
+  }
+
+  /// ISSUE-1 mutual exclusivity: activating Standalone removes the meal's
+  /// preference groups (confirmed — it is destructive for this meal's config;
+  /// members' history is preserved server-side).
+  Future<void> _activateStandalone() async {
+    if (_standaloneActive || _saving) return;
+    if (_groups.isNotEmpty) {
+      final ok = await _confirm(
+        'Switch to Standalone?',
+        'This removes ${_groups.length} preference group(s) from this meal. '
+        'Members will pick ONE simple tag instead. Past records and bills '
+        'stay exactly as they were.',
+      );
+      if (ok != true) return;
+      setState(() => _saving = true);
+      for (final g in List.of(_groups)) {
+        final res = await _repo.unbindFromMeal(_meal.id, g.id);
+        if (res case Err(:final failure)) {
+          if (mounted) {
+            setState(() => _saving = false);
+            _toast(failure.message);
+          }
+          return;
+        }
+      }
+      if (!mounted) return;
+      setState(() => _saving = false);
+    }
+    // Seed a valid minimum set when the meal has fewer than 2 stored tags.
+    final tags = _meal.enabledPreferences.length >= _minStandalone
+        ? _meal.enabledPreferences.take(_maxStandalone).toList()
+        : <String>['Veg', 'Non-Veg'];
+    if (await _patchStandalone(tags: tags)) await _load();
+  }
+
+  /// ISSUE-1 mutual exclusivity: activating Groups silently turns the flat
+  /// standalone list off (non-destructive — no group data is lost) and opens
+  /// the group creator.
+  Future<void> _activateGroups() async {
+    if (_saving) return;
+    if (_meal.preferencesEnabled) {
+      if (!await _patchStandalone(tags: const [])) return;
+    }
+    await _addGroup();
+  }
+
+  /// Inline standalone tag editing — 2..5 window enforced before the trip.
+  Future<void> _removeStandaloneTag(String tag) async {
+    if (_meal.enabledPreferences.length <= _minStandalone) {
+      _toast('Standalone preferences need at least $_minStandalone options.');
+      return;
+    }
+    final next = List.of(_meal.enabledPreferences)..remove(tag);
+    await _patchStandalone(tags: next);
+  }
+
+  Future<void> _addStandaloneTag(String tag) async {
+    final t = tag.trim();
+    if (t.isEmpty) return;
+    if (_meal.enabledPreferences.length >= _maxStandalone) {
+      _toast('Standalone preferences carry at most $_maxStandalone options.');
+      return;
+    }
+    if (_meal.enabledPreferences
+        .any((e) => e.toLowerCase() == t.toLowerCase())) {
+      _toast('"$t" already exists.');
+      return;
+    }
+    await _patchStandalone(tags: [..._meal.enabledPreferences, t]);
   }
 
   Future<void> _load() async {
@@ -182,7 +296,7 @@ class _PreferenceGroupsScreenState extends State<PreferenceGroupsScreen> {
       backgroundColor:
           isDark ? AppColors.backgroundDark : AppColors.background,
       appBar: AppBar(
-        title: Text('${widget.meal.name} · Preferences'),
+        title: Text('${widget.meal.name} · Preference Builder'),
         backgroundColor: isDark ? AppColors.surfaceDark : AppColors.surface,
         surfaceTintColor: Colors.transparent,
         actions: [
@@ -193,13 +307,17 @@ class _PreferenceGroupsScreenState extends State<PreferenceGroupsScreen> {
           ),
         ],
       ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: _addGroup,
-        backgroundColor: AppColors.primary,
-        icon: const Icon(Icons.add_rounded, color: Colors.white),
-        label:
-            const Text('Add group', style: TextStyle(color: Colors.white)),
-      ),
+      // The FAB belongs to Groups mode only — in Standalone mode options are
+      // added inline, and showing "Add group" there contradicted exclusivity.
+      floatingActionButton: _standaloneActive
+          ? null
+          : FloatingActionButton.extended(
+              onPressed: _saving ? null : _activateGroups,
+              backgroundColor: AppColors.primary,
+              icon: const Icon(Icons.add_rounded, color: Colors.white),
+              label: const Text('Add group',
+                  style: TextStyle(color: Colors.white)),
+            ),
       body: _loading
           ? const AppListSkeleton(rows: 4, rowHeight: 96)
           : _error != null
@@ -218,26 +336,400 @@ class _PreferenceGroupsScreenState extends State<PreferenceGroupsScreen> {
                     ),
                   ),
                 )
-              : _groups.isEmpty
-                  ? _EmptyState(onAdd: _addGroup)
-                  : RefreshIndicator(
-                      onRefresh: _load,
-                      child: ListView.separated(
-                        padding: const EdgeInsets.fromLTRB(16, 16, 16, 96),
-                        itemCount: _groups.length + 1,
-                        separatorBuilder: (_, _) => const SizedBox(height: 12),
-                        itemBuilder: (ctx, i) {
-                          if (i == 0) return const _HelpBanner();
-                          final g = _groups[i - 1];
-                          return _GroupCard(
+              : RefreshIndicator(
+                  onRefresh: _load,
+                  child: ListView(
+                    padding: const EdgeInsets.fromLTRB(16, 16, 16, 96),
+                    children: [
+                      // ISSUE-1: the two modes, side by side, immediately
+                      // recognisable — selected state is visually obvious.
+                      _ModeSelector(
+                        standaloneActive: _standaloneActive,
+                        groupsActive: _groupsActive,
+                        disabled: _saving,
+                        onStandalone: _activateStandalone,
+                        onGroups: _activateGroups,
+                      ),
+                      const SizedBox(height: 12),
+                      if (_standaloneActive) ...[
+                        _StandaloneCard(
+                          tags: _meal.enabledPreferences,
+                          minOptions: _minStandalone,
+                          maxOptions: _maxStandalone,
+                          saving: _saving,
+                          onAdd: _addStandaloneTag,
+                          onRemove: _removeStandaloneTag,
+                        ),
+                      ] else if (_groupsActive) ...[
+                        const _HelpBanner(),
+                        const SizedBox(height: 12),
+                        for (final g in _groups) ...[
+                          _GroupCard(
                             group: g,
                             onAddOption: () => _addOption(g),
                             onRemoveOption: (o) => _removeOption(g, o),
                             onRemoveGroup: () => _removeGroup(g),
-                          );
-                        },
+                            onEditRules: () => _editGroupRules(g),
+                          ),
+                          const SizedBox(height: 12),
+                        ],
+                      ] else
+                        _EmptyState(onAdd: _activateGroups),
+                    ],
+                  ),
+                ),
+    );
+  }
+
+  /// ISSUE-1: edit an existing group's rules (name, picks, flags) in the same
+  /// premium sheet used to create it — options stay managed on the card.
+  Future<void> _editGroupRules(PreferenceGroupModel g) async {
+    final body = await showModalBottomSheet<Map<String, dynamic>>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => _GroupEditorSheet(initial: g),
+    );
+    if (body == null) return;
+    final res = await _repo.updateGroup(g.id, body);
+    if (!mounted) return;
+    switch (res) {
+      case Ok():
+        _toast('Group updated');
+        await _load();
+      case Err(:final failure):
+        _toast(failure.message);
+    }
+  }
+}
+
+// ── ISSUE-1: mode selection cards ────────────────────────────────────────────
+
+/// Two premium cards — Standalone vs Preference Groups — with clear
+/// selected / unselected / disabled states in both themes. The active mode is
+/// visually obvious without reading any description.
+class _ModeSelector extends StatelessWidget {
+  const _ModeSelector({
+    required this.standaloneActive,
+    required this.groupsActive,
+    required this.disabled,
+    required this.onStandalone,
+    required this.onGroups,
+  });
+
+  final bool standaloneActive;
+  final bool groupsActive;
+  final bool disabled;
+  final VoidCallback onStandalone;
+  final VoidCallback onGroups;
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return Row(
+      children: [
+        Expanded(
+          child: _modeCard(
+            context,
+            isDark: isDark,
+            selected: standaloneActive,
+            icon: Icons.style_rounded,
+            title: 'Standalone',
+            description: 'One simple list — members pick a single tag',
+            onTap: onStandalone,
+          ),
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: _modeCard(
+            context,
+            isDark: isDark,
+            selected: groupsActive,
+            icon: Icons.tune_rounded,
+            title: 'Preference Groups',
+            description: 'Multi-choice dimensions, rules & ₹ add-ons',
+            onTap: onGroups,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _modeCard(
+    BuildContext context, {
+    required bool isDark,
+    required bool selected,
+    required IconData icon,
+    required String title,
+    required String description,
+    required VoidCallback onTap,
+  }) {
+    const accent = AppColors.primary;
+    final surface = isDark ? AppColors.surfaceDark : AppColors.surface;
+    final border = selected
+        ? accent
+        : (isDark ? AppColors.borderDark : AppColors.border);
+    final titleColor = selected
+        ? accent
+        : (isDark ? AppColors.textPrimaryDark : AppColors.textPrimary);
+    return Opacity(
+      opacity: disabled ? 0.55 : 1,
+      child: Material(
+        color: selected
+            ? accent.withValues(alpha: isDark ? 0.16 : 0.07)
+            : surface,
+        borderRadius: BorderRadius.circular(16),
+        child: InkWell(
+          onTap: disabled ? null : onTap,
+          borderRadius: BorderRadius.circular(16),
+          child: Container(
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(
+                  color: border, width: selected ? 1.6 : 1),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Container(
+                      width: 34,
+                      height: 34,
+                      decoration: BoxDecoration(
+                        color: accent
+                            .withValues(alpha: isDark ? 0.22 : 0.12),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: Icon(icon, size: 18, color: accent),
+                    ),
+                    const Spacer(),
+                    Icon(
+                      selected
+                          ? Icons.check_circle_rounded
+                          : Icons.radio_button_unchecked_rounded,
+                      size: 20,
+                      color: selected
+                          ? accent
+                          : (isDark
+                              ? AppColors.textSecondaryDark
+                              : AppColors.textTertiary),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 10),
+                Text(title,
+                    style: AppTypography.labelLarge.copyWith(
+                        color: titleColor, fontWeight: FontWeight.w800)),
+                const SizedBox(height: 3),
+                Text(
+                  description,
+                  style: AppTypography.labelSmall.copyWith(
+                    color: isDark
+                        ? AppColors.textSecondaryDark
+                        : AppColors.textSecondary,
+                    height: 1.3,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ── ISSUE-1: standalone preference editor card ────────────────────────────────
+
+/// Premium inline editor for the flat standalone tag list (2–5 options).
+class _StandaloneCard extends StatefulWidget {
+  const _StandaloneCard({
+    required this.tags,
+    required this.minOptions,
+    required this.maxOptions,
+    required this.saving,
+    required this.onAdd,
+    required this.onRemove,
+  });
+
+  final List<String> tags;
+  final int minOptions;
+  final int maxOptions;
+  final bool saving;
+  final Future<void> Function(String) onAdd;
+  final Future<void> Function(String) onRemove;
+
+  @override
+  State<_StandaloneCard> createState() => _StandaloneCardState();
+}
+
+class _StandaloneCardState extends State<_StandaloneCard> {
+  final _controller = TextEditingController();
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  Future<void> _submitAdd() async {
+    final t = _controller.text.trim();
+    if (t.isEmpty) return;
+    await widget.onAdd(t);
+    _controller.clear();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final atFloor = widget.tags.length <= widget.minOptions;
+    final atCap = widget.tags.length >= widget.maxOptions;
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: isDark ? AppColors.surfaceDark : AppColors.surface,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(
+          color: isDark
+              ? AppColors.borderDark.withValues(alpha: 0.5)
+              : AppColors.border,
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 38,
+                height: 38,
+                decoration: BoxDecoration(
+                  color: AppColors.primary
+                      .withValues(alpha: isDark ? 0.20 : 0.10),
+                  borderRadius: BorderRadius.circular(11),
+                ),
+                child: const Icon(Icons.style_rounded,
+                    size: 19, color: AppColors.primary),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('Standalone options',
+                        style: AppTypography.titleSmall
+                            .copyWith(fontWeight: FontWeight.w800)),
+                    Text(
+                      '${widget.tags.length} of ${widget.maxOptions} · members pick ONE',
+                      style: AppTypography.labelSmall.copyWith(
+                        color: isDark
+                            ? AppColors.textSecondaryDark
+                            : AppColors.textSecondary,
                       ),
                     ),
+                  ],
+                ),
+              ),
+              if (widget.saving)
+                const SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              for (final t in widget.tags)
+                Container(
+                  padding: const EdgeInsets.only(
+                      left: 12, right: 4, top: 6, bottom: 6),
+                  decoration: BoxDecoration(
+                    color: isDark
+                        ? AppColors.backgroundDark
+                        : AppColors.background,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                        color:
+                            isDark ? AppColors.borderDark : AppColors.border),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(t,
+                          style: AppTypography.labelMedium.copyWith(
+                            fontWeight: FontWeight.w600,
+                            color: isDark
+                                ? AppColors.textPrimaryDark
+                                : AppColors.textPrimary,
+                          )),
+                      InkWell(
+                        onTap: (widget.saving || atFloor)
+                            ? null
+                            : () => widget.onRemove(t),
+                        borderRadius: BorderRadius.circular(20),
+                        child: Padding(
+                          padding: const EdgeInsets.all(4),
+                          child: Icon(
+                            Icons.close_rounded,
+                            size: 15,
+                            color: atFloor
+                                ? AppColors.textTertiary
+                                    .withValues(alpha: 0.35)
+                                : AppColors.textTertiary,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          if (!atCap)
+            TextField(
+              controller: _controller,
+              enabled: !widget.saving,
+              maxLength: 30,
+              textInputAction: TextInputAction.done,
+              onSubmitted: (_) => _submitAdd(),
+              decoration: InputDecoration(
+                counterText: '',
+                isDense: true,
+                hintText: 'Add option (e.g. Fish)',
+                border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12)),
+                suffixIcon: IconButton(
+                  icon: const Icon(Icons.add_rounded,
+                      color: AppColors.primary),
+                  onPressed: widget.saving ? null : _submitAdd,
+                ),
+              ),
+            ),
+          Padding(
+            padding: const EdgeInsets.only(top: 8),
+            child: Text(
+              atFloor
+                  ? 'Keep at least ${widget.minOptions} options — one option is not a choice.'
+                  : atCap
+                      ? 'Limit reached — a standalone list carries at most ${widget.maxOptions} options.'
+                      : 'Shown exactly as published — nothing is added or substituted.',
+              style: AppTypography.labelSmall.copyWith(
+                color: (atFloor || atCap)
+                    ? AppColors.warning
+                    : (isDark
+                        ? AppColors.textSecondaryDark
+                        : AppColors.textSecondary),
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -250,12 +742,14 @@ class _GroupCard extends StatelessWidget {
     required this.onAddOption,
     required this.onRemoveOption,
     required this.onRemoveGroup,
+    required this.onEditRules,
   });
 
   final PreferenceGroupModel group;
   final VoidCallback onAddOption;
   final void Function(PreferenceOptionModel) onRemoveOption;
   final VoidCallback onRemoveGroup;
+  final VoidCallback onEditRules;
 
   @override
   Widget build(BuildContext context) {
@@ -313,10 +807,12 @@ class _GroupCard extends StatelessWidget {
               PopupMenuButton<String>(
                 icon: const Icon(Icons.more_vert_rounded, size: 18),
                 itemBuilder: (_) => const [
+                  PopupMenuItem(value: 'edit', child: Text('Edit rules')),
                   PopupMenuItem(
                       value: 'remove', child: Text('Remove from meal')),
                 ],
-                onSelected: (_) => onRemoveGroup(),
+                onSelected: (v) =>
+                    v == 'edit' ? onEditRules() : onRemoveGroup(),
               ),
             ],
           ),
@@ -327,6 +823,16 @@ class _GroupCard extends StatelessWidget {
             runSpacing: 6,
             children: [
               _metaPill(countCaption, accent, Icons.checklist_rounded, isDark),
+              _metaPill('${group.options.length} options', AppColors.info,
+                  Icons.category_rounded, isDark),
+              _metaPill(
+                group.isSingle ? 'Single pick' : 'Multiple picks',
+                accent,
+                group.isSingle
+                    ? Icons.looks_one_rounded
+                    : Icons.done_all_rounded,
+                isDark,
+              ),
               _metaPill(
                 group.required ? 'Required' : 'Optional',
                 group.required ? AppColors.present : AppColors.textTertiary,
@@ -515,7 +1021,11 @@ class _EmptyState extends StatelessWidget {
 // ── Group editor sheet (FR-PG-080/081) ────────────────────────────────────────
 
 class _GroupEditorSheet extends StatefulWidget {
-  const _GroupEditorSheet();
+  /// ISSUE-1: [initial] switches the sheet to RULES-EDIT mode for an existing
+  /// group (name, picks, flags) — options stay managed on the group card.
+  const _GroupEditorSheet({this.initial});
+
+  final PreferenceGroupModel? initial;
 
   @override
   State<_GroupEditorSheet> createState() => _GroupEditorSheetState();
@@ -530,6 +1040,26 @@ class _GroupEditorSheetState extends State<_GroupEditorSheet> {
   bool _vegOnly = false;
   final List<Map<String, dynamic>> _options = [];
   String? _error;
+
+  bool get _isEdit => widget.initial != null;
+
+  /// ISSUE-2: a group carries 2–5 options (server-enforced; mirrored here).
+  static const int _minOptions = 2;
+  static const int _maxOptions = 5;
+
+  @override
+  void initState() {
+    super.initState();
+    final g = widget.initial;
+    if (g != null) {
+      _label.text = g.label;
+      _multiple = !g.isSingle;
+      _maxSelect = g.maxSelect < 2 ? 2 : g.maxSelect;
+      _required = g.required;
+      _quantity = g.quantityEnabled;
+      _vegOnly = g.vegOnly;
+    }
+  }
 
   /// Canonical lowercase key from a label (FR-PG-011).
   static String _keyOf(String label) => label
@@ -554,14 +1084,22 @@ class _GroupEditorSheetState extends State<_GroupEditorSheet> {
       setState(() => _error = 'Group name is required.');
       return;
     }
-    if (_options.isEmpty) {
-      setState(() => _error = 'Add at least one option.');
-      return;
-    }
-    final keys = _options.map((o) => o['key']).toSet();
-    if (keys.length != _options.length) {
-      setState(() => _error = 'Option names must be unique.');
-      return;
+    if (!_isEdit) {
+      // ISSUE-2: 2–5 options per group, asserted before the round-trip.
+      if (_options.length < _minOptions) {
+        setState(() =>
+            _error = 'Add at least $_minOptions options — one option is not a choice.');
+        return;
+      }
+      if (_options.length > _maxOptions) {
+        setState(() => _error = 'A group carries at most $_maxOptions options.');
+        return;
+      }
+      final keys = _options.map((o) => o['key']).toSet();
+      if (keys.length != _options.length) {
+        setState(() => _error = 'Option names must be unique.');
+        return;
+      }
     }
     Navigator.pop(context, {
       'label': label,
@@ -571,7 +1109,7 @@ class _GroupEditorSheetState extends State<_GroupEditorSheet> {
       'required': _required,
       'quantityEnabled': _quantity,
       'vegOnly': _vegOnly,
-      'options': _options,
+      if (!_isEdit) 'options': _options,
     });
   }
 
@@ -593,13 +1131,17 @@ class _GroupEditorSheetState extends State<_GroupEditorSheet> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const _SheetHeader(
+              _SheetHeader(
                 icon: Icons.tune_rounded,
-                title: 'New preference group',
-                subtitle:
-                    'A group is one choice members make when marking Present — '
-                    'e.g. "Staple" with Ruti / Rice. Add its options below and '
-                    'pick how many they may choose.',
+                title: _isEdit
+                    ? 'Edit "${widget.initial!.label}"'
+                    : 'New preference group',
+                subtitle: _isEdit
+                    ? 'Rename the group or change its selection rules — '
+                        'options are managed on the group card.'
+                    : 'A group is one choice members make when marking Present — '
+                        'e.g. "Staple" with Ruti / Rice. Add 2–5 options below '
+                        'and pick how many they may choose.',
               ),
               TextField(
                 controller: _label,
@@ -630,7 +1172,11 @@ class _GroupEditorSheetState extends State<_GroupEditorSheet> {
                     Text('$_maxSelect', style: AppTypography.labelMedium),
                     IconButton(
                       icon: const Icon(Icons.add, size: 18),
-                      onPressed: () => setState(() => _maxSelect++),
+                      // PREF-005: Max Picks is capped server-side (default 3)
+                      // — mirror it so the sheet can't submit a doomed value.
+                      onPressed: _maxSelect < 3
+                          ? () => setState(() => _maxSelect++)
+                          : null,
                     ),
                   ],
                 ),
@@ -655,30 +1201,32 @@ class _GroupEditorSheetState extends State<_GroupEditorSheet> {
                 value: _vegOnly,
                 onChanged: (v) => setState(() => _vegOnly = v),
               ),
-              const SizedBox(height: 8),
-              Text(
-                'Options',
-                style: AppTypography.labelMedium.copyWith(
-                  color: isDark
-                      ? AppColors.textPrimaryDark
-                      : AppColors.textPrimary,
-                  fontWeight: FontWeight.w700,
+              if (!_isEdit) ...[
+                const SizedBox(height: 8),
+                Text(
+                  'Options  ·  ${_options.length} of $_maxOptions',
+                  style: AppTypography.labelMedium.copyWith(
+                    color: isDark
+                        ? AppColors.textPrimaryDark
+                        : AppColors.textPrimary,
+                    fontWeight: FontWeight.w700,
+                  ),
                 ),
-              ),
-              const SizedBox(height: 8),
-              // Live-Test-6 ISSUE-1: premium high-contrast draft chips —
-              // explicit colors for BOTH themes (the raw InputChip/ActionChip
-              // labels were washed out / invisible in light mode). Mirrors the
-              // group-card option chips: veg dot + label + optional +₹ pill.
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: [
-                  for (var i = 0; i < _options.length; i++)
-                    _draftOptionChip(i, isDark),
-                  _addOptionCta(),
-                ],
-              ),
+                const SizedBox(height: 8),
+                // Live-Test-6 ISSUE-1: premium high-contrast draft chips —
+                // explicit colors for BOTH themes (the raw InputChip/ActionChip
+                // labels were washed out / invisible in light mode). Mirrors the
+                // group-card option chips: veg dot + label + optional +₹ pill.
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    for (var i = 0; i < _options.length; i++)
+                      _draftOptionChip(i, isDark),
+                    if (_options.length < _maxOptions) _addOptionCta(),
+                  ],
+                ),
+              ],
               if (_error != null)
                 Padding(
                   padding: const EdgeInsets.only(top: 8),
@@ -691,7 +1239,7 @@ class _GroupEditorSheetState extends State<_GroupEditorSheet> {
                 width: double.infinity,
                 child: FilledButton(
                   onPressed: _submit,
-                  child: const Text('Create group'),
+                  child: Text(_isEdit ? 'Save changes' : 'Create group'),
                 ),
               ),
             ],

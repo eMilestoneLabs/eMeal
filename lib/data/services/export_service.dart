@@ -140,12 +140,15 @@ class ExportService {
     // placeholder rows (autoSkipped) are never billed — parity with the
     // billing engine.
     bool billSkippedMeals = false,
+    // Live-Test-7 ISSUE-4: Absent bills under its own toggle; null keeps the
+    // legacy coupling to Bill-Skip.
+    bool? billAbsentMeals,
   }) {
+    final billAbsent = billAbsentMeals ?? billSkippedMeals;
     final billed = r.status == AttendanceStatus.present ||
-        (billSkippedMeals &&
-            !r.autoSkipped &&
-            (r.status == AttendanceStatus.skipped ||
-                r.status == AttendanceStatus.absent));
+        (!r.autoSkipped &&
+            ((r.status == AttendanceStatus.skipped && billSkippedMeals) ||
+                (r.status == AttendanceStatus.absent && billAbsent)));
     return [
       r.userName,
       groupName,
@@ -176,8 +179,10 @@ class ExportService {
     // reconciling exactly with the billing screens.
     Map<String, MemberExportFinancials> financialsByUser = const {},
     // SRS Module 03 (survey Q17/Q22): group Bill-Skip policy — bills
-    // Absent/Skipped rows at their scheduled price when true.
+    // Skipped rows at their scheduled price when true.
     bool billSkippedMeals = false,
+    // Live-Test-7 ISSUE-4: independent Absent policy (null = follow Skip).
+    bool? billAbsentMeals,
   }) async {
     // Issue 3 & 7: pass today's published overlay + vacation members so exported
     // billing matches the on-screen figures (per-day window auto-skip + vacation
@@ -191,7 +196,9 @@ class ExportService {
       vacationUserIds: vacationUserIds,
     );
     final summaries =
-        BillingService.summarize(rows, billSkippedMeals: billSkippedMeals);
+        BillingService.summarize(rows,
+            billSkippedMeals: billSkippedMeals,
+            billAbsentMeals: billAbsentMeals);
     final pdf = pw.Document();
 
     pdf.addPage(
@@ -237,7 +244,9 @@ class ExportService {
             headers: _headers(pricingEnabled),
             data: rows
                 .map((r) => _rowCells(r, groupName, pricingEnabled,
-                    currency: 'Rs ', billSkippedMeals: billSkippedMeals))
+                    currency: 'Rs ',
+                    billSkippedMeals: billSkippedMeals,
+                    billAbsentMeals: billAbsentMeals))
                 .toList(),
             headerStyle:
                 pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 9),
@@ -345,6 +354,8 @@ class ExportService {
     Map<String, MemberExportFinancials> financialsByUser = const {},
     // SRS Module 03 (survey Q17/Q22): group Bill-Skip policy.
     bool billSkippedMeals = false,
+    // Live-Test-7 ISSUE-4: independent Absent policy (null = follow Skip).
+    bool? billAbsentMeals,
   }) async {
     final rows = BillingService.buildRows(
         records: records,
@@ -354,7 +365,9 @@ class ExportService {
         todayMeals: todayMeals,
         vacationUserIds: vacationUserIds);
     final summaries =
-        BillingService.summarize(rows, billSkippedMeals: billSkippedMeals);
+        BillingService.summarize(rows,
+            billSkippedMeals: billSkippedMeals,
+            billAbsentMeals: billAbsentMeals);
 
     final book = xls.Excel.createExcel();
 
@@ -423,7 +436,8 @@ class ExportService {
     for (final r in rows) {
       sheet.appendRow(
         _rowCells(r, groupName, pricingEnabled,
-                billSkippedMeals: billSkippedMeals)
+                billSkippedMeals: billSkippedMeals,
+                billAbsentMeals: billAbsentMeals)
             .map((c) => xls.TextCellValue(c))
             .toList(),
       );

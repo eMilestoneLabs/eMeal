@@ -64,6 +64,8 @@ class _StudentBillingScreenState extends State<StudentBillingScreen> {
   bool _pricingEnabled = false;
   // SRS Module 03 (survey Q17/Q22): group Bill-Skip policy.
   bool _billSkippedMeals = false;
+  // Live-Test-7 ISSUE-4: independent Absent-billing policy (effective value).
+  bool _billAbsentMeals = false;
   String _groupName = '';
 
   // Cached for export (same inputs the on-screen rows were built from).
@@ -159,6 +161,7 @@ class _StudentBillingScreenState extends State<StudentBillingScreen> {
     if (groupRes case Ok(:final value)) {
       _pricingEnabled = value.mealConfig.mealPricingEnabled;
       _billSkippedMeals = value.mealConfig.billSkippedMeals;
+      _billAbsentMeals = value.mealConfig.billAbsentMeals;
       _groupName = value.name;
     }
 
@@ -173,8 +176,8 @@ class _StudentBillingScreenState extends State<StudentBillingScreen> {
       todayMeals: todayMeals,
       vacationUserIds: vacationIds,
     ).where((r) => r.userId == _userId).toList();
-    final summaries =
-        BillingService.summarize(rows, billSkippedMeals: _billSkippedMeals);
+    final summaries = BillingService.summarize(rows,
+        billSkippedMeals: _billSkippedMeals, billAbsentMeals: _billAbsentMeals);
 
     // Issue 5: pull the authoritative net from the shared billing engine. This
     // is the ONLY number that includes hosted-guest charges + admin
@@ -293,6 +296,7 @@ class _StudentBillingScreenState extends State<StudentBillingScreen> {
             vacationUserIds: _vacationUserIds,
             financialsByUser: financials,
             billSkippedMeals: _billSkippedMeals,
+            billAbsentMeals: _billAbsentMeals,
           );
         // RPT-001: CSV export removed — Excel + PDF only.
         default:
@@ -308,6 +312,7 @@ class _StudentBillingScreenState extends State<StudentBillingScreen> {
             vacationUserIds: _vacationUserIds,
             financialsByUser: financials,
             billSkippedMeals: _billSkippedMeals,
+            billAbsentMeals: _billAbsentMeals,
           );
       }
       if (mounted) {
@@ -746,14 +751,15 @@ class _StudentBillingScreenState extends State<StudentBillingScreen> {
   int _rowBilledAmount(BillingRow r) {
     if (r.status == AttendanceStatus.present) return r.price ?? 0;
     final billSkips = _billSkippedMeals || (_serverBilling?.billSkippedMeals ?? false);
+    // Live-Test-7 ISSUE-4: Absent follows its own independent policy.
+    final billAbsents = _billAbsentMeals || (_serverBilling?.billAbsentMeals ?? false);
     // Live-Test-6 ISSUE-4: only REAL records are ever billed — the engine
     // bills its own system-generated Skip records, never the client's virtual
     // placeholder rows (autoSkipped). Labelling placeholders "Billed" showed
     // phantom charges the engine never applied.
-    if (billSkips &&
-        !r.autoSkipped &&
-        (r.status == AttendanceStatus.skipped ||
-            r.status == AttendanceStatus.absent)) {
+    if (!r.autoSkipped &&
+        ((r.status == AttendanceStatus.skipped && billSkips) ||
+            (r.status == AttendanceStatus.absent && billAbsents))) {
       return r.price ?? 0;
     }
     return 0;

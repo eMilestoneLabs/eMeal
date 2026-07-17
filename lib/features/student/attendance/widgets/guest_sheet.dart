@@ -248,11 +248,19 @@ class _GuestSheetState extends State<_GuestSheet> {
   }
 
   Future<void> _editGuest(MealGuestModel guest) async {
-    final updated = await showDialog<({String name, String? preference})>(
+    final updated = await showDialog<
+        ({
+          String name,
+          String? preference,
+          List<PreferenceSelection>? selections,
+        })>(
       context: context,
       builder: (_) => _EditGuestDialog(
         guest: guest,
         enabledPreferences: widget.enabledPreferences,
+        // Live-Test-7 ISSUE-2: group meals edit the SAME picks the add flow
+        // collects — not a stale flat tag.
+        preferenceGroups: widget.preferenceGroups,
       ),
     );
     if (updated == null) return;
@@ -261,6 +269,8 @@ class _GuestSheetState extends State<_GuestSheet> {
         id: guest.id,
         displayName: updated.name,
         mealPreference: updated.preference,
+        selections:
+            updated.selections?.map((s) => s.toJson()).toList(),
       ),
       success: 'Guest updated.',
     );
@@ -894,7 +904,11 @@ class _DraftRow extends StatelessWidget {
             ),
             onChanged: (v) => onChanged(draft.copyWith(displayName: v)),
           ),
-          if (enabledPreferences.isNotEmpty) ...[
+          // Live-Test-7 ISSUE-2 (mutual exclusivity): on a preference-GROUP
+          // meal the group picks ARE the guest's meal choice — the server
+          // derives the flat tag from them, and _prefsSatisfied never demands
+          // a flat tap. Showing both rows double-asked the same question.
+          if (enabledPreferences.isNotEmpty && preferenceGroups.isEmpty) ...[
             const SizedBox(height: AppConstants.space8),
             Text(
               preferenceRequired
@@ -1029,10 +1043,16 @@ class _EditGuestDialog extends StatefulWidget {
   const _EditGuestDialog({
     required this.guest,
     required this.enabledPreferences,
+    this.preferenceGroups = const [],
   });
 
   final MealGuestModel guest;
   final List<String> enabledPreferences;
+
+  /// Live-Test-7 ISSUE-2: on preference-GROUP meals the edit dialog edits the
+  /// guest's group picks (same selector as the add flow, seeded with the
+  /// current snapshot) — the flat chip row renders only on flat-tag meals.
+  final List<PreferenceGroupModel> preferenceGroups;
 
   @override
   State<_EditGuestDialog> createState() => _EditGuestDialogState();
@@ -1042,6 +1062,22 @@ class _EditGuestDialogState extends State<_EditGuestDialog> {
   late final TextEditingController _name =
       TextEditingController(text: widget.guest.displayName ?? '');
   String? _preference;
+  List<PreferenceSelection> _selections = const [];
+  bool _selectionsComplete = true;
+
+  bool get _hasGroups => widget.preferenceGroups.isNotEmpty;
+
+  /// The guest's stored selection snapshot → seed for the selector.
+  List<PreferenceSelection> get _seed => widget.guest.preferences
+      .map((p) => PreferenceSelection(
+            groupId: (p['groupId'] ?? '').toString(),
+            optionKey: (p['optionKey'] ?? '').toString(),
+            quantity: (p['quantity'] is num)
+                ? (p['quantity'] as num).toInt()
+                : 1,
+          ))
+      .where((s) => s.groupId.isNotEmpty && s.optionKey.isNotEmpty)
+      .toList();
 
   @override
   void initState() {
@@ -1057,39 +1093,99 @@ class _EditGuestDialogState extends State<_EditGuestDialog> {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return AlertDialog(
       title: const Text('Edit guest'),
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          TextField(
-            controller: _name,
-            maxLength: 80,
-            decoration: const InputDecoration(
-              labelText: 'Guest name',
-              counterText: '',
-            ),
+      content: ConstrainedBox(
+        constraints: BoxConstraints(
+          maxHeight: MediaQuery.of(context).size.height * 0.6,
+        ),
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              TextField(
+                controller: _name,
+                maxLength: 80,
+                decoration: const InputDecoration(
+                  labelText: 'Guest name',
+                  counterText: '',
+                ),
+              ),
+              // Flat-tag meals only — on group meals the picks below govern
+              // (the server derives the flat tag from them).
+              if (widget.enabledPreferences.isNotEmpty && !_hasGroups) ...[
+                const SizedBox(height: AppConstants.space8),
+                Wrap(
+                  spacing: 6,
+                  runSpacing: 6,
+                  children: widget.enabledPreferences.map((opt) {
+                    final selected = _preference == opt;
+                    final disp = MealPreferenceOption.display(opt);
+                    // Premium high-contrast chip — explicit colors in BOTH
+                    // themes (raw FilterChip labels washed out in light mode).
+                    return GestureDetector(
+                      onTap: () => setState(
+                          () => _preference = selected ? null : opt),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 12, vertical: 7),
+                        decoration: BoxDecoration(
+                          color: selected
+                              ? AppColors.primary
+                              : isDark
+                                  ? AppColors.backgroundDark
+                                  : AppColors.background,
+                          borderRadius: BorderRadius.circular(20),
+                          border: Border.all(
+                            color: selected
+                                ? AppColors.primary
+                                : isDark
+                                    ? AppColors.borderDark
+                                    : AppColors.border,
+                          ),
+                        ),
+                        child: Text(
+                          '${disp.emoji.isNotEmpty ? '${disp.emoji} ' : ''}${disp.label}',
+                          style: AppTypography.labelMedium.copyWith(
+                            fontWeight: FontWeight.w600,
+                            color: selected
+                                ? Colors.white
+                                : isDark
+                                    ? AppColors.textPrimaryDark
+                                    : AppColors.textPrimary,
+                          ),
+                        ),
+                      ),
+                    );
+                  }).toList(),
+                ),
+              ],
+              if (_hasGroups) ...[
+                const SizedBox(height: AppConstants.space8),
+                Text(
+                  'Meal choices for this guest',
+                  style: AppTypography.labelSmall.copyWith(
+                    color: isDark
+                        ? AppColors.textSecondaryDark
+                        : AppColors.textSecondary,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                PreferenceGroupSelector(
+                  groups: widget.preferenceGroups,
+                  initialSelections: _seed,
+                  onChanged: (selections, delta, complete) =>
+                      setState(() {
+                    _selections = selections;
+                    _selectionsComplete = complete;
+                  }),
+                ),
+              ],
+            ],
           ),
-          if (widget.enabledPreferences.isNotEmpty) ...[
-            const SizedBox(height: AppConstants.space8),
-            Wrap(
-              spacing: 6,
-              runSpacing: 6,
-              children: widget.enabledPreferences.map((opt) {
-                final selected = _preference == opt;
-                final disp = MealPreferenceOption.display(opt);
-                return FilterChip(
-                  selected: selected,
-                  label: Text(
-                      '${disp.emoji.isNotEmpty ? '${disp.emoji} ' : ''}${disp.label}'),
-                  onSelected: (_) =>
-                      setState(() => _preference = selected ? null : opt),
-                );
-              }).toList(),
-            ),
-          ],
-        ],
+        ),
       ),
       actions: [
         TextButton(
@@ -1097,8 +1193,18 @@ class _EditGuestDialogState extends State<_EditGuestDialog> {
           child: const Text('Cancel'),
         ),
         FilledButton(
-          onPressed: () => Navigator.of(context)
-              .pop((name: _name.text.trim(), preference: _preference)),
+          // Group meals: Save unlocks only while required picks are complete
+          // (same gate as booking; the server re-validates regardless).
+          onPressed: (_hasGroups && !_selectionsComplete)
+              ? null
+              : () => Navigator.of(context).pop((
+                    name: _name.text.trim(),
+                    // Group meals: the picks are authoritative — the server
+                    // derives the flat tag and re-prices exactly (idempotent
+                    // when unchanged). Flat meals send the tapped tag only.
+                    preference: _hasGroups ? null : _preference,
+                    selections: _hasGroups ? _selections : null,
+                  )),
           child: const Text('Save'),
         ),
       ],

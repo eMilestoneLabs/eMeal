@@ -27,6 +27,7 @@ class MemberBillingDetailScreen extends StatefulWidget {
     required this.to,
     required this.pricingEnabled,
     this.billSkippedMeals = false,
+    this.billAbsentMeals,
     this.guestCount = 0,
     this.guestAmount = 0,
     this.adjustmentsTotal = 0,
@@ -49,8 +50,14 @@ class MemberBillingDetailScreen extends StatefulWidget {
   final bool pricingEnabled;
 
   /// SRS Module 03 (survey Q17/Q22): group Bill-Skip policy — bills
-  /// Absent/Skipped rows at their scheduled price when true.
+  /// Skipped rows at their scheduled price when true.
   final bool billSkippedMeals;
+
+  /// Live-Test-7 ISSUE-4: independent Absent-billing policy. Null keeps the
+  /// legacy coupling (Absent follows [billSkippedMeals]).
+  final bool? billAbsentMeals;
+
+  bool get _billAbsent => billAbsentMeals ?? billSkippedMeals;
 
   /// Billing-consistency fix: the same hosted-guest charges and signed ledger
   /// adjustments the Member Billing list shows, so this screen's headline is
@@ -172,7 +179,8 @@ class _MemberBillingDetailScreenState extends State<MemberBillingDetailScreen> {
       vacationUserIds: vacationUserIds,
     ).where((r) => r.userId == widget.userId).toList();
     final summaries = BillingService.summarize(rows,
-        billSkippedMeals: widget.billSkippedMeals);
+        billSkippedMeals: widget.billSkippedMeals,
+        billAbsentMeals: widget._billAbsent);
 
     if (!mounted) return;
     setState(() {
@@ -220,6 +228,7 @@ class _MemberBillingDetailScreenState extends State<MemberBillingDetailScreen> {
             vacationUserIds: _vacationUserIds,
             financialsByUser: _exportFinancials,
             billSkippedMeals: widget.billSkippedMeals,
+            billAbsentMeals: widget._billAbsent,
           );
         // RPT-001: CSV export removed — Excel + PDF only.
         default:
@@ -235,6 +244,7 @@ class _MemberBillingDetailScreenState extends State<MemberBillingDetailScreen> {
             vacationUserIds: _vacationUserIds,
             financialsByUser: _exportFinancials,
             billSkippedMeals: widget.billSkippedMeals,
+            billAbsentMeals: widget._billAbsent,
           );
       }
       if (mounted) {
@@ -495,13 +505,13 @@ class _MemberBillingDetailScreenState extends State<MemberBillingDetailScreen> {
       style: AppTypography.titleSmall.copyWith(fontWeight: FontWeight.w700));
 
   /// Live-Test-6 ISSUE-4: a REAL skipped/absent record billed by the group's
-  /// Bill-Skip policy — virtual placeholder rows (autoSkipped) are never
-  /// billed, matching the billing engine exactly.
+  /// billing policy — virtual placeholder rows (autoSkipped) are never
+  /// billed, matching the billing engine exactly. Live-Test-7 ISSUE-4:
+  /// Skip and Absent follow their own independent toggles.
   bool _isPolicyBilled(BillingRow r) =>
-      widget.billSkippedMeals &&
       !r.autoSkipped &&
-      (r.status == AttendanceStatus.skipped ||
-          r.status == AttendanceStatus.absent);
+      ((r.status == AttendanceStatus.skipped && widget.billSkippedMeals) ||
+          (r.status == AttendanceStatus.absent && widget._billAbsent));
 
   Widget _dateGroup(ColorScheme cs, DateTime date, List<BillingRow> rows) {
     final subtotal = rows

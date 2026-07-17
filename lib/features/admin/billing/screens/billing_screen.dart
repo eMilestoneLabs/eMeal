@@ -71,6 +71,9 @@ class _BillingScreenState extends State<BillingScreen> {
           // SRS Module 03 (survey Q17/Q22): group Bill-Skip policy.
           billSkippedMeals:
               _provider.selectedGroup?.mealConfig.billSkippedMeals ?? false,
+          // Live-Test-7 ISSUE-4: independent Absent-billing policy.
+          billAbsentMeals:
+              _provider.selectedGroup?.mealConfig.billAbsentMeals ?? false,
           // Billing-consistency fix: hand over the guest + adjustment figures
           // so the detail headline is the same net bill this list shows.
           guestCount: m.guestCount,

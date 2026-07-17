@@ -66,16 +66,20 @@ class GuestRepository {
   }
 
   /// Edits a booked guest's name/preference (host in-window; admin anytime).
+  /// Live-Test-7: [selections] replaces the guest's preference-group picks —
+  /// the server re-derives the price delta exactly (booking base unchanged).
   Future<Result<MealGuestModel>> updateGuest({
     required String id,
     String? displayName,
     String? mealPreference,
+    List<Map<String, dynamic>>? selections,
   }) async {
     final result = await DioApiService.instance.patch<Map<String, dynamic>>(
       '/attendance/guests/$id',
       body: {
         if (displayName != null) 'displayName': displayName,
         if (mealPreference != null) 'mealPreference': mealPreference,
+        if (selections != null) 'selections': selections,
       },
     );
     return _single(result);

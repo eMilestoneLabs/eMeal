@@ -132,6 +132,20 @@ class _ExportScreenState extends State<ExportScreen> {
     }
   }
 
+  /// Live-Test-7 ISSUE-4: the selected group's independent Absent policy
+  /// (model already resolves the legacy coupling for pre-split servers).
+  bool get _billAbsentMeals {
+    if (_selectedGroupId == null) return false;
+    try {
+      return _groups
+          .firstWhere((g) => g.id == _selectedGroupId)
+          .mealConfig
+          .billAbsentMeals;
+    } catch (_) {
+      return false;
+    }
+  }
+
   /// FR-EXP-040 (ISSUE-14): loads the report data and opens the VIEW-ONLY
   /// preview (summary first). Download/share happens only from the preview.
   Future<void> _previewReport() async {
@@ -206,8 +220,9 @@ class _ExportScreenState extends State<ExportScreen> {
       vacationUserIds: vacationUserIds,
     );
     final billSkippedMeals = _billSkippedMeals;
-    final summaries =
-        BillingService.summarize(rows, billSkippedMeals: billSkippedMeals);
+    final billAbsentMeals = _billAbsentMeals;
+    final summaries = BillingService.summarize(rows,
+        billSkippedMeals: billSkippedMeals, billAbsentMeals: billAbsentMeals);
     final rangeLabel = '${_fmt(_startDate)} – ${_fmt(_endDate)}';
     final groupName = _selectedGroupName;
     final pricingEnabled = _pricingEnabled;
@@ -232,6 +247,7 @@ class _ExportScreenState extends State<ExportScreen> {
             vacationUserIds: vacationUserIds,
             financialsByUser: financialsByUser,
             billSkippedMeals: billSkippedMeals,
+            billAbsentMeals: billAbsentMeals,
           ),
         ),
       ),
@@ -249,6 +265,7 @@ class _ExportScreenState extends State<ExportScreen> {
     required Set<String> vacationUserIds,
     Map<String, MemberExportFinancials> financialsByUser = const {},
     bool billSkippedMeals = false,
+    bool? billAbsentMeals,
   }) async {
     _provider.setFormat(format);
     _exporting.value = true;
@@ -264,6 +281,7 @@ class _ExportScreenState extends State<ExportScreen> {
         vacationUserIds: vacationUserIds,
         financialsByUser: financialsByUser,
         billSkippedMeals: billSkippedMeals,
+        billAbsentMeals: billAbsentMeals,
       );
     } finally {
       _exporting.value = false;

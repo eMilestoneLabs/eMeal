@@ -19,6 +19,7 @@ class MyBilling {
     this.creditsTotal = 0,
     this.refundsTotal = 0,
     this.billSkippedMeals = false,
+    this.billAbsentMeals = false,
     this.openingBalance = 0,
     this.totalBill = 0,
     int? netBill,
@@ -49,9 +50,13 @@ class MyBilling {
   final int creditsTotal;
   final int refundsTotal;
 
-  /// Group policy: whether skipped/absent meals are billed this period —
+  /// Group policy: whether system-skipped meals are billed this period —
   /// lets rows show the real charged amount ("Billed") instead of ₹0.
   final bool billSkippedMeals;
+
+  /// Live-Test-7 ISSUE-4: independent Absent-billing policy (effective value
+  /// from the server; pre-split servers fall back to [billSkippedMeals]).
+  final bool billAbsentMeals;
 
   /// CREDIT-001: balance carried forward from the previous finalized billing
   /// period (credit negative, dues positive) — already included in [netBill].
@@ -85,6 +90,8 @@ class MyBilling {
       creditsTotal: _i(j['creditsTotal']),
       refundsTotal: _i(j['refundsTotal']),
       billSkippedMeals: j['billSkippedMeals'] == true,
+      billAbsentMeals:
+          (j['billAbsentMeals'] ?? j['billSkippedMeals']) == true,
       openingBalance: _i(j['openingBalance']),
       totalBill: _i(j['totalBill']),
       netBill: j['netBill'] != null ? _i(j['netBill']) : null,

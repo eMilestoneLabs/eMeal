@@ -703,6 +703,42 @@ class MealConfigProvider extends ChangeNotifier {
     }
   }
 
+  /// Live-Test-7 ISSUE-4: independent "Bill Absent" policy — when ON, meals
+  /// a member explicitly marked Absent are billed at the scheduled price.
+  /// Completely independent from the Bill-Skip toggle.
+  Future<bool> toggleBillAbsentMeals({
+    required String organizationId,
+    required String groupId,
+    required bool enabled,
+  }) async {
+    if (_selectedGroup == null) return false;
+    _isSaving = true;
+    notifyListeners();
+
+    final updatedConfig = _selectedGroup!.mealConfig.copyWith(
+      billAbsentMeals: enabled,
+    );
+
+    final result = await _groupRepo.updateGroup(
+      organizationId: organizationId,
+      groupId: groupId,
+      mealConfig: updatedConfig,
+    );
+
+    switch (result) {
+      case Ok(:final value):
+        _selectedGroup = value;
+        _isSaving = false;
+        notifyListeners();
+        return true;
+      case Err(:final failure):
+        _error = failure.message;
+        _isSaving = false;
+        notifyListeners();
+        return false;
+    }
+  }
+
   /// Pass 11 (FR-VACX-001): approval-gated vacation — when ON, members must
   /// submit a dated request; the instant toggle is refused server-side.
   Future<bool> setVacationRequiresApproval({

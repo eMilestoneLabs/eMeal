@@ -16,10 +16,16 @@ class PreferenceGroupSelector extends StatefulWidget {
     required this.groups,
     required this.onChanged,
     this.enabled = true,
+    this.initialSelections = const [],
   });
 
   final List<PreferenceGroupModel> groups;
   final bool enabled;
+
+  /// Live-Test-7: pre-seed the selector with existing picks (edit flows —
+  /// e.g. editing a booked guest). Unknown group/option ids are ignored, so
+  /// stale snapshots can never resurrect removed options.
+  final List<PreferenceSelection> initialSelections;
 
   /// Fires on every change: current selections, Σ price delta (minor units),
   /// and whether all visible required groups are satisfied (Present gate).
@@ -74,6 +80,17 @@ class _PreferenceGroupSelectorState extends State<PreferenceGroupSelector> {
   void initState() {
     super.initState();
     _groupsSig = _sigOf(widget.groups);
+    // Live-Test-7: seed existing picks (edit flows) — only ones the current
+    // groups still know; the first _emit below reports them to the parent.
+    final known = {
+      for (final g in widget.groups) g.id: {for (final o in g.options) o.key},
+    };
+    for (final s in widget.initialSelections) {
+      if (known[s.groupId]?.contains(s.optionKey) ?? false) {
+        (_picked[s.groupId] ??= {})[s.optionKey] =
+            s.quantity < 1 ? 1 : s.quantity;
+      }
+    }
     // Live-Test-6 ISSUE-2 root cause: the selector only reported on TAPS, so
     // a parent whose gate starts `false` (e.g. the student Present button)
     // stayed locked forever on meals whose groups need no picks (all-optional

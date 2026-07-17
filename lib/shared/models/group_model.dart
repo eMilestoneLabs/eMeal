@@ -342,6 +342,7 @@ class GroupMealConfig extends Equatable {
     this.billingCycleStartDay,
     this.mealPricingEnabled = false,
     this.billSkippedMeals = false,
+    this.billAbsentMeals = false,
     this.attendanceDefault = 'absent',
     this.guestConfig = const GroupGuestConfig(),
   });
@@ -374,9 +375,15 @@ class GroupMealConfig extends Equatable {
   final bool mealPricingEnabled;
 
   /// SRS Module 03 (survey Q17/Q22): "Bill Skip" policy — when true,
-  /// member-chosen Absent and system-generated Skip are billed at the final
-  /// scheduled price. Default false (matches live behaviour).
+  /// system-generated Skip meals are billed at the final scheduled price.
+  /// Default false (matches live behaviour).
   final bool billSkippedMeals;
+
+  /// Live-Test-7 ISSUE-4: independent "Bill Absent" policy — when true,
+  /// meals a member explicitly marked Absent are billed. The backend sends
+  /// the EFFECTIVE value (an unset group follows [billSkippedMeals]), so
+  /// this is always display- and calculation-ready.
+  final bool billAbsentMeals;
 
   /// SRS FR-TRUST-001 (Pass 7): group trust model. 'absent' = opt-in (legacy —
   /// not marking means not counted/billed); 'present' = opt-out (unmarked
@@ -412,6 +419,9 @@ class GroupMealConfig extends Equatable {
             : null,
         mealPricingEnabled: j['mealPricingEnabled'] ?? false,
         billSkippedMeals: j['billSkippedMeals'] ?? false,
+        // Pre-split servers omit the key — fall back to the legacy coupling.
+        billAbsentMeals:
+            j['billAbsentMeals'] ?? j['billSkippedMeals'] ?? false,
         attendanceDefault: j['attendanceDefault']?.toString() ?? 'absent',
         guestConfig: j['guestConfig'] is Map
             ? GroupGuestConfig.fromJson(
@@ -434,6 +444,7 @@ class GroupMealConfig extends Equatable {
           'billingCycleStartDay': billingCycleStartDay,
         'mealPricingEnabled': mealPricingEnabled,
         'billSkippedMeals': billSkippedMeals,
+        'billAbsentMeals': billAbsentMeals,
         'attendanceDefault': attendanceDefault,
         'guestConfig': guestConfig.toJson(),
       };
@@ -450,6 +461,7 @@ class GroupMealConfig extends Equatable {
     bool clearBillingCycleStartDay = false,
     bool? mealPricingEnabled,
     bool? billSkippedMeals,
+    bool? billAbsentMeals,
     String? attendanceDefault,
     GroupGuestConfig? guestConfig,
   }) =>
@@ -467,6 +479,7 @@ class GroupMealConfig extends Equatable {
             : (billingCycleStartDay ?? this.billingCycleStartDay),
         mealPricingEnabled: mealPricingEnabled ?? this.mealPricingEnabled,
         billSkippedMeals: billSkippedMeals ?? this.billSkippedMeals,
+        billAbsentMeals: billAbsentMeals ?? this.billAbsentMeals,
         attendanceDefault: attendanceDefault ?? this.attendanceDefault,
         guestConfig: guestConfig ?? this.guestConfig,
       );
@@ -483,6 +496,7 @@ class GroupMealConfig extends Equatable {
         billingCycleStartDay,
         mealPricingEnabled,
         billSkippedMeals,
+        billAbsentMeals,
         attendanceDefault,
         guestConfig,
       ];

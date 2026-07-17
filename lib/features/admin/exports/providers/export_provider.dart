@@ -52,6 +52,8 @@ class ExportProvider extends ChangeNotifier {
     Map<String, MemberExportFinancials> financialsByUser = const {},
     // SRS Module 03 (survey Q17/Q22): group Bill-Skip policy.
     bool billSkippedMeals = false,
+    // Live-Test-7 ISSUE-4: independent Absent policy (null = follow Skip).
+    bool? billAbsentMeals,
   }) async {
     if (_isExporting) return;
     _isExporting = true;
@@ -73,6 +75,7 @@ class ExportProvider extends ChangeNotifier {
             vacationUserIds: vacationUserIds,
             financialsByUser: financialsByUser,
             billSkippedMeals: billSkippedMeals,
+            billAbsentMeals: billAbsentMeals,
           );
         // RPT-001: CSV export removed — Excel + PDF only.
         default: // 'xlsx'
@@ -87,6 +90,7 @@ class ExportProvider extends ChangeNotifier {
             vacationUserIds: vacationUserIds,
             financialsByUser: financialsByUser,
             billSkippedMeals: billSkippedMeals,
+            billAbsentMeals: billAbsentMeals,
           );
       }
       _exportSuccess = true;

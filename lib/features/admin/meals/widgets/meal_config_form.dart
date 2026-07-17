@@ -42,14 +42,17 @@ class MealConfigForm extends StatefulWidget {
 }
 
 /// Default preference tags shown when admin first enables the preference system.
+// Live-Test-7 ISSUE-2: standalone sets carry 2-5 options (server-enforced) -
+// the old 6-tag seed exceeded the cap and failed the very first save.
 const _kDefaultPreferenceTags = [
   'Veg',
   'Non-Veg',
   'Egg',
   'Fish',
   'Chicken',
-  'Jain',
 ];
+const _kMinPreferenceTags = 2;
+const _kMaxPreferenceTags = 5;
 
 class _MealConfigFormState extends State<MealConfigForm> {
   final _nameCtrl = TextEditingController();
@@ -230,6 +233,13 @@ class _MealConfigFormState extends State<MealConfigForm> {
 
   void _addTag() {
     final text = _tagCtrl.text.trim();
+    // Live-Test-7 ISSUE-2: 2..5 window, asserted before the round-trip.
+    if (_preferenceTags.length >= _kMaxPreferenceTags) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content:
+              Text('At most $_kMaxPreferenceTags preference options.')));
+      return;
+    }
     if (text.isNotEmpty && !_preferenceTags.contains(text)) {
       setState(() {
         _preferenceTags.add(text);
@@ -968,7 +978,7 @@ class _MealConfigFormState extends State<MealConfigForm> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    'Tags  ·  ${_preferenceTags.length} active',
+                    'Tags  ·  ${_preferenceTags.length} of $_kMaxPreferenceTags',
                     style: TextStyle(
                       fontSize: 11,
                       fontWeight: FontWeight.w600,
@@ -983,7 +993,10 @@ class _MealConfigFormState extends State<MealConfigForm> {
                     children: _preferenceTags
                         .map((tag) => _PreferenceTagChip(
                               label: tag,
-                              onRemove: _preferenceTags.length > 1
+                              // ISSUE-2: keep the 2-option floor — one
+                              // option is not a choice.
+                              onRemove: _preferenceTags.length >
+                                      _kMinPreferenceTags
                                   ? () => setState(
                                       () => _preferenceTags.remove(tag))
                                   : null,

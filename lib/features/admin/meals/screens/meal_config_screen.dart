@@ -287,22 +287,44 @@ class _MealConfigScreenState extends State<MealConfigScreen> {
                     ),
                     const SizedBox(height: 12),
 
-                    // ── Bill-Skip policy (SRS Module 03, survey Q17/Q22) ──
+                    // ── Billing policy (SRS Module 03 Q17/Q22 + Live-Test-7
+                    // ISSUE-4): TWO independent toggles — Skip billing and
+                    // Absent billing never modify each other's behaviour.
                     if (_provider.mealPricingEnabled) ...[
                       _ToggleTile(
                         icon: Icons.rule_folder_rounded,
-                        title: 'Bill Missed / Absent Meals',
+                        title: 'Bill Skipped Meals',
                         subtitle: (_provider.selectedGroup?.mealConfig
                                     .billSkippedMeals ??
                                 false)
-                            ? 'Absent and unmarked (skipped) meals are billed at the scheduled price'
-                            : 'Only Present meals are billed — Absent/unmarked meals are free',
+                            ? 'Unmarked (no-response) meals are billed at the scheduled price'
+                            : 'Unmarked (no-response) meals are free',
                         value: _provider.selectedGroup?.mealConfig
                                 .billSkippedMeals ??
                             false,
                         onChanged: _provider.isSaving
                             ? null
                             : (v) => _provider.toggleBillSkippedMeals(
+                                  organizationId: _orgId,
+                                  groupId: _provider.selectedGroup!.id,
+                                  enabled: v,
+                                ),
+                      ),
+                      const SizedBox(height: 12),
+                      _ToggleTile(
+                        icon: Icons.person_off_rounded,
+                        title: 'Bill Absent Meals',
+                        subtitle: (_provider.selectedGroup?.mealConfig
+                                    .billAbsentMeals ??
+                                false)
+                            ? 'Meals marked Absent are billed at the scheduled price'
+                            : 'Meals marked Absent are free',
+                        value: _provider.selectedGroup?.mealConfig
+                                .billAbsentMeals ??
+                            false,
+                        onChanged: _provider.isSaving
+                            ? null
+                            : (v) => _provider.toggleBillAbsentMeals(
                                   organizationId: _orgId,
                                   groupId: _provider.selectedGroup!.id,
                                   enabled: v,

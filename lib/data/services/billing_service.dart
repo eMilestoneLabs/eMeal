@@ -231,10 +231,15 @@ class BillingService {
   /// group's Bill-Skip policy is ON — member-chosen Absent and (auto-)Skipped
   /// meals are billed at the row's scheduled price snapshot (base + day
   /// override, no add-ons). Default false = live behaviour (Present only).
+  /// Live-Test-7 ISSUE-4: [billAbsentMeals] decouples Absent billing from the
+  /// Skip policy. Passing null keeps the legacy coupling (Absent follows
+  /// [billSkippedMeals]) so every existing caller computes identical bills.
   static List<BillingSummary> summarize(
     List<BillingRow> rows, {
     bool billSkippedMeals = false,
+    bool? billAbsentMeals,
   }) {
+    final billAbsent = billAbsentMeals ?? billSkippedMeals;
     final byUser = <String, List<BillingRow>>{};
     final names = <String, String>{};
     for (final r in rows) {
@@ -259,7 +264,7 @@ class BillingService {
           // period grid (e.g. ₹5435 vs the engine's ₹180).
           case AttendanceStatus.absent:
             absent++;
-            if (billSkippedMeals && !r.autoSkipped) bill += r.price ?? 0;
+            if (billAbsent && !r.autoSkipped) bill += r.price ?? 0;
           case AttendanceStatus.skipped:
             skipped++;
             if (billSkippedMeals && !r.autoSkipped) bill += r.price ?? 0;
