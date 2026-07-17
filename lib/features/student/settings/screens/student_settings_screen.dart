@@ -122,8 +122,13 @@ class _StudentSettingsScreenState extends State<StudentSettingsScreen> {
                     icon: Icons.auto_awesome_rounded,
                     iconColor: AppColors.primary,
                     title: 'Default Attendance',
+                    // Live-Test-8 ISSUE-006 (locked rule): preference meals
+                    // are never auto-marked — the system won't guess your
+                    // picks; say so up front.
                     subtitle:
-                        'Automatically marked present every day. Toggle off only when you are absent.',
+                        'Automatically marked present when a meal window opens. '
+                        'Meals that need a preference pick stay manual — the '
+                        'system never guesses your choice.',
                     value: provider.isDefaultAttendance,
                     // Live-Test-6 ISSUE-6: the toggle now persists to the
                     // backend; surface a failure instead of silently snapping

@@ -744,22 +744,15 @@ class _StudentBillingScreenState extends State<StudentBillingScreen> {
     );
   }
 
-  /// Live-Test-5 ISSUE-4 (enterprise display rules 1–4): the amount a row
-  /// actually contributes to the bill. Present = charged price; skipped or
-  /// absent = charged price ONLY when the group's Bill-Skip policy is ON;
-  /// everything else contributes ₹0.
+  /// Live-Test-8 ISSUE-005 (server-engine parity): the amount a row actually
+  /// contributes to the bill. Present = charged price; a REAL skipped record
+  /// always bills (it exists only for dates whose Bill-Skip policy was ON at
+  /// window-close — the current flag is not consulted); Absent is always
+  /// FREE. Virtual placeholder rows (autoSkipped) never bill — the engine
+  /// bills only its own system-generated Skip records.
   int _rowBilledAmount(BillingRow r) {
     if (r.status == AttendanceStatus.present) return r.price ?? 0;
-    final billSkips = _billSkippedMeals || (_serverBilling?.billSkippedMeals ?? false);
-    // Live-Test-7 ISSUE-4: Absent follows its own independent policy.
-    final billAbsents = _billAbsentMeals || (_serverBilling?.billAbsentMeals ?? false);
-    // Live-Test-6 ISSUE-4: only REAL records are ever billed — the engine
-    // bills its own system-generated Skip records, never the client's virtual
-    // placeholder rows (autoSkipped). Labelling placeholders "Billed" showed
-    // phantom charges the engine never applied.
-    if (!r.autoSkipped &&
-        ((r.status == AttendanceStatus.skipped && billSkips) ||
-            (r.status == AttendanceStatus.absent && billAbsents))) {
+    if (!r.autoSkipped && r.status == AttendanceStatus.skipped) {
       return r.price ?? 0;
     }
     return 0;

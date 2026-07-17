@@ -18,9 +18,17 @@ import 'package:smart_meal_management/shared/widgets/app_skeleton.dart';
 ///  • PREFERENCE GROUPS — multi-dimension choices with rules, veg flags and
 ///    price add-ons (Staple: Ruti/Rice · Non-Veg: Chicken/Mutton +₹30).
 ///
-/// Enabling one mode automatically disables the other (destructive switches
-/// confirm first). Deletes are soft server-side; history and past bills never
-/// change (FR-PG-072). Kitchen counts show today's per-option totals.
+/// Enabling one mode automatically disables the other. Live-Test-8 ISSUE-001:
+/// the switch is NON-DESTRUCTIVE — groups are suspended server-side (saved)
+/// and restore exactly on switching back. Deletes are soft server-side;
+/// history and past bills never change (FR-PG-072). Kitchen counts show
+/// today's per-option totals.
+
+/// ISSUE-2 window, mirrored from the server config (preferences.minOptions /
+/// maxOptions): every preference group carries 2–5 options.
+const int _kMinGroupOptions = 2;
+const int _kMaxGroupOptions = 5;
+
 class PreferenceGroupsScreen extends StatefulWidget {
   const PreferenceGroupsScreen({super.key, required this.meal});
 
@@ -37,6 +45,9 @@ class _PreferenceGroupsScreenState extends State<PreferenceGroupsScreen> {
   bool _saving = false;
   String? _error;
   List<PreferenceGroupModel> _groups = [];
+  // Live-Test-8 ISSUE-001: groups SAVED while Standalone mode is active —
+  // nothing is deleted on a mode switch; these restore on switching back.
+  List<PreferenceGroupModel> _suspendedGroups = [];
   late MealModel _meal;
 
   /// ISSUE-2: standalone preference sets carry 2–5 options (server-enforced;
@@ -79,32 +90,28 @@ class _PreferenceGroupsScreenState extends State<PreferenceGroupsScreen> {
     }
   }
 
-  /// ISSUE-1 mutual exclusivity: activating Standalone removes the meal's
-  /// preference groups (confirmed — it is destructive for this meal's config;
-  /// members' history is preserved server-side).
+  /// Live-Test-8 ISSUE-001 mutual exclusivity, NON-DESTRUCTIVE: activating
+  /// Standalone SUSPENDS the meal's preference groups (one server call —
+  /// nothing is deleted). Switching back to Groups restores them exactly.
   Future<void> _activateStandalone() async {
     if (_standaloneActive || _saving) return;
     if (_groups.isNotEmpty) {
       final ok = await _confirm(
         'Switch to Standalone?',
-        'This removes ${_groups.length} preference group(s) from this meal. '
-        'Members will pick ONE simple tag instead. Past records and bills '
-        'stay exactly as they were.',
+        '${_groups.length} preference group(s) will be SAVED — not deleted. '
+        'Members pick ONE simple tag instead. Switch back to Preference '
+        'Groups any time and your groups return exactly as configured.',
+        confirmLabel: 'Switch',
       );
       if (ok != true) return;
       setState(() => _saving = true);
-      for (final g in List.of(_groups)) {
-        final res = await _repo.unbindFromMeal(_meal.id, g.id);
-        if (res case Err(:final failure)) {
-          if (mounted) {
-            setState(() => _saving = false);
-            _toast(failure.message);
-          }
-          return;
-        }
-      }
+      final res = await _repo.setMealBindingsActive(_meal.id, active: false);
       if (!mounted) return;
       setState(() => _saving = false);
+      if (res case Err(:final failure)) {
+        _toast(failure.message);
+        return;
+      }
     }
     // Seed a valid minimum set when the meal has fewer than 2 stored tags.
     final tags = _meal.enabledPreferences.length >= _minStandalone
@@ -113,13 +120,32 @@ class _PreferenceGroupsScreenState extends State<PreferenceGroupsScreen> {
     if (await _patchStandalone(tags: tags)) await _load();
   }
 
-  /// ISSUE-1 mutual exclusivity: activating Groups silently turns the flat
-  /// standalone list off (non-destructive — no group data is lost) and opens
-  /// the group creator.
+  /// Live-Test-8 ISSUE-001 mutual exclusivity: activating Groups silently
+  /// turns the flat standalone list off (tags preserved server-side) and
+  /// RESTORES any suspended groups; the creator opens only when the meal has
+  /// no saved groups to restore.
   Future<void> _activateGroups() async {
     if (_saving) return;
     if (_meal.preferencesEnabled) {
       if (!await _patchStandalone(tags: const [])) return;
+    }
+    if (_suspendedGroups.isNotEmpty) {
+      setState(() => _saving = true);
+      final res = await _repo.setMealBindingsActive(_meal.id, active: true);
+      if (!mounted) return;
+      setState(() => _saving = false);
+      if (res case Err(:final failure)) {
+        _toast(failure.message);
+        return;
+      }
+      _toast('${_suspendedGroups.length} saved group(s) restored');
+      await _load();
+      return;
+    }
+    if (_groups.isNotEmpty) {
+      // Already in Groups mode with live groups — nothing to create.
+      await _load();
+      return;
     }
     await _addGroup();
   }
@@ -150,12 +176,13 @@ class _PreferenceGroupsScreenState extends State<PreferenceGroupsScreen> {
   }
 
   Future<void> _load() async {
-    final res = await _repo.getForMeal(widget.meal.id);
+    final res = await _repo.getForMealWithSuspended(widget.meal.id);
     if (!mounted) return;
     switch (res) {
       case Ok(:final value):
         setState(() {
-          _groups = value;
+          _groups = value.active;
+          _suspendedGroups = value.suspended;
           _loading = false;
           _error = null;
         });
@@ -241,7 +268,8 @@ class _PreferenceGroupsScreenState extends State<PreferenceGroupsScreen> {
     await _load();
   }
 
-  Future<bool?> _confirm(String title, String message) {
+  Future<bool?> _confirm(String title, String message,
+      {String confirmLabel = 'Remove'}) {
     return showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -253,7 +281,7 @@ class _PreferenceGroupsScreenState extends State<PreferenceGroupsScreen> {
               child: const Text('Cancel')),
           TextButton(
               onPressed: () => Navigator.pop(ctx, true),
-              child: const Text('Remove')),
+              child: Text(confirmLabel)),
         ],
       ),
     );
@@ -312,7 +340,10 @@ class _PreferenceGroupsScreenState extends State<PreferenceGroupsScreen> {
       floatingActionButton: _standaloneActive
           ? null
           : FloatingActionButton.extended(
-              onPressed: _saving ? null : _activateGroups,
+              // Groups mode: straight to the creator. No mode yet: the mode
+              // switch handles restore-or-create.
+              onPressed:
+                  _saving ? null : (_groupsActive ? _addGroup : _activateGroups),
               backgroundColor: AppColors.primary,
               icon: const Icon(Icons.add_rounded, color: Colors.white),
               label: const Text('Add group',
@@ -351,30 +382,78 @@ class _PreferenceGroupsScreenState extends State<PreferenceGroupsScreen> {
                         onGroups: _activateGroups,
                       ),
                       const SizedBox(height: 12),
-                      if (_standaloneActive) ...[
-                        _StandaloneCard(
-                          tags: _meal.enabledPreferences,
-                          minOptions: _minStandalone,
-                          maxOptions: _maxStandalone,
-                          saving: _saving,
-                          onAdd: _addStandaloneTag,
-                          onRemove: _removeStandaloneTag,
+                      // Live-Test-8 ISSUE-001: smooth animated swap between
+                      // the two mode bodies (no hard jump on switch).
+                      AnimatedSwitcher(
+                        duration: const Duration(milliseconds: 260),
+                        switchInCurve: Curves.easeOutCubic,
+                        switchOutCurve: Curves.easeInCubic,
+                        transitionBuilder: (child, anim) => FadeTransition(
+                          opacity: anim,
+                          child: SizeTransition(
+                              sizeFactor: anim, child: child),
                         ),
-                      ] else if (_groupsActive) ...[
-                        const _HelpBanner(),
-                        const SizedBox(height: 12),
-                        for (final g in _groups) ...[
-                          _GroupCard(
-                            group: g,
-                            onAddOption: () => _addOption(g),
-                            onRemoveOption: (o) => _removeOption(g, o),
-                            onRemoveGroup: () => _removeGroup(g),
-                            onEditRules: () => _editGroupRules(g),
-                          ),
-                          const SizedBox(height: 12),
-                        ],
-                      ] else
-                        _EmptyState(onAdd: _activateGroups),
+                        child: _standaloneActive
+                            ? Column(
+                                key: const ValueKey('standalone'),
+                                children: [
+                                  _StandaloneCard(
+                                    tags: _meal.enabledPreferences,
+                                    minOptions: _minStandalone,
+                                    maxOptions: _maxStandalone,
+                                    saving: _saving,
+                                    onAdd: _addStandaloneTag,
+                                    onRemove: _removeStandaloneTag,
+                                  ),
+                                  // ISSUE-001: groups are SAVED on switch,
+                                  // never deleted — show them so the admin
+                                  // trusts the restore.
+                                  if (_suspendedGroups.isNotEmpty) ...[
+                                    const SizedBox(height: 12),
+                                    _SavedGroupsPanel(
+                                      groups: _suspendedGroups,
+                                      saving: _saving,
+                                      onRestore: _activateGroups,
+                                    ),
+                                  ],
+                                ],
+                              )
+                            : _groupsActive
+                                ? Column(
+                                    key: const ValueKey('groups'),
+                                    children: [
+                                      const _HelpBanner(),
+                                      const SizedBox(height: 12),
+                                      for (final g in _groups) ...[
+                                        _GroupCard(
+                                          group: g,
+                                          onAddOption: () => _addOption(g),
+                                          onRemoveOption: (o) =>
+                                              _removeOption(g, o),
+                                          onRemoveGroup: () =>
+                                              _removeGroup(g),
+                                          onEditRules: () =>
+                                              _editGroupRules(g),
+                                        ),
+                                        const SizedBox(height: 12),
+                                      ],
+                                    ],
+                                  )
+                                : KeyedSubtree(
+                                    key: const ValueKey('empty'),
+                                    child: Column(children: [
+                                      _EmptyState(onAdd: _activateGroups),
+                                      if (_suspendedGroups.isNotEmpty) ...[
+                                        const SizedBox(height: 12),
+                                        _SavedGroupsPanel(
+                                          groups: _suspendedGroups,
+                                          saving: _saving,
+                                          onRestore: _activateGroups,
+                                        ),
+                                      ],
+                                    ]),
+                                  ),
+                      ),
                     ],
                   ),
                 ),
@@ -472,67 +551,98 @@ class _ModeSelector extends StatelessWidget {
     final titleColor = selected
         ? accent
         : (isDark ? AppColors.textPrimaryDark : AppColors.textPrimary);
+    // Live-Test-8 ISSUE-001: premium animated selection — the card's fill,
+    // border, glow and check-mark all animate on mode change, with explicit
+    // high-contrast colors in BOTH themes (nothing blends into the
+    // background). AnimatedScale gives a subtle press-in emphasis on select.
     return Opacity(
       opacity: disabled ? 0.55 : 1,
-      child: Material(
-        color: selected
-            ? accent.withValues(alpha: isDark ? 0.16 : 0.07)
-            : surface,
-        borderRadius: BorderRadius.circular(16),
-        child: InkWell(
-          onTap: disabled ? null : onTap,
+      child: AnimatedScale(
+        scale: selected ? 1.0 : 0.98,
+        duration: const Duration(milliseconds: 220),
+        curve: Curves.easeOutCubic,
+        child: Material(
+          color: Colors.transparent,
           borderRadius: BorderRadius.circular(16),
-          child: Container(
-            padding: const EdgeInsets.all(14),
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(
-                  color: border, width: selected ? 1.6 : 1),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Container(
-                      width: 34,
-                      height: 34,
-                      decoration: BoxDecoration(
-                        color: accent
-                            .withValues(alpha: isDark ? 0.22 : 0.12),
-                        borderRadius: BorderRadius.circular(10),
+          child: InkWell(
+            onTap: disabled ? null : onTap,
+            borderRadius: BorderRadius.circular(16),
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 220),
+              curve: Curves.easeOutCubic,
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: selected
+                    ? accent.withValues(alpha: isDark ? 0.16 : 0.07)
+                    : surface,
+                borderRadius: BorderRadius.circular(16),
+                border:
+                    Border.all(color: border, width: selected ? 1.6 : 1),
+                boxShadow: selected
+                    ? [
+                        BoxShadow(
+                          color: accent.withValues(
+                              alpha: isDark ? 0.30 : 0.18),
+                          blurRadius: 14,
+                          offset: const Offset(0, 4),
+                        ),
+                      ]
+                    : const [],
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      AnimatedContainer(
+                        duration: const Duration(milliseconds: 220),
+                        width: 34,
+                        height: 34,
+                        decoration: BoxDecoration(
+                          color: accent.withValues(
+                              alpha: selected
+                                  ? (isDark ? 0.30 : 0.16)
+                                  : (isDark ? 0.22 : 0.12)),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Icon(icon, size: 18, color: accent),
                       ),
-                      child: Icon(icon, size: 18, color: accent),
-                    ),
-                    const Spacer(),
-                    Icon(
-                      selected
-                          ? Icons.check_circle_rounded
-                          : Icons.radio_button_unchecked_rounded,
-                      size: 20,
-                      color: selected
-                          ? accent
-                          : (isDark
-                              ? AppColors.textSecondaryDark
-                              : AppColors.textTertiary),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 10),
-                Text(title,
-                    style: AppTypography.labelLarge.copyWith(
-                        color: titleColor, fontWeight: FontWeight.w800)),
-                const SizedBox(height: 3),
-                Text(
-                  description,
-                  style: AppTypography.labelSmall.copyWith(
-                    color: isDark
-                        ? AppColors.textSecondaryDark
-                        : AppColors.textSecondary,
-                    height: 1.3,
+                      const Spacer(),
+                      AnimatedSwitcher(
+                        duration: const Duration(milliseconds: 220),
+                        transitionBuilder: (child, anim) =>
+                            ScaleTransition(scale: anim, child: child),
+                        child: Icon(
+                          selected
+                              ? Icons.check_circle_rounded
+                              : Icons.radio_button_unchecked_rounded,
+                          key: ValueKey(selected),
+                          size: 20,
+                          color: selected
+                              ? accent
+                              : (isDark
+                                  ? AppColors.textSecondaryDark
+                                  : AppColors.textTertiary),
+                        ),
+                      ),
+                    ],
                   ),
-                ),
-              ],
+                  const SizedBox(height: 10),
+                  Text(title,
+                      style: AppTypography.labelLarge.copyWith(
+                          color: titleColor, fontWeight: FontWeight.w800)),
+                  const SizedBox(height: 3),
+                  Text(
+                    description,
+                    style: AppTypography.labelSmall.copyWith(
+                      color: isDark
+                          ? AppColors.textSecondaryDark
+                          : AppColors.textSecondary,
+                      height: 1.3,
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
         ),
@@ -823,8 +933,19 @@ class _GroupCard extends StatelessWidget {
             runSpacing: 6,
             children: [
               _metaPill(countCaption, accent, Icons.checklist_rounded, isDark),
-              _metaPill('${group.options.length} options', AppColors.info,
-                  Icons.category_rounded, isDark),
+              // Live-Test-8 ISSUE-001: same "N of 5" counter language as the
+              // Standalone card, with an explicit warning under the 2-option
+              // floor (a 1-option "choice" is not a choice — server rejects).
+              _metaPill(
+                '${group.options.length} of $_kMaxGroupOptions options',
+                group.options.length < _kMinGroupOptions
+                    ? AppColors.warning
+                    : AppColors.info,
+                group.options.length < _kMinGroupOptions
+                    ? Icons.warning_amber_rounded
+                    : Icons.category_rounded,
+                isDark,
+              ),
               _metaPill(
                 group.isSingle ? 'Single pick' : 'Multiple picks',
                 accent,
@@ -1590,6 +1711,103 @@ class _HelpBanner extends StatelessWidget {
               style: AppTypography.bodySmall
                   .copyWith(color: AppColors.textSecondary, height: 1.4),
             ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ── Live-Test-8 ISSUE-001: saved (suspended) groups panel ────────────────────
+
+/// Shown while Standalone mode is active: the meal's preference groups are
+/// SAVED — not deleted — and restore exactly on switching back. High-contrast
+/// dimmed cards in both themes so the admin trusts the non-destructive switch.
+class _SavedGroupsPanel extends StatelessWidget {
+  const _SavedGroupsPanel({
+    required this.groups,
+    required this.saving,
+    required this.onRestore,
+  });
+
+  final List<PreferenceGroupModel> groups;
+  final bool saving;
+  final VoidCallback onRestore;
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: AppColors.info.withValues(alpha: isDark ? 0.12 : 0.06),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: AppColors.info.withValues(alpha: 0.30)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.inventory_2_rounded,
+                  size: 18, color: AppColors.info),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  '${groups.length} preference group(s) saved',
+                  style: AppTypography.labelLarge.copyWith(
+                    fontWeight: FontWeight.w800,
+                    color: isDark
+                        ? AppColors.textPrimaryDark
+                        : AppColors.textPrimary,
+                  ),
+                ),
+              ),
+              TextButton(
+                onPressed: saving ? null : onRestore,
+                child: const Text('Restore'),
+              ),
+            ],
+          ),
+          Text(
+            'Nothing was deleted — switch back to Preference Groups and these '
+            'return exactly as configured.',
+            style: AppTypography.labelSmall.copyWith(
+              color: isDark
+                  ? AppColors.textSecondaryDark
+                  : AppColors.textSecondary,
+              height: 1.3,
+            ),
+          ),
+          const SizedBox(height: 10),
+          Wrap(
+            spacing: 6,
+            runSpacing: 6,
+            children: [
+              for (final g in groups)
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 10, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: isDark
+                        ? AppColors.backgroundDark
+                        : AppColors.background,
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(
+                      color: isDark ? AppColors.borderDark : AppColors.border,
+                    ),
+                  ),
+                  child: Text(
+                    '${g.label} · ${g.options.length} options',
+                    style: AppTypography.labelSmall.copyWith(
+                      fontWeight: FontWeight.w600,
+                      color: isDark
+                          ? AppColors.textSecondaryDark
+                          : AppColors.textSecondary,
+                    ),
+                  ),
+                ),
+            ],
           ),
         ],
       ),

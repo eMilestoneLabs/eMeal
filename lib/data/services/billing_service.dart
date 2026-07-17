@@ -227,19 +227,22 @@ class BillingService {
 
   /// Aggregates [rows] into per-member billing summaries.
   ///
-  /// SRS Module 03 (survey Q17/Q22/Q23): when [billSkippedMeals] is true the
-  /// group's Bill-Skip policy is ON — member-chosen Absent and (auto-)Skipped
-  /// meals are billed at the row's scheduled price snapshot (base + day
-  /// override, no add-ons). Default false = live behaviour (Present only).
-  /// Live-Test-7 ISSUE-4: [billAbsentMeals] decouples Absent billing from the
-  /// Skip policy. Passing null keeps the legacy coupling (Absent follows
-  /// [billSkippedMeals]) so every existing caller computes identical bills.
+  /// Live-Test-8 ISSUE-005 (server-engine parity):
+  ///   • present → always billed;
+  ///   • skipped → always billed — a REAL `skipped` record exists only for a
+  ///     date whose Bill-Skip policy was ON at window-close (the server sweep
+  ///     is the only writer), so its existence IS the date-forward gate; the
+  ///     current flag must NOT be consulted (flipping Bill-Skip off never
+  ///     un-bills already-closed skips);
+  ///   • absent → NEVER billed (Bill-Absent removed — Absent is always free).
+  /// [billSkippedMeals]/[billAbsentMeals] are retained for call-site
+  /// compatibility but no longer affect the math (matches
+  /// BillingService.billedStatuses on the server).
   static List<BillingSummary> summarize(
     List<BillingRow> rows, {
     bool billSkippedMeals = false,
     bool? billAbsentMeals,
   }) {
-    final billAbsent = billAbsentMeals ?? billSkippedMeals;
     final byUser = <String, List<BillingRow>>{};
     final names = <String, String>{};
     for (final r in rows) {
@@ -263,11 +266,13 @@ class BillingService {
           // placeholders here inflated the detail/export total for the whole
           // period grid (e.g. ₹5435 vs the engine's ₹180).
           case AttendanceStatus.absent:
+            // Live-Test-8 ISSUE-005: Absent is always FREE — count only.
             absent++;
-            if (billAbsent && !r.autoSkipped) bill += r.price ?? 0;
           case AttendanceStatus.skipped:
             skipped++;
-            if (billSkippedMeals && !r.autoSkipped) bill += r.price ?? 0;
+            // Real skipped records always bill (policy was ON when they were
+            // written); virtual placeholders (autoSkipped) never bill.
+            if (!r.autoSkipped) bill += r.price ?? 0;
           default:
             break;
         }

@@ -20,6 +20,49 @@ class PreferenceRepository {
     };
   }
 
+  /// Live-Test-8 ISSUE-001/002: active + SUSPENDED groups in one read.
+  /// `active` = the effective set members see; `suspended` = groups saved
+  /// while the meal runs Standalone mode (restored on switch back).
+  Future<
+      Result<
+          ({
+            List<PreferenceGroupModel> active,
+            List<PreferenceGroupModel> suspended,
+          })>> getForMealWithSuspended(String mealId) async {
+    final result = await DioApiService.instance.get<Map<String, dynamic>>(
+      '/meals/$mealId/preference-groups',
+    );
+    return switch (result) {
+      Err(:final failure) => Err(failure),
+      Ok(:final value) => Ok((
+          active: (value['data'] as List<dynamic>? ?? [])
+              .whereType<Map<String, dynamic>>()
+              .map(PreferenceGroupModel.fromJson)
+              .toList(),
+          suspended: (value['suspended'] as List<dynamic>? ?? [])
+              .whereType<Map<String, dynamic>>()
+              .map(PreferenceGroupModel.fromJson)
+              .toList(),
+        )),
+    };
+  }
+
+  /// Live-Test-8 ISSUE-001/002: non-destructive Standalone↔Groups switch —
+  /// suspends (false) or restores (true) ALL of the meal's group bindings.
+  Future<Result<Unit>> setMealBindingsActive(
+    String mealId, {
+    required bool active,
+  }) async {
+    final result = await DioApiService.instance.patch<Map<String, dynamic>>(
+      '/meals/$mealId/preference-groups/state',
+      body: {'active': active},
+    );
+    return switch (result) {
+      Err(:final failure) => Err(failure),
+      Ok() => const Ok(Unit.instance),
+    };
+  }
+
   /// Create a meal-scoped group (with inline options) and bind it (FR-PG-080).
   Future<Result<PreferenceGroupModel>> createForMeal({
     required String mealId,

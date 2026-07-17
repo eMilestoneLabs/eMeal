@@ -67,6 +67,15 @@ class _AdminGuestsSheetState extends State<_AdminGuestsSheet> {
   String? _error;
   List<MealGuestModel> _guests = const [];
   List<MealModel> _meals = const [];
+  // Live-Test-8 ISSUE-004: the PUBLISHED day-effective meal view for
+  // widget.date — preference groups narrowed/disabled by the day's schedule
+  // entry, exactly what the server validates guest selections against. The
+  // master list (_meals) stays only as a name-lookup fallback for bookings
+  // whose meal was later removed from the day.
+  List<MealModel> _dayMeals = const [];
+  // True once the day-effective fetch SUCCEEDED — an empty day (holiday) is
+  // then trusted as-is instead of silently falling back to master meals.
+  bool _dayMealsLoaded = false;
   List<UserModel> _members = const [];
 
   String get _dateStr => _dateOnly(widget.date);
@@ -95,6 +104,14 @@ class _AdminGuestsSheetState extends State<_AdminGuestsSheet> {
         organizationId: widget.organizationId,
         groupId: widget.group.id,
       ),
+      // Live-Test-8 ISSUE-004: published day-effective meals for widget.date
+      // (same parallel wave — zero extra wall time). Guest booking must show
+      // the day's narrowed preference groups, not the master template's.
+      _mealRepo.getDayMeals(
+        organizationId: widget.organizationId,
+        groupId: widget.group.id,
+        date: _dateStr,
+      ),
     ]);
     if (!mounted) return;
     setState(() {
@@ -112,6 +129,10 @@ class _AdminGuestsSheetState extends State<_AdminGuestsSheet> {
       }
       if (results[2] case Ok(:final value)) {
         _members = (value as PaginatedResponse<UserModel>).data;
+      }
+      if (results[3] case Ok(:final value)) {
+        _dayMeals = value as List<MealModel>;
+        _dayMealsLoaded = true;
       }
     });
   }
@@ -158,9 +179,15 @@ class _AdminGuestsSheetState extends State<_AdminGuestsSheet> {
   /// FR-HG-062: governed add-on-behalf — pick the member + meal, then reuse
   /// the shared guest sheet in admin mode (booking parks pendingApproval).
   Future<void> _addForMember() async {
+    // Live-Test-8 ISSUE-004: the picker offers the PUBLISHED day-effective
+    // meals for widget.date (day overrides applied: narrowed preference
+    // groups, per-day windows/prices). An EMPTY published day (holiday) is
+    // trusted as-is — the master list is a fallback ONLY when the day fetch
+    // itself failed, never silently mixing the two sources.
+    final pickerMeals = _dayMealsLoaded ? _dayMeals : _meals;
     final picked = await showDialog<({UserModel member, MealModel meal})>(
       context: context,
-      builder: (_) => _PickHostDialog(members: _members, meals: _meals),
+      builder: (_) => _PickHostDialog(members: _members, meals: pickerMeals),
     );
     if (picked == null || !mounted) return;
     final cfg = widget.group.mealConfig;
@@ -171,10 +198,16 @@ class _AdminGuestsSheetState extends State<_AdminGuestsSheet> {
       dateStr: _dateStr,
       config: cfg.guestConfig,
       pricingEnabled: cfg.mealPricingEnabled,
+      // Day-effective flat tags: the overlay already narrowed/cleared these
+      // per the published day entry (empty = day disabled preferences).
       enabledPreferences: picked.meal.enabledPreferences.isNotEmpty
           ? picked.meal.enabledPreferences
-          : cfg.enabledPreferences.map((e) => e.name).toList(),
-      // Live-Test-6 ISSUE-2: each guest picks the meal's preference groups.
+          : (picked.meal.preferencesEnabled
+              ? cfg.enabledPreferences.map((e) => e.name).toList()
+              : const []),
+      // Live-Test-8 ISSUE-004: DAY-EFFECTIVE preference groups (published
+      // schedule = single source of truth) — the exact set the server
+      // validates each guest's selections against.
       preferenceGroups: picked.meal.preferenceGroups,
       mealPrice: picked.meal.price,
       hostUserId: picked.member.id,

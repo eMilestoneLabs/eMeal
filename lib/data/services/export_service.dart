@@ -134,21 +134,16 @@ class ExportService {
     // The bundled PDF font cannot render the ₹ glyph, so the PDF passes 'Rs '.
     // CSV/Excel keep '₹' (those render it correctly).
     String currency = '₹',
-    // Live-Test-6 ISSUE-4: when the group's Bill-Skip policy is ON, a REAL
-    // Skipped/Absent record carries its charge in this column too, so the
-    // per-row column sums exactly to the member's billed total. Virtual
-    // placeholder rows (autoSkipped) are never billed — parity with the
-    // billing engine.
+    // Live-Test-8 ISSUE-005 (server parity): Present always bills; a REAL
+    // Skipped record always bills (it exists only for dates whose Bill-Skip
+    // policy was ON at close — the flag is not consulted); Absent is always
+    // FREE. Virtual placeholder rows (autoSkipped) never bill. The params are
+    // retained for call-site compatibility but no longer affect the math.
     bool billSkippedMeals = false,
-    // Live-Test-7 ISSUE-4: Absent bills under its own toggle; null keeps the
-    // legacy coupling to Bill-Skip.
     bool? billAbsentMeals,
   }) {
-    final billAbsent = billAbsentMeals ?? billSkippedMeals;
     final billed = r.status == AttendanceStatus.present ||
-        (!r.autoSkipped &&
-            ((r.status == AttendanceStatus.skipped && billSkippedMeals) ||
-                (r.status == AttendanceStatus.absent && billAbsent)));
+        (!r.autoSkipped && r.status == AttendanceStatus.skipped);
     return [
       r.userName,
       groupName,

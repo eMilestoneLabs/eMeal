@@ -504,14 +504,12 @@ class _MemberBillingDetailScreenState extends State<MemberBillingDetailScreen> {
   Widget _sectionTitle(String t) => Text(t,
       style: AppTypography.titleSmall.copyWith(fontWeight: FontWeight.w700));
 
-  /// Live-Test-6 ISSUE-4: a REAL skipped/absent record billed by the group's
-  /// billing policy — virtual placeholder rows (autoSkipped) are never
-  /// billed, matching the billing engine exactly. Live-Test-7 ISSUE-4:
-  /// Skip and Absent follow their own independent toggles.
+  /// Live-Test-8 ISSUE-005 (server parity): a REAL skipped record always
+  /// bills — it exists only for dates whose Bill-Skip policy was ON at
+  /// window-close, so the current flag is not consulted. Absent is always
+  /// FREE. Virtual placeholder rows (autoSkipped) are never billed.
   bool _isPolicyBilled(BillingRow r) =>
-      !r.autoSkipped &&
-      ((r.status == AttendanceStatus.skipped && widget.billSkippedMeals) ||
-          (r.status == AttendanceStatus.absent && widget._billAbsent));
+      !r.autoSkipped && r.status == AttendanceStatus.skipped;
 
   Widget _dateGroup(ColorScheme cs, DateTime date, List<BillingRow> rows) {
     final subtotal = rows

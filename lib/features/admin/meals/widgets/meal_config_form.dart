@@ -6,7 +6,10 @@ import 'package:image_picker/image_picker.dart';
 import 'package:smart_meal_management/core/constants/app_constants.dart';
 import 'package:smart_meal_management/core/theme/app_colors.dart';
 import 'package:smart_meal_management/core/utils/time_format.dart';
+import 'package:smart_meal_management/data/repositories/preference_repository.dart';
+import 'package:smart_meal_management/features/admin/meals/screens/preference_groups_screen.dart';
 import 'package:smart_meal_management/shared/models/meal_model.dart';
+import 'package:smart_meal_management/shared/models/result.dart';
 import 'package:smart_meal_management/shared/widgets/cached_photo.dart';
 
 /// Form for creating or editing a meal.
@@ -69,6 +72,24 @@ class _MealConfigFormState extends State<MealConfigForm> {
   bool _preferencesForMeal = false;
   List<String> _preferenceTags = [];
 
+  // ── Live-Test-8 ISSUE-002: preference MODE state (edit mode only) ──────────
+  // The Edit Meal sheet exposes BOTH mutually exclusive preference modes:
+  // Standalone tags (inline editor below) and Preference Groups (the premium
+  // builder screen). Switching modes SUSPENDS — never deletes — the meal's
+  // group bindings server-side, so the admin's configuration always survives.
+  final _prefRepo = PreferenceRepository();
+  List<String> _activeGroupNames = const [];
+  List<String> _suspendedGroupNames = const [];
+  bool _bindingsBusy = false;
+
+  /// True when Groups was the meal's most recent active mode — the master
+  /// switch restores the saved groups (instead of standalone tags) on
+  /// re-enable, exactly as the admin last configured it.
+  bool _lastModeWasGroups = false;
+
+  /// Groups mode is active while the meal has ACTIVE (non-suspended) bindings.
+  bool get _groupsMode => _activeGroupNames.isNotEmpty;
+
   // ── Image state ────────────────────────────────────────────────────────────
   final List<Uint8List> _imageBytesList = [];
   /// Existing photo when it is a network URL (MinIO/CDN) rather than base64 —
@@ -94,7 +115,14 @@ class _MealConfigFormState extends State<MealConfigForm> {
       _slotKeyCtrl.text = m.slotKey;
       _order = m.order;
       _menuItems = List.of(m.menuItems);
-      _preferencesForMeal = m.hasPreferences;
+      // Live-Test-8 ISSUE-002: the master switch covers BOTH modes — flat
+      // standalone tags OR active preference groups count as "preferences ON".
+      _preferencesForMeal = m.hasPreferences || m.preferenceGroups.isNotEmpty;
+      _activeGroupNames = m.preferenceGroups.map((g) => g.label).toList();
+      _lastModeWasGroups = m.preferenceGroups.isNotEmpty;
+      // Server truth (including SAVED/suspended groups) replaces the cached
+      // list-model snapshot as soon as it arrives.
+      _refreshGroupState();
       _preferenceTags = m.enabledPreferences.isNotEmpty
           ? List.of(m.enabledPreferences)
           : List.of(_kDefaultPreferenceTags);
@@ -246,6 +274,138 @@ class _MealConfigFormState extends State<MealConfigForm> {
         _tagCtrl.clear();
       });
     }
+  }
+
+  // ── Live-Test-8 ISSUE-002: preference mode helpers (edit mode only) ────────
+
+  void _toast(String msg) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+  }
+
+  /// Refreshes the meal's ACTIVE + SAVED (suspended) preference groups so the
+  /// mode cards always reflect server truth (e.g. after the premium Groups
+  /// builder pops). Edit mode only — a new meal has no bindings yet.
+  Future<void> _refreshGroupState() async {
+    final m = widget.initialMeal;
+    if (m == null) return;
+    final res = await _prefRepo.getForMealWithSuspended(m.id);
+    if (!mounted) return;
+    if (res case Ok(:final value)) {
+      setState(() {
+        _activeGroupNames = value.active.map((g) => g.label).toList();
+        _suspendedGroupNames = value.suspended.map((g) => g.label).toList();
+        if (value.active.isNotEmpty) {
+          _preferencesForMeal = true;
+          _lastModeWasGroups = true;
+        }
+      });
+    }
+  }
+
+  /// Suspend (false → Standalone) or restore (true → Groups) ALL of the
+  /// meal's group bindings — the non-destructive mode switch (server keeps
+  /// every group + option stored either way).
+  Future<bool> _setBindingsActive(bool active) async {
+    final m = widget.initialMeal;
+    if (m == null) return false;
+    setState(() => _bindingsBusy = true);
+    final res = await _prefRepo.setMealBindingsActive(m.id, active: active);
+    if (!mounted) return false;
+    if (res case Err(:final failure)) {
+      setState(() => _bindingsBusy = false);
+      _toast(failure.message);
+      return false;
+    }
+    setState(() {
+      _bindingsBusy = false;
+      if (active) {
+        _activeGroupNames = List.of(_suspendedGroupNames);
+        _suspendedGroupNames = const [];
+      } else {
+        _suspendedGroupNames = List.of(_activeGroupNames);
+        _activeGroupNames = const [];
+      }
+    });
+    return true;
+  }
+
+  /// Mode card: Standalone. Active groups are SAVED — never deleted — and
+  /// restore exactly on switching back to Groups.
+  Future<void> _selectStandaloneMode() async {
+    if (_bindingsBusy || widget.isSaving || !_groupsMode) return;
+    final count = _activeGroupNames.length;
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Switch to Standalone?'),
+        content: Text(
+          '$count preference group(s) will be SAVED — not deleted. Members '
+          'pick ONE simple tag instead. Switch back to Preference Groups any '
+          'time and your groups return exactly as configured. This applies '
+          'immediately.',
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancel')),
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Switch')),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+    if (await _setBindingsActive(false)) {
+      setState(() {
+        _lastModeWasGroups = false;
+        if (_preferenceTags.isEmpty) {
+          _preferenceTags = List.of(_kDefaultPreferenceTags);
+        }
+      });
+      _toast('$count group(s) saved — switch back any time to restore');
+    }
+  }
+
+  /// Mode card: Preference Groups → the premium Groups builder (create
+  /// groups, restore saved ones, edit rules). Server truth reloads on return.
+  Future<void> _openGroupsBuilder() async {
+    final m = widget.initialMeal;
+    if (m == null || _bindingsBusy || widget.isSaving) return;
+    await Navigator.of(context).push(MaterialPageRoute(
+      builder: (_) => PreferenceGroupsScreen(meal: m),
+    ));
+    if (!mounted) return;
+    await _refreshGroupState();
+  }
+
+  /// Master preference switch — non-destructive in BOTH directions: turning
+  /// OFF while Groups mode is active suspends (saves) the groups; turning ON
+  /// restores whichever mode was last active.
+  Future<void> _onPreferenceToggle(bool v) async {
+    if (_bindingsBusy) return;
+    if (!v) {
+      if (_groupsMode) {
+        final count = _activeGroupNames.length;
+        if (!await _setBindingsActive(false)) return;
+        _lastModeWasGroups = true;
+        _toast('$count group(s) saved — re-enable to restore');
+      }
+      if (mounted) setState(() => _preferencesForMeal = false);
+      return;
+    }
+    if (_lastModeWasGroups && _suspendedGroupNames.isNotEmpty) {
+      if (await _setBindingsActive(true)) {
+        if (mounted) setState(() => _preferencesForMeal = true);
+      }
+      return;
+    }
+    setState(() {
+      _preferencesForMeal = true;
+      if (_preferenceTags.isEmpty) {
+        _preferenceTags = List.of(_kDefaultPreferenceTags);
+      }
+    });
   }
 
   // ── Image picking + compression ────────────────────────────────────────────
@@ -646,7 +806,10 @@ class _MealConfigFormState extends State<MealConfigForm> {
                       openTime: _formatTime(_openTime),
                       closeTime: _formatTime(_closeTime),
                       menuItems: List.of(_menuItems),
-                      enablePreferences: _preferencesForMeal
+                      // Live-Test-8 ISSUE-002: flat tags apply ONLY in
+                      // Standalone mode — Groups mode keeps the flat list
+                      // empty (mutual exclusivity; groups ride on bindings).
+                      enablePreferences: _preferencesForMeal && !_groupsMode
                           ? List.of(_preferenceTags)
                           : const [],
                       imageBytes: List.of(_imageBytesList),
@@ -938,12 +1101,14 @@ class _MealConfigFormState extends State<MealConfigForm> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       const Text(
-                        'Enable Preference Tags',
+                        'Enable Meal Preferences',
                         style: TextStyle(
                             fontWeight: FontWeight.w600, fontSize: 13),
                       ),
                       Text(
-                        'Students select a tag (Veg, Fish, etc.) when marking attendance.',
+                        _groupsMode
+                            ? 'Members complete each preference group when marking attendance.'
+                            : 'Students select a tag (Veg, Fish, etc.) when marking attendance.',
                         style: TextStyle(
                           fontSize: 11,
                           color: colorScheme.onSurfaceVariant,
@@ -954,15 +1119,10 @@ class _MealConfigFormState extends State<MealConfigForm> {
                 ),
                 Switch(
                   value: _preferencesForMeal,
-                  onChanged: (v) {
-                    setState(() {
-                      _preferencesForMeal = v;
-                      if (v && _preferenceTags.isEmpty) {
-                        _preferenceTags =
-                            List.of(_kDefaultPreferenceTags);
-                      }
-                    });
-                  },
+                  // Live-Test-8 ISSUE-002: non-destructive both ways — OFF
+                  // saves active groups, ON restores the last active mode.
+                  onChanged:
+                      _bindingsBusy ? null : (v) => _onPreferenceToggle(v),
                 ),
               ],
             ),
@@ -977,6 +1137,44 @@ class _MealConfigFormState extends State<MealConfigForm> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  // ── Live-Test-8 ISSUE-002: BOTH preference modes, mutually
+                  // exclusive, switchable without losing configuration.
+                  // (Edit mode only — a new meal has no bindings to manage.)
+                  if (widget.initialMeal != null) ...[
+                    Row(
+                      children: [
+                        Expanded(
+                          child: _PrefModeCard(
+                            icon: Icons.sell_rounded,
+                            title: 'Standalone',
+                            subtitle: 'One simple tag list',
+                            selected: !_groupsMode,
+                            busy: _bindingsBusy,
+                            onTap: _selectStandaloneMode,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: _PrefModeCard(
+                            icon: Icons.account_tree_rounded,
+                            title: 'Preference Groups',
+                            subtitle: _groupsMode
+                                ? '${_activeGroupNames.length} active group(s)'
+                                : (_suspendedGroupNames.isNotEmpty
+                                    ? '${_suspendedGroupNames.length} saved — tap to manage'
+                                    : 'Rules, veg flags, price add-ons'),
+                            selected: _groupsMode,
+                            busy: _bindingsBusy,
+                            onTap: _openGroupsBuilder,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                  ],
+                  if (_groupsMode)
+                    _buildGroupsSummary(colorScheme)
+                  else ...[
                   Text(
                     'Tags  ·  ${_preferenceTags.length} of $_kMaxPreferenceTags',
                     style: TextStyle(
@@ -1051,11 +1249,195 @@ class _MealConfigFormState extends State<MealConfigForm> {
                           .withValues(alpha: 0.6),
                     ),
                   ),
+                  if (widget.initialMeal == null) ...[
+                    const SizedBox(height: 8),
+                    Text(
+                      'Need multi-part choices (Rice/Roti · Veg/Non-Veg with '
+                      'rules and price add-ons)? Save the meal, then open '
+                      'Edit Meal → Preference Groups.',
+                      style: TextStyle(
+                        fontSize: 10,
+                        color: colorScheme.onSurfaceVariant
+                            .withValues(alpha: 0.6),
+                      ),
+                    ),
+                  ],
+                  ],
                 ],
               ),
             ),
           ],
         ],
+      ),
+    );
+  }
+
+  /// Live-Test-8 ISSUE-002: Groups-mode body — the active groups at a glance
+  /// with a direct path into the premium Groups builder.
+  Widget _buildGroupsSummary(ColorScheme colorScheme) {
+    return InkWell(
+      onTap: _openGroupsBuilder,
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: AppColors.primary.withValues(alpha: 0.06),
+          borderRadius: BorderRadius.circular(12),
+          border:
+              Border.all(color: AppColors.primary.withValues(alpha: 0.30)),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Wrap(
+              spacing: 6,
+              runSpacing: 6,
+              children: _activeGroupNames
+                  .map((n) => Chip(
+                        label: Text(n,
+                            style: const TextStyle(
+                                fontSize: 11, fontWeight: FontWeight.w600)),
+                        visualDensity: VisualDensity.compact,
+                        materialTapTargetSize:
+                            MaterialTapTargetSize.shrinkWrap,
+                        side: BorderSide(
+                            color:
+                                AppColors.primary.withValues(alpha: 0.35)),
+                        backgroundColor:
+                            AppColors.primary.withValues(alpha: 0.08),
+                      ))
+                  .toList(),
+            ),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                const Icon(Icons.tune_rounded,
+                    size: 14, color: AppColors.primary),
+                const SizedBox(width: 6),
+                Text(
+                  'Tap to manage groups, options & rules',
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                    color: colorScheme.onSurfaceVariant,
+                  ),
+                ),
+                const Spacer(),
+                const Icon(Icons.chevron_right_rounded,
+                    size: 18, color: AppColors.primary),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ── Live-Test-8 ISSUE-002: compact premium mode card ─────────────────────────
+
+/// Mini selection card for the Edit-Meal preference mode switch — animated
+/// fill/border/check with explicit high-contrast colors in both themes.
+class _PrefModeCard extends StatelessWidget {
+  const _PrefModeCard({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.selected,
+    required this.busy,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final bool selected;
+  final bool busy;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final accent = AppColors.primary;
+    return Opacity(
+      opacity: busy ? 0.55 : 1,
+      child: Material(
+        color: Colors.transparent,
+        borderRadius: BorderRadius.circular(12),
+        child: InkWell(
+          onTap: busy ? null : onTap,
+          borderRadius: BorderRadius.circular(12),
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 220),
+            curve: Curves.easeOutCubic,
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: selected
+                  ? accent.withValues(alpha: isDark ? 0.16 : 0.07)
+                  : colorScheme.surfaceContainerLowest,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                color: selected
+                    ? accent
+                    : colorScheme.outlineVariant.withValues(alpha: 0.5),
+                width: selected ? 1.4 : 1,
+              ),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Icon(icon,
+                        size: 16,
+                        color: selected
+                            ? accent
+                            : colorScheme.onSurfaceVariant),
+                    const Spacer(),
+                    AnimatedSwitcher(
+                      duration: const Duration(milliseconds: 220),
+                      transitionBuilder: (child, anim) =>
+                          ScaleTransition(scale: anim, child: child),
+                      child: Icon(
+                        selected
+                            ? Icons.check_circle_rounded
+                            : Icons.radio_button_unchecked_rounded,
+                        key: ValueKey(selected),
+                        size: 16,
+                        color: selected
+                            ? accent
+                            : colorScheme.onSurfaceVariant
+                                .withValues(alpha: 0.6),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  title,
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w800,
+                    color: selected ? accent : colorScheme.onSurface,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  subtitle,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 10,
+                    height: 1.25,
+                    color: colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
       ),
     );
   }

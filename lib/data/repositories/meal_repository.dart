@@ -64,6 +64,27 @@ class MealRepository implements IMealRepository {
     };
   }
 
+  /// Live-Test-8 ISSUE-004: day-effective meals for an arbitrary published
+  /// date (YYYY-MM-DD) — same endpoint/pipeline as [getTodayMeals], so the
+  /// returned preferenceGroups/windows/prices are the published day's
+  /// narrowed set, exactly what the attendance validator enforces. Used by
+  /// the admin guest sheet, which books guests for dates other than today.
+  Future<Result<List<MealModel>>> getDayMeals({
+    required String organizationId,
+    required String groupId,
+    required String date,
+  }) async {
+    final result = await DioApiService.instance.get<Map<String, dynamic>>(
+      '/meals/today',
+      queryParameters: {'groupId': groupId, 'date': date},
+    );
+    return switch (result) {
+      Err(:final failure) => Err(failure),
+      Ok(:final value) =>
+        Ok(PaginatedResponse.fromJson(value, MealModel.fromJson).data),
+    };
+  }
+
   @override
   Future<Result<MealModel>> createMeal({
     required String organizationId,

@@ -101,7 +101,11 @@ class _MealConfigScreenState extends State<MealConfigScreen> {
         title: const Text('Master Meal Template'),
         centerTitle: false,
         actions: [
-          if (_provider.selectedGroup != null)
+          // Live-Test-8 ISSUE-003: the planner is a MEAL surface — when the
+          // meal system is OFF it must disappear for admins exactly as the
+          // menu tabs do for members (state is preserved server-side and the
+          // button returns the moment meals are re-enabled).
+          if (_provider.selectedGroup != null && _provider.mealsEnabled)
             Builder(builder: (context) {
               // Day-Wise Mode and Weekly Mode are mutually exclusive. When the
               // group is in Day-Wise mode the weekly planner is hidden and the
@@ -287,9 +291,10 @@ class _MealConfigScreenState extends State<MealConfigScreen> {
                     ),
                     const SizedBox(height: 12),
 
-                    // ── Billing policy (SRS Module 03 Q17/Q22 + Live-Test-7
-                    // ISSUE-4): TWO independent toggles — Skip billing and
-                    // Absent billing never modify each other's behaviour.
+                    // ── Billing policy (SRS Module 03 Q17/Q22 + Live-Test-8
+                    // ISSUE-005): ONE toggle. Bill-Skip is date-forward — it
+                    // affects meals from the next window-close onwards, never
+                    // past bills. Absent is ALWAYS free (Bill-Absent removed).
                     if (_provider.mealPricingEnabled) ...[
                       _ToggleTile(
                         icon: Icons.rule_folder_rounded,
@@ -297,34 +302,17 @@ class _MealConfigScreenState extends State<MealConfigScreen> {
                         subtitle: (_provider.selectedGroup?.mealConfig
                                     .billSkippedMeals ??
                                 false)
-                            ? 'Unmarked (no-response) meals are billed at the scheduled price'
-                            : 'Unmarked (no-response) meals are free',
+                            ? 'Unmarked (no-response) meals are billed at the '
+                                'scheduled price from the next meal onwards. '
+                                'Meals marked Absent are always free.'
+                            : 'Unmarked (no-response) meals are free. Meals '
+                                'marked Absent are always free.',
                         value: _provider.selectedGroup?.mealConfig
                                 .billSkippedMeals ??
                             false,
                         onChanged: _provider.isSaving
                             ? null
                             : (v) => _provider.toggleBillSkippedMeals(
-                                  organizationId: _orgId,
-                                  groupId: _provider.selectedGroup!.id,
-                                  enabled: v,
-                                ),
-                      ),
-                      const SizedBox(height: 12),
-                      _ToggleTile(
-                        icon: Icons.person_off_rounded,
-                        title: 'Bill Absent Meals',
-                        subtitle: (_provider.selectedGroup?.mealConfig
-                                    .billAbsentMeals ??
-                                false)
-                            ? 'Meals marked Absent are billed at the scheduled price'
-                            : 'Meals marked Absent are free',
-                        value: _provider.selectedGroup?.mealConfig
-                                .billAbsentMeals ??
-                            false,
-                        onChanged: _provider.isSaving
-                            ? null
-                            : (v) => _provider.toggleBillAbsentMeals(
                                   organizationId: _orgId,
                                   groupId: _provider.selectedGroup!.id,
                                   enabled: v,

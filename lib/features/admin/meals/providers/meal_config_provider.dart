@@ -505,18 +505,31 @@ class MealConfigProvider extends ChangeNotifier {
 
   // ── Toggles ───────────────────────────────────────────────────────────────
 
-  Future<bool> toggleMealSystem({
+  /// Live-Test-8 ISSUE-003: ONE optimistic mealConfig patch used by every
+  /// toggle. The switch reflects the tap INSTANTLY (local state + notify
+  /// before the network), then the server's authoritative group replaces it;
+  /// on failure the exact previous state is restored and the error surfaced.
+  /// This is what turns the old "tap → nothing → tap again" round-trip lag
+  /// into a single smooth flip.
+  Future<bool> _patchMealConfigOptimistic({
     required String organizationId,
     required String groupId,
-    required bool enabled,
+    required GroupMealConfig updatedConfig,
+    void Function(GroupModel serverGroup)? onSaved,
   }) async {
     if (_selectedGroup == null) return false;
+    final prevGroup = _selectedGroup!;
+    final prevMealsEnabled = _mealsEnabled;
+    final prevPrefs = _preferencesEnabled;
+    final prevPricing = _mealPricingEnabled;
+
+    // Optimistic paint — the tapped switch moves on the tap itself.
+    _selectedGroup = prevGroup.copyWith(mealConfig: updatedConfig);
+    _mealsEnabled = updatedConfig.mealsEnabled;
+    _preferencesEnabled = updatedConfig.preferencesEnabled;
+    _mealPricingEnabled = updatedConfig.mealPricingEnabled;
     _isSaving = true;
     notifyListeners();
-
-    final updatedConfig = _selectedGroup!.mealConfig.copyWith(
-      mealsEnabled: enabled,
-    );
 
     final result = await _groupRepo.updateGroup(
       organizationId: organizationId,
@@ -526,17 +539,44 @@ class MealConfigProvider extends ChangeNotifier {
 
     switch (result) {
       case Ok(:final value):
+        // Server truth wins (it may cascade flags, e.g. ATT-007 exclusivity).
         _selectedGroup = value;
-        _mealsEnabled = enabled;
+        _mealsEnabled = value.mealConfig.mealsEnabled;
+        _preferencesEnabled = value.mealConfig.preferencesEnabled;
+        _mealPricingEnabled = value.mealConfig.mealPricingEnabled;
+        onSaved?.call(value);
         _isSaving = false;
         notifyListeners();
         return true;
       case Err(:final failure):
+        // Revert — the UI must never claim an unsaved state.
+        _selectedGroup = prevGroup;
+        _mealsEnabled = prevMealsEnabled;
+        _preferencesEnabled = prevPrefs;
+        _mealPricingEnabled = prevPricing;
         _error = failure.message;
         _isSaving = false;
         notifyListeners();
         return false;
     }
+  }
+
+  Future<bool> toggleMealSystem({
+    required String organizationId,
+    required String groupId,
+    required bool enabled,
+  }) async {
+    if (_selectedGroup == null) return false;
+    // Live-Test-8 ISSUE-003: master toggle — the server preserves the stored
+    // sub-flags while meals are OFF (they are gated, not cleared), so
+    // re-enabling restores the admin's prior configuration exactly.
+    return _patchMealConfigOptimistic(
+      organizationId: organizationId,
+      groupId: groupId,
+      updatedConfig: _selectedGroup!.mealConfig.copyWith(
+        mealsEnabled: enabled,
+      ),
+    );
   }
 
   Future<bool> togglePreferences({
@@ -546,25 +586,15 @@ class MealConfigProvider extends ChangeNotifier {
     List<MealPreferenceOption>? enabledPreferences,
   }) async {
     if (_selectedGroup == null) return false;
-    _isSaving = true;
-    notifyListeners();
-
-    final updatedConfig = _selectedGroup!.mealConfig.copyWith(
-      preferencesEnabled: enabled,
-      enabledPreferences: enabledPreferences ??
-          _selectedGroup!.mealConfig.enabledPreferences,
-    );
-
-    final result = await _groupRepo.updateGroup(
+    return _patchMealConfigOptimistic(
       organizationId: organizationId,
       groupId: groupId,
-      mealConfig: updatedConfig,
-    );
-
-    switch (result) {
-      case Ok(:final value):
-        _selectedGroup = value;
-        _preferencesEnabled = enabled;
+      updatedConfig: _selectedGroup!.mealConfig.copyWith(
+        preferencesEnabled: enabled,
+        enabledPreferences: enabledPreferences ??
+            _selectedGroup!.mealConfig.enabledPreferences,
+      ),
+      onSaved: (_) {
         // When enabling the global preference toggle, inherit to all meals
         // that don't already have preferences on.  This makes the global
         // toggle behave as a master controller — admins can still override
@@ -580,55 +610,28 @@ class MealConfigProvider extends ChangeNotifier {
             );
           }).toList();
         }
-        _isSaving = false;
-        notifyListeners();
-        return true;
-      case Err(:final failure):
-        _error = failure.message;
-        _isSaving = false;
-        notifyListeners();
-        return false;
-    }
+      },
+    );
   }
 
   /// SRS FR-TRUST-001 (Pass 7): switch the group between opt-in ('absent',
   /// legacy) and opt-out ('present') attendance defaults. Server audits the
   /// flip and the sweep worker starts/stops materializing system defaults.
+  /// ATT-007: the server may auto-disable Meal Preferences when Auto-Present
+  /// turns on — the optimistic helper mirrors the authoritative response.
   Future<bool> setAttendanceDefault({
     required String organizationId,
     required String groupId,
     required bool optOut,
   }) async {
     if (_selectedGroup == null) return false;
-    _isSaving = true;
-    notifyListeners();
-
-    final updatedConfig = _selectedGroup!.mealConfig.copyWith(
-      attendanceDefault: optOut ? 'present' : 'absent',
-    );
-
-    final result = await _groupRepo.updateGroup(
+    return _patchMealConfigOptimistic(
       organizationId: organizationId,
       groupId: groupId,
-      mealConfig: updatedConfig,
+      updatedConfig: _selectedGroup!.mealConfig.copyWith(
+        attendanceDefault: optOut ? 'present' : 'absent',
+      ),
     );
-
-    switch (result) {
-      case Ok(:final value):
-        _selectedGroup = value;
-        // SRS Module 03 ATT-007: the server auto-disables Meal Preferences
-        // when Auto-Present is enabled — mirror the authoritative state so
-        // the Preferences toggle never shows a stale ON.
-        _preferencesEnabled = value.mealConfig.preferencesEnabled;
-        _isSaving = false;
-        notifyListeners();
-        return true;
-      case Err(:final failure):
-        _error = failure.message;
-        _isSaving = false;
-        notifyListeners();
-        return false;
-    }
   }
 
   /// Additive: toggle the per-group meal pricing setting. When OFF, price UI
@@ -639,105 +642,37 @@ class MealConfigProvider extends ChangeNotifier {
     required bool enabled,
   }) async {
     if (_selectedGroup == null) return false;
-    _isSaving = true;
-    notifyListeners();
-
-    final updatedConfig = _selectedGroup!.mealConfig.copyWith(
-      mealPricingEnabled: enabled,
-    );
-
-    final result = await _groupRepo.updateGroup(
+    return _patchMealConfigOptimistic(
       organizationId: organizationId,
       groupId: groupId,
-      mealConfig: updatedConfig,
+      updatedConfig: _selectedGroup!.mealConfig.copyWith(
+        mealPricingEnabled: enabled,
+      ),
     );
-
-    switch (result) {
-      case Ok(:final value):
-        _selectedGroup = value;
-        _mealPricingEnabled = enabled;
-        _isSaving = false;
-        notifyListeners();
-        return true;
-      case Err(:final failure):
-        _error = failure.message;
-        _isSaving = false;
-        notifyListeners();
-        return false;
-    }
   }
 
-  /// SRS Module 03 (survey Q17/Q22): "Bill Skip" policy — when ON,
-  /// member-chosen Absent and system-generated Skip are billed at the final
-  /// scheduled price. Kitchen counts stay Present-only.
+  /// SRS Module 03 (survey Q17/Q22) + Live-Test-8 ISSUE-005: "Bill Skip"
+  /// policy — when ON, unmarked (no-response) meals get a system-generated
+  /// Skip at window-close billed at the scheduled price, date-forward only
+  /// (never affects past bills). Absent is always free. Kitchen counts stay
+  /// Present-only.
   Future<bool> toggleBillSkippedMeals({
     required String organizationId,
     required String groupId,
     required bool enabled,
   }) async {
     if (_selectedGroup == null) return false;
-    _isSaving = true;
-    notifyListeners();
-
-    final updatedConfig = _selectedGroup!.mealConfig.copyWith(
-      billSkippedMeals: enabled,
-    );
-
-    final result = await _groupRepo.updateGroup(
+    return _patchMealConfigOptimistic(
       organizationId: organizationId,
       groupId: groupId,
-      mealConfig: updatedConfig,
+      updatedConfig: _selectedGroup!.mealConfig.copyWith(
+        billSkippedMeals: enabled,
+      ),
     );
-
-    switch (result) {
-      case Ok(:final value):
-        _selectedGroup = value;
-        _isSaving = false;
-        notifyListeners();
-        return true;
-      case Err(:final failure):
-        _error = failure.message;
-        _isSaving = false;
-        notifyListeners();
-        return false;
-    }
   }
 
-  /// Live-Test-7 ISSUE-4: independent "Bill Absent" policy — when ON, meals
-  /// a member explicitly marked Absent are billed at the scheduled price.
-  /// Completely independent from the Bill-Skip toggle.
-  Future<bool> toggleBillAbsentMeals({
-    required String organizationId,
-    required String groupId,
-    required bool enabled,
-  }) async {
-    if (_selectedGroup == null) return false;
-    _isSaving = true;
-    notifyListeners();
-
-    final updatedConfig = _selectedGroup!.mealConfig.copyWith(
-      billAbsentMeals: enabled,
-    );
-
-    final result = await _groupRepo.updateGroup(
-      organizationId: organizationId,
-      groupId: groupId,
-      mealConfig: updatedConfig,
-    );
-
-    switch (result) {
-      case Ok(:final value):
-        _selectedGroup = value;
-        _isSaving = false;
-        notifyListeners();
-        return true;
-      case Err(:final failure):
-        _error = failure.message;
-        _isSaving = false;
-        notifyListeners();
-        return false;
-    }
-  }
+  // Live-Test-8 ISSUE-005: toggleBillAbsentMeals REMOVED — Absent is always
+  // free; the server billing engine no longer consults the flag.
 
   /// Pass 11 (FR-VACX-001): approval-gated vacation — when ON, members must
   /// submit a dated request; the instant toggle is refused server-side.
@@ -747,31 +682,13 @@ class MealConfigProvider extends ChangeNotifier {
     required bool enabled,
   }) async {
     if (_selectedGroup == null) return false;
-    _isSaving = true;
-    notifyListeners();
-
-    final updatedConfig = _selectedGroup!.mealConfig.copyWith(
-      vacationRequiresApproval: enabled,
-    );
-
-    final result = await _groupRepo.updateGroup(
+    return _patchMealConfigOptimistic(
       organizationId: organizationId,
       groupId: groupId,
-      mealConfig: updatedConfig,
+      updatedConfig: _selectedGroup!.mealConfig.copyWith(
+        vacationRequiresApproval: enabled,
+      ),
     );
-
-    switch (result) {
-      case Ok(:final value):
-        _selectedGroup = value;
-        _isSaving = false;
-        notifyListeners();
-        return true;
-      case Err(:final failure):
-        _error = failure.message;
-        _isSaving = false;
-        notifyListeners();
-        return false;
-    }
   }
 
   /// Pass 12 (FR-BILLX-020): billing cycle start day (1–28; day 1 = calendar
@@ -818,30 +735,11 @@ class MealConfigProvider extends ChangeNotifier {
     required GroupGuestConfig config,
   }) async {
     if (_selectedGroup == null) return false;
-    _isSaving = true;
-    notifyListeners();
-
-    final updatedConfig =
-        _selectedGroup!.mealConfig.copyWith(guestConfig: config);
-
-    final result = await _groupRepo.updateGroup(
+    return _patchMealConfigOptimistic(
       organizationId: organizationId,
       groupId: groupId,
-      mealConfig: updatedConfig,
+      updatedConfig: _selectedGroup!.mealConfig.copyWith(guestConfig: config),
     );
-
-    switch (result) {
-      case Ok(:final value):
-        _selectedGroup = value;
-        _isSaving = false;
-        notifyListeners();
-        return true;
-      case Err(:final failure):
-        _error = failure.message;
-        _isSaving = false;
-        notifyListeners();
-        return false;
-    }
   }
 
   // ── Schedule ──────────────────────────────────────────────────────────────
