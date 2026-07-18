@@ -28,6 +28,9 @@ class MealAttendanceSummary {
     this.guestPreferenceBreakdown = const {},
     this.expectedParticipants,
     this.preferenceGroupBreakdown = const {},
+    this.vacationCount = 0,
+    this.pendingCount,
+    this.guestPreferenceGroupBreakdown = const {},
   });
 
   final String mealId;
@@ -71,6 +74,19 @@ class MealAttendanceSummary {
   /// {"Roti/Rice": {"Roti": 4, "Rice": 2}}. Empty for groups using only the
   /// legacy flat preference and on cached pre-fix payloads (additive).
   final Map<String, Map<String, int>> preferenceGroupBreakdown;
+
+  /// Live-Test-9 ISSUE-4.2: members covered by vacation for this meal/date.
+  final int vacationCount;
+
+  /// Live-Test-9 ISSUE-4.2: LIVE no-response count while the window is open
+  /// (expected − present − absent − skipped; reaches 0 once the close sweep
+  /// materializes System Skip). Null on cached pre-fix payloads.
+  final int? pendingCount;
+
+  /// Live-Test-9 ISSUE-4.3: GUEST preference-group plate counts, keyed by
+  /// snapshotted labels — every group a guest selected counts (the flat
+  /// [guestPreferenceBreakdown] only carries the derived primary tag).
+  final Map<String, Map<String, int>> guestPreferenceGroupBreakdown;
 
   /// Total plates to cook: present members + confirmed guests.
   int get effectiveAttendingTotal => attendingTotal ?? (presentCount + guestCount);
@@ -128,6 +144,14 @@ class MealAttendanceSummary {
           ? j['expectedParticipants'] as int
           : int.tryParse(j['expectedParticipants']?.toString() ?? ''),
       preferenceGroupBreakdown: _nestedBreakdown(j['preferenceGroupBreakdown']),
+      vacationCount: j['vacationCount'] is int
+          ? j['vacationCount'] as int
+          : int.tryParse(j['vacationCount']?.toString() ?? '') ?? 0,
+      pendingCount: j['pendingCount'] is int
+          ? j['pendingCount'] as int
+          : int.tryParse(j['pendingCount']?.toString() ?? ''),
+      guestPreferenceGroupBreakdown:
+          _nestedBreakdown(j['guestPreferenceGroupBreakdown']),
     );
   }
 
@@ -151,5 +175,8 @@ class MealAttendanceSummary {
         'guestPreferenceBreakdown': guestPreferenceBreakdown,
         'expectedParticipants': expectedParticipants,
         'preferenceGroupBreakdown': preferenceGroupBreakdown,
+        'vacationCount': vacationCount,
+        'pendingCount': pendingCount,
+        'guestPreferenceGroupBreakdown': guestPreferenceGroupBreakdown,
       };
 }

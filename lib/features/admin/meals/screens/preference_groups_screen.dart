@@ -335,20 +335,19 @@ class _PreferenceGroupsScreenState extends State<PreferenceGroupsScreen> {
           ),
         ],
       ),
-      // The FAB belongs to Groups mode only — in Standalone mode options are
-      // added inline, and showing "Add group" there contradicted exclusivity.
-      floatingActionButton: _standaloneActive
-          ? null
-          : FloatingActionButton.extended(
-              // Groups mode: straight to the creator. No mode yet: the mode
-              // switch handles restore-or-create.
-              onPressed:
-                  _saving ? null : (_groupsActive ? _addGroup : _activateGroups),
+      // Live-Test-9 ISSUE-5: the FAB belongs to GROUPS MODE ONLY — it stays
+      // hidden in Standalone mode AND in the not-yet-chosen state (it used to
+      // show "Add group" before either mode card was selected, contradicting
+      // the mode choice the screen was asking for).
+      floatingActionButton: _groupsActive
+          ? FloatingActionButton.extended(
+              onPressed: _saving ? null : _addGroup,
               backgroundColor: AppColors.primary,
               icon: const Icon(Icons.add_rounded, color: Colors.white),
               label: const Text('Add group',
                   style: TextStyle(color: Colors.white)),
-            ),
+            )
+          : null,
       body: _loading
           ? const AppListSkeleton(rows: 4, rowHeight: 96)
           : _error != null
@@ -515,6 +514,7 @@ class _ModeSelector extends StatelessWidget {
             icon: Icons.style_rounded,
             title: 'Standalone',
             description: 'One simple list — members pick a single tag',
+            accent: AppColors.secondary,
             onTap: onStandalone,
           ),
         ),
@@ -527,6 +527,7 @@ class _ModeSelector extends StatelessWidget {
             icon: Icons.tune_rounded,
             title: 'Preference Groups',
             description: 'Multi-choice dimensions, rules & ₹ add-ons',
+            accent: AppColors.primary,
             onTap: onGroups,
           ),
         ),
@@ -541,20 +542,22 @@ class _ModeSelector extends StatelessWidget {
     required IconData icon,
     required String title,
     required String description,
+    required Color accent,
     required VoidCallback onTap,
   }) {
-    const accent = AppColors.primary;
     final surface = isDark ? AppColors.surfaceDark : AppColors.surface;
     final border = selected
         ? accent
         : (isDark ? AppColors.borderDark : AppColors.border);
     final titleColor = selected
-        ? accent
+        ? (isDark
+            ? Color.lerp(accent, Colors.white, 0.45)!
+            : Color.lerp(accent, Colors.black, 0.25)!)
         : (isDark ? AppColors.textPrimaryDark : AppColors.textPrimary);
-    // Live-Test-8 ISSUE-001: premium animated selection — the card's fill,
-    // border, glow and check-mark all animate on mode change, with explicit
-    // high-contrast colors in BOTH themes (nothing blends into the
-    // background). AnimatedScale gives a subtle press-in emphasis on select.
+    // Live-Test-9 ISSUE-5.3/5.4: vibrant premium selection — each mode has its
+    // own identity color, a gradient fill + gradient icon badge when selected,
+    // and animated border/glow/check with explicit high-contrast colors in
+    // BOTH themes. AnimatedScale gives a subtle press-in emphasis on select.
     return Opacity(
       opacity: disabled ? 0.55 : 1,
       child: AnimatedScale(
@@ -572,9 +575,22 @@ class _ModeSelector extends StatelessWidget {
               curve: Curves.easeOutCubic,
               padding: const EdgeInsets.all(14),
               decoration: BoxDecoration(
-                color: selected
-                    ? accent.withValues(alpha: isDark ? 0.16 : 0.07)
-                    : surface,
+                gradient: selected
+                    ? LinearGradient(
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                        colors: isDark
+                            ? [
+                                accent.withValues(alpha: 0.30),
+                                accent.withValues(alpha: 0.10),
+                              ]
+                            : [
+                                accent.withValues(alpha: 0.15),
+                                accent.withValues(alpha: 0.04),
+                              ],
+                      )
+                    : null,
+                color: selected ? null : surface,
                 borderRadius: BorderRadius.circular(16),
                 border:
                     Border.all(color: border, width: selected ? 1.6 : 1),
@@ -599,13 +615,35 @@ class _ModeSelector extends StatelessWidget {
                         width: 34,
                         height: 34,
                         decoration: BoxDecoration(
-                          color: accent.withValues(
-                              alpha: selected
-                                  ? (isDark ? 0.30 : 0.16)
-                                  : (isDark ? 0.22 : 0.12)),
+                          gradient: LinearGradient(
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                            colors: selected
+                                ? [
+                                    accent,
+                                    Color.lerp(accent, Colors.black, 0.25)!,
+                                  ]
+                                : [
+                                    accent.withValues(
+                                        alpha: isDark ? 0.26 : 0.14),
+                                    accent.withValues(
+                                        alpha: isDark ? 0.18 : 0.10),
+                                  ],
+                          ),
                           borderRadius: BorderRadius.circular(10),
+                          boxShadow: selected
+                              ? [
+                                  BoxShadow(
+                                    color: accent.withValues(alpha: 0.35),
+                                    blurRadius: 8,
+                                    offset: const Offset(0, 2),
+                                  ),
+                                ]
+                              : null,
                         ),
-                        child: Icon(icon, size: 18, color: accent),
+                        child: Icon(icon,
+                            size: 18,
+                            color: selected ? Colors.white : accent),
                       ),
                       const Spacer(),
                       AnimatedSwitcher(
@@ -861,10 +899,24 @@ class _GroupCard extends StatelessWidget {
   final VoidCallback onRemoveGroup;
   final VoidCallback onEditRules;
 
+  /// Live-Test-9 ISSUE-5.5: per-group identity color — cycled from a vibrant
+  /// palette by label so every group header reads distinct at a glance
+  /// (enterprise-grade "colorful group headers"). Stable per label.
+  static const List<Color> _accentPalette = [
+    AppColors.primary,
+    AppColors.violet,
+    AppColors.secondary,
+    AppColors.info,
+    AppColors.warning,
+  ];
+
+  Color get _accent =>
+      _accentPalette[group.label.hashCode.abs() % _accentPalette.length];
+
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    const accent = AppColors.primary;
+    final accent = _accent;
     // Count caption independent of required-ness — the Required/Optional pill
     // carries that status separately, so no wording is duplicated.
     final countCaption = (group.isSingle || group.maxSelect <= 1)
@@ -875,18 +927,36 @@ class _GroupCard extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: isDark ? AppColors.surfaceDark : AppColors.surface,
+        // Subtle identity wash from the group's accent — vibrant without
+        // sacrificing readability in either theme.
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: isDark
+              ? [
+                  Color.alphaBlend(
+                      accent.withValues(alpha: 0.10), AppColors.surfaceDark),
+                  AppColors.surfaceDark,
+                ]
+              : [
+                  Color.alphaBlend(
+                      accent.withValues(alpha: 0.05), AppColors.surface),
+                  AppColors.surface,
+                ],
+        ),
         borderRadius: BorderRadius.circular(18),
         border: Border.all(
           color: isDark
-              ? AppColors.borderDark.withValues(alpha: 0.5)
-              : AppColors.border,
+              ? Color.alphaBlend(
+                  accent.withValues(alpha: 0.35), AppColors.borderDark)
+              : Color.alphaBlend(
+                  accent.withValues(alpha: 0.25), AppColors.border),
         ),
         boxShadow: isDark
             ? null
             : [
                 BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.04),
+                  color: accent.withValues(alpha: 0.10),
                   blurRadius: 10,
                   offset: const Offset(0, 3),
                 ),
@@ -901,10 +971,25 @@ class _GroupCard extends StatelessWidget {
                 width: 38,
                 height: 38,
                 decoration: BoxDecoration(
-                  color: accent.withValues(alpha: isDark ? 0.20 : 0.10),
+                  gradient: LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [
+                      accent,
+                      Color.lerp(accent, Colors.black, 0.25)!,
+                    ],
+                  ),
                   borderRadius: BorderRadius.circular(11),
+                  boxShadow: [
+                    BoxShadow(
+                      color: accent.withValues(alpha: 0.35),
+                      blurRadius: 8,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
                 ),
-                child: const Icon(Icons.tune_rounded, size: 19, color: accent),
+                child: const Icon(Icons.tune_rounded,
+                    size: 19, color: Colors.white),
               ),
               const SizedBox(width: 12),
               Expanded(

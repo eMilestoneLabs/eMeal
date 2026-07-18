@@ -431,17 +431,31 @@ class _MealSummaryCard extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 10),
-          // Present / Absent / Skipped counts
-          Row(
+          // Live-Test-9 ISSUE-4.2: full status row — Present / Absent /
+          // System Skip / Vacation / live Pending. Wrap keeps it responsive
+          // on narrow phones instead of overflowing a fixed Row.
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
             children: [
               _CountPill(
                   label: 'Present', value: present, color: AppColors.present),
-              const SizedBox(width: 8),
               _CountPill(
                   label: 'Absent', value: absent, color: AppColors.absent),
-              const SizedBox(width: 8),
               _CountPill(
-                  label: 'Skipped', value: skipped, color: AppColors.skipped),
+                  label: 'System Skip',
+                  value: skipped,
+                  color: AppColors.skipped),
+              if ((summary?.vacationCount ?? 0) > 0)
+                _CountPill(
+                    label: 'Vacation',
+                    value: summary!.vacationCount,
+                    color: AppColors.info),
+              if ((summary?.pendingCount ?? 0) > 0)
+                _CountPill(
+                    label: 'Pending',
+                    value: summary!.pendingCount!,
+                    color: AppColors.warning),
             ],
           ),
           // Pass 15 (FR-ANL-003): expected participants for this meal —
@@ -459,33 +473,38 @@ class _MealSummaryCard extends StatelessWidget {
               ),
             ),
           ],
-          // Module 22 (FR-HG-060/061, Pass 9): hosted-guest plates — extra
-          // food the kitchen must cook, itemised apart from members.
-          if ((summary?.guestCount ?? 0) > 0) ...[
+          // Module 22 (FR-HG-060/061) + Live-Test-9 ISSUE-4.2: guests and the
+          // combined Student+Guest total — the total is ALWAYS shown so the
+          // kitchen's real plate count never has to be derived by hand.
+          if (summary != null) ...[
             const SizedBox(height: 8),
-            Row(
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
               children: [
+                if (summary!.guestCount > 0)
+                  _CountPill(
+                      label: 'Guests',
+                      value: summary!.guestCount,
+                      color: AppColors.secondary),
                 _CountPill(
-                    label: 'Guests',
-                    value: summary!.guestCount,
-                    color: AppColors.secondary),
-                const SizedBox(width: 8),
-                _CountPill(
-                    label: 'Total plates',
+                    label: 'Total attendance',
                     value: summary!.effectiveAttendingTotal,
                     color: AppColors.primary),
               ],
             ),
-            const SizedBox(height: 6),
-            Text(
-              '${summary!.guestAdults} adult · ${summary!.guestChildren} child '
-              'guest plates, hosted by members',
-              style: AppTypography.labelSmall.copyWith(
-                color: isDark
-                    ? AppColors.textSecondaryDark
-                    : AppColors.textSecondary,
+            if (summary!.guestCount > 0) ...[
+              const SizedBox(height: 6),
+              Text(
+                '${summary!.guestAdults} adult · ${summary!.guestChildren} child '
+                'guest plates, hosted by members',
+                style: AppTypography.labelSmall.copyWith(
+                  color: isDark
+                      ? AppColors.textSecondaryDark
+                      : AppColors.textSecondary,
+                ),
               ),
-            ),
+            ],
           ],
           // Per-meal preference breakdown
           if (sortedPrefs.isNotEmpty) ...[
@@ -608,9 +627,72 @@ class _MealSummaryCard extends StatelessWidget {
                 ),
               );
             }),
+          // Live-Test-9 ISSUE-4.3: GUEST preference-GROUP sections — every
+          // group a guest selected counts ("Roti 1" AND "Milk 1"), one
+          // section per group exactly like the member sections above. The
+          // flat guest breakdown below is suppressed when these exist (it
+          // only carries the derived primary tag and under-counted).
+          if ((summary?.guestPreferenceGroupBreakdown.isNotEmpty ?? false))
+            ...summary!.guestPreferenceGroupBreakdown.entries.map((group) {
+              final options = group.value.entries.toList()
+                ..sort((a, b) => b.value.compareTo(a.value));
+              return Padding(
+                padding: const EdgeInsets.only(top: 10),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        const Icon(Icons.group_add_rounded,
+                            size: 13, color: AppColors.secondary),
+                        const SizedBox(width: 5),
+                        Expanded(
+                          child: Text(
+                            'Guests · ${group.key}',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: AppTypography.labelSmall
+                                .copyWith(fontWeight: FontWeight.w700),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 6,
+                      runSpacing: 6,
+                      children: options.map((e) {
+                        return Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 10, vertical: 6),
+                          decoration: BoxDecoration(
+                            color:
+                                AppColors.secondary.withValues(alpha: 0.08),
+                            borderRadius: BorderRadius.circular(20),
+                            border: Border.all(
+                                color: AppColors.secondary
+                                    .withValues(alpha: 0.2)),
+                          ),
+                          child: Text(
+                            '${e.key} · ${e.value}',
+                            style: AppTypography.labelSmall.copyWith(
+                              fontWeight: FontWeight.w600,
+                              color: AppColors.secondary,
+                            ),
+                          ),
+                        );
+                      }).toList(),
+                    ),
+                  ],
+                ),
+              );
+            }),
           // Module 22 (FR-HG-061): guest plates by preference — the kitchen
           // cooks these ON TOP of the member preference counts above.
-          if ((summary?.guestPreferenceBreakdown.isNotEmpty ?? false)) ...[
+          // (Flat derived-primary view — only for meals WITHOUT guest
+          // preference-group data, per ISSUE-4.3.)
+          if ((summary?.guestPreferenceGroupBreakdown.isEmpty ?? true) &&
+              (summary?.guestPreferenceBreakdown.isNotEmpty ?? false)) ...[
             const SizedBox(height: 10),
             Row(
               children: [

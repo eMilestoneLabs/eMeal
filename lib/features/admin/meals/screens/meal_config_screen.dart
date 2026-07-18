@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:smart_meal_management/shared/models/attendance_model.dart';
 import 'package:go_router/go_router.dart';
 import 'package:smart_meal_management/app/router/route_names.dart';
+import 'package:smart_meal_management/core/constants/app_constants.dart';
 import 'package:smart_meal_management/core/theme/app_colors.dart';
 import 'package:smart_meal_management/core/theme/app_typography.dart';
 import 'package:smart_meal_management/core/utils/time_format.dart';
@@ -711,13 +712,39 @@ class _MealConfigScreenState extends State<MealConfigScreen> {
   }
 
   void _showAddMealSheet(BuildContext context) {
+    // Live-Test-9 ISSUE-001 (MMT-001): friendly pre-save gate on the 10-meal
+    // Master Meal Template cap — the server enforces the same limit (422),
+    // which the form now also shows inline, but blocking here saves the admin
+    // from filling a whole form first. Archived meals don't count.
+    final activeCount = _provider.meals.where((m) => m.isActive).length;
+    if (activeCount >= AppConstants.maxMasterMealsPerGroup) {
+      showDialog<void>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          title: const Text('Meal limit reached'),
+          content: const Text(
+            'Maximum ${AppConstants.maxMasterMealsPerGroup} Master Meals are '
+            'allowed. Please delete an existing meal before creating a new one.',
+          ),
+          actions: [
+            FilledButton(
+              onPressed: () => Navigator.of(ctx).pop(),
+              child: const Text('Got it'),
+            ),
+          ],
+        ),
+      );
+      return;
+    }
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
-      builder: (_) => DraggableScrollableSheet(
+      builder: (sheetCtx) => DraggableScrollableSheet(
         expand: false,
         initialChildSize: 0.9,
         maxChildSize: 0.95,
@@ -727,7 +754,7 @@ class _MealConfigScreenState extends State<MealConfigScreen> {
             20,
             20,
             20,
-            MediaQuery.of(context).viewInsets.bottom + 20,
+            MediaQuery.of(sheetCtx).viewInsets.bottom + 20,
           ),
           child: Column(
             children: [
@@ -740,17 +767,21 @@ class _MealConfigScreenState extends State<MealConfigScreen> {
               ),
               const SizedBox(height: 20),
               MealConfigForm(
-                isSaving: _provider.isSaving,
+                isSaving: false, // the form owns its own submit lifecycle
                 // Inherit global preference state — new meals default ON
                 // when the group's preference toggle is already enabled.
                 initialPreferencesEnabled: _provider.preferencesEnabled,
                 pricingEnabled: _provider.mealPricingEnabled,
+                // Live-Test-9 ISSUE-001: pop the SHEET'S OWN route, ONLY on
+                // success. The old handler captured the SCREEN's navigator and
+                // popped unconditionally after the await — a failed save
+                // closed the sheet (entered data lost, error invisible), and
+                // rapid taps stacked multiple pops that emptied the navigator
+                // into a black screen requiring a cold restart.
                 onSave: (data) async {
                   final group = _provider.selectedGroup;
-                  if (group == null) return;
-                  // Capture navigator before async gap.
-                  final nav = Navigator.of(context);
-                  await _provider.createMeal(
+                  if (group == null) return 'No group selected.';
+                  final created = await _provider.createMeal(
                     organizationId: _orgId,
                     groupId: group.id,
                     name: data.name,
@@ -766,7 +797,47 @@ class _MealConfigScreenState extends State<MealConfigScreen> {
                     imageBytes: data.imageBytes,
                     price: data.price,
                   );
-                  if (mounted) nav.pop();
+                  if (created == null) {
+                    return _provider.error ??
+                        'Could not save the meal. Please try again.';
+                  }
+                  if (sheetCtx.mounted) Navigator.of(sheetCtx).pop();
+                  return null;
+                },
+                // Live-Test-9 ISSUE-5.2: Preference Groups on a NEW meal —
+                // save it (groups need a meal id), close the sheet and open
+                // the Groups builder for the freshly created meal in one
+                // seamless step. Flat tags stay empty: Groups mode governs.
+                onSaveForGroups: (data) async {
+                  final group = _provider.selectedGroup;
+                  if (group == null) return 'No group selected.';
+                  final created = await _provider.createMeal(
+                    organizationId: _orgId,
+                    groupId: group.id,
+                    name: data.name,
+                    slotKey: data.slotKey,
+                    order: data.order,
+                    description: data.description,
+                    attendanceWindow: MealAttendanceWindow(
+                      openTime: data.openTime,
+                      closeTime: data.closeTime,
+                    ),
+                    menuItems: data.menuItems,
+                    availablePreferences: const [],
+                    imageBytes: data.imageBytes,
+                    price: data.price,
+                  );
+                  if (created == null) {
+                    return _provider.error ??
+                        'Could not save the meal. Please try again.';
+                  }
+                  if (sheetCtx.mounted) Navigator.of(sheetCtx).pop();
+                  if (mounted) {
+                    await Navigator.of(this.context).push(MaterialPageRoute(
+                      builder: (_) => PreferenceGroupsScreen(meal: created),
+                    ));
+                  }
+                  return null;
                 },
               ),
             ],
@@ -783,7 +854,7 @@ class _MealConfigScreenState extends State<MealConfigScreen> {
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
-      builder: (_) => DraggableScrollableSheet(
+      builder: (sheetCtx) => DraggableScrollableSheet(
         expand: false,
         initialChildSize: 0.9,
         maxChildSize: 0.95,
@@ -793,7 +864,7 @@ class _MealConfigScreenState extends State<MealConfigScreen> {
             20,
             20,
             20,
-            MediaQuery.of(context).viewInsets.bottom + 20,
+            MediaQuery.of(sheetCtx).viewInsets.bottom + 20,
           ),
           child: Column(
             children: [
@@ -807,12 +878,12 @@ class _MealConfigScreenState extends State<MealConfigScreen> {
               const SizedBox(height: 20),
               MealConfigForm(
                 initialMeal: meal,
-                isSaving: _provider.isSaving,
+                isSaving: false, // the form owns its own submit lifecycle
                 pricingEnabled: _provider.mealPricingEnabled,
+                // Live-Test-9 ISSUE-001: pop the SHEET'S OWN route, ONLY on
+                // success — see _showAddMealSheet for the failure analysis.
                 onSave: (data) async {
-                  // Capture navigator before async gap.
-                  final nav = Navigator.of(context);
-                  await _provider.updateMeal(
+                  final ok = await _provider.updateMeal(
                     organizationId: _orgId,
                     groupId: meal.groupId,
                     mealId: meal.id,
@@ -830,7 +901,12 @@ class _MealConfigScreenState extends State<MealConfigScreen> {
                     imageBytes: data.imageUntouched ? null : data.imageBytes,
                     price: data.price,
                   );
-                  if (mounted) nav.pop();
+                  if (!ok) {
+                    return _provider.error ??
+                        'Could not save the changes. Please try again.';
+                  }
+                  if (sheetCtx.mounted) Navigator.of(sheetCtx).pop();
+                  return null;
                 },
               ),
             ],

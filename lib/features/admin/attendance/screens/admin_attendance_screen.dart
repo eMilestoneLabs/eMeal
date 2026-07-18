@@ -611,11 +611,15 @@ class _HostedGuestsSection extends StatelessWidget {
                         [
                           if (g.hostName != null) 'Host: ${g.hostName}',
                           if (g.mealName != null) g.mealName!,
-                          if (g.mealPreference != null &&
+                          // Live-Test-9 ISSUE-4: flat tag is the DERIVED
+                          // primary (first group's pick) — only shown when
+                          // there are no group picks, else it duplicated the
+                          // first option ("Roti · Roti · Milk").
+                          if (g.preferencesLabel.isNotEmpty)
+                            g.preferencesLabel
+                          else if (g.mealPreference != null &&
                               g.mealPreference!.isNotEmpty)
                             g.mealPreference!,
-                          // ISSUE-2: the guest's preference-group picks.
-                          if (g.preferencesLabel.isNotEmpty) g.preferencesLabel,
                         ].join(' · '),
                         style: AppTypography.labelSmall.copyWith(
                             color: isDark

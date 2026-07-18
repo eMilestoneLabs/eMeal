@@ -192,6 +192,24 @@ class _TodayMealsScreenState extends State<TodayMealsScreen> {
                                 const SizedBox(height: AppConstants.space16),
                             itemBuilder: (context, i) {
                               final meal = meals[i];
+                              // Live-Test-9 ISSUE-003: the meal card from
+                              // /meals/today is AUTHORITATIVE — it already
+                              // carries the published day's preference
+                              // override. OR-ing the group-level default
+                              // resurfaced the group tag set on days the
+                              // published schedule disabled preferences,
+                              // blocking Present until a phantom pick. The
+                              // group-level config now only fills in the TAG
+                              // LIST for legacy meals that are enabled but
+                              // carry no tags of their own.
+                              final prefsEnabled = meal.preferencesEnabled;
+                              final enabledPrefs = !prefsEnabled
+                                  ? const <String>[]
+                                  : meal.enabledPreferences.isNotEmpty
+                                      ? meal.enabledPreferences
+                                      : dashboardProvider.enabledPreferences
+                                          .map((e) => e.name)
+                                          .toList();
                               final status =
                                   dashboardProvider.statusForMeal(meal.id);
                               final isOpen =
@@ -217,17 +235,10 @@ class _TodayMealsScreenState extends State<TodayMealsScreen> {
                                 // preference-required meals — manual marking
                                 // with full preferences applies there.
                                 isDefaultAttend: isDefaultAttend &&
-                                    !(meal.preferencesEnabled ||
-                                        dashboardProvider.preferencesEnabled) &&
+                                    !prefsEnabled &&
                                     meal.preferenceGroups.isEmpty,
-                                preferencesEnabled: meal.preferencesEnabled ||
-                                    dashboardProvider.preferencesEnabled,
-                                enabledPreferences:
-                                    meal.enabledPreferences.isNotEmpty
-                                        ? meal.enabledPreferences
-                                        : dashboardProvider.enabledPreferences
-                                            .map((e) => e.name)
-                                            .toList(),
+                                preferencesEnabled: prefsEnabled,
+                                enabledPreferences: enabledPrefs,
                                 onMark: (s, pref) =>
                                     _mark(meal, s, preference: pref),
                                 // Module 36: grouped-selection marks.

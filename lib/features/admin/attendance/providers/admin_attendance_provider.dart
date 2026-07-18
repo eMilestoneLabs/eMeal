@@ -46,8 +46,43 @@ class AdminAttendanceProvider extends ChangeNotifier {
     // per-day onVacation record), so surface the server-computed vacation list
     // here — otherwise the filter would show empty despite Vacation = N.
     if (_filterStatus == AttendanceStatus.onVacation) return _vacationRecords;
-    if (_filterStatus == null) return _records;
-    return _records.where((r) => r.status == _filterStatus).toList();
+    final base = _filterStatus == null
+        ? List<AttendanceModel>.of(_records)
+        : _records.where((r) => r.status == _filterStatus).toList();
+    return _orderRoster(base);
+  }
+
+  /// Live-Test-9 ISSUE-4.5 (locked ordering): Admin/Manager rows FIRST, then
+  /// members by the time they marked (earliest first); auto-marked rows
+  /// (system/auto sources, no member action time that means anything) order
+  /// by name; unmarked rows follow, by name. Guests render in their own
+  /// section below the roster and are untouched here.
+  List<AttendanceModel> _orderRoster(List<AttendanceModel> rows) {
+    int band(AttendanceModel r) {
+      if (r.isAdminRole) return 0;
+      final autoMarked = r.source != null &&
+          r.source != 'self' &&
+          r.source != 'admin' &&
+          r.source != 'request' &&
+          r.source != 'verified';
+      if (autoMarked) return 2; // auto-attendance → alphabetical
+      return r.markedAt != null ? 1 : 3; // marked by time, unmarked last
+    }
+
+    rows.sort((a, b) {
+      final ba = band(a);
+      final bb = band(b);
+      if (ba != bb) return ba - bb;
+      if (ba == 1) {
+        final c = (a.markedAt ?? DateTime(0)).compareTo(
+            b.markedAt ?? DateTime(0));
+        if (c != 0) return c;
+      }
+      return (a.userName ?? '')
+          .toLowerCase()
+          .compareTo((b.userName ?? '').toLowerCase());
+    });
+    return rows;
   }
 
   int get totalCount => _records.length;
@@ -149,7 +184,17 @@ class AdminAttendanceProvider extends ChangeNotifier {
     if (guestsFuture != null) {
       final guestsResult = await guestsFuture;
       if (guestsResult case Ok(:final value)) {
-        _guests = value;
+        // Live-Test-9 ISSUE-4.5 (locked ordering): guests list by booking
+        // time (earliest first); ties fall back to name.
+        _guests = List.of(value)
+          ..sort((a, b) {
+            final c = (a.createdAt ?? DateTime(0))
+                .compareTo(b.createdAt ?? DateTime(0));
+            if (c != 0) return c;
+            return (a.displayName ?? '')
+                .toLowerCase()
+                .compareTo((b.displayName ?? '').toLowerCase());
+          });
         notifyListeners();
       }
     } else if (_guests.isNotEmpty) {

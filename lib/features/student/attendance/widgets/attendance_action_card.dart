@@ -37,6 +37,7 @@ class AttendanceActionCard extends StatefulWidget {
     this.preferencesEnabled = false,
     this.enabledPreferences = const [],
     this.markedPreference,
+    this.markedSelections,
     this.markedAt,
     this.onRequestCorrection,
     this.onMarkWithSelections,
@@ -74,6 +75,13 @@ class AttendanceActionCard extends StatefulWidget {
   /// The preference the student actually submitted (from the backend record).
   /// Rendered under the marked status so the card reflects the stored choice.
   final String? markedPreference;
+
+  /// Live-Test-9 ISSUE-4.1: the submitted per-group selection snapshot from
+  /// the backend record — entries of {groupLabel, optionLabel, quantity, …}.
+  /// When present, the marked card renders each preference GROUP as its own
+  /// labelled section (never merged into one flat tag list). Null/empty falls
+  /// back to the flat [markedPreference] line (standalone meals).
+  final List<dynamic>? markedSelections;
 
   /// Submission timestamp from the backend record (local time). Rendered as a
   /// "Submitted at h:mm AM" line on the marked card.
@@ -161,6 +169,24 @@ class _AttendanceActionCardState extends State<AttendanceActionCard> {
     final k = key.trim();
     if (k.isEmpty) return k;
     return k[0].toUpperCase() + k.substring(1);
+  }
+
+  /// Live-Test-9 ISSUE-4.1: the submitted snapshot grouped BY preference
+  /// group, in submission order — [groupLabel → option labels (with ×qty)].
+  List<MapEntry<String, List<String>>> get _markedGroupSections {
+    final raw = widget.markedSelections;
+    if (raw == null || raw.isEmpty) return const [];
+    final ordered = <String, List<String>>{};
+    for (final s in raw) {
+      if (s is! Map) continue;
+      final g = s['groupLabel']?.toString().trim() ?? '';
+      final o = s['optionLabel']?.toString().trim() ?? '';
+      if (g.isEmpty || o.isEmpty) continue;
+      final qty = s['quantity'];
+      final label = (qty is num && qty > 1) ? '$o ×${qty.toInt()}' : o;
+      (ordered[g] ??= []).add(label);
+    }
+    return ordered.entries.toList();
   }
 
   @override
@@ -297,9 +323,19 @@ class _AttendanceActionCardState extends State<AttendanceActionCard> {
                     canChange: widget.isWindowOpen && !widget.isVacationMode,
                     onMark: (s) => _markWithPreference(s),
                   ),
-                  // Submitted preference + time, rendered from the backend
-                  // attendance record so the marked state is fully reflected.
+                  // Submitted preferences, rendered from the backend record so
+                  // the marked state is fully reflected. Live-Test-9
+                  // ISSUE-4.1: preference-GROUP selections render group-wise
+                  // (each group its own labelled section — never merged);
+                  // standalone meals keep the flat single-tag line.
                   if (widget.status == AttendanceStatus.present &&
+                      _markedGroupSections.isNotEmpty) ...[
+                    const SizedBox(height: 8),
+                    _MarkedSelectionsView(
+                      sections: _markedGroupSections,
+                      isDark: isDark,
+                    ),
+                  ] else if (widget.status == AttendanceStatus.present &&
                       (widget.markedPreference?.isNotEmpty ?? false)) ...[
                     const SizedBox(height: 6),
                     _MarkedMetaLine(
@@ -870,6 +906,119 @@ class _StatusBadge extends StatelessWidget {
           ),
         ),
       );
+}
+
+// Live-Test-9 ISSUE-4.1: submitted preference-GROUP selections, rendered as
+// one labelled section PER GROUP (never merged into a single flat tag list).
+
+class _MarkedSelectionsView extends StatelessWidget {
+  const _MarkedSelectionsView({
+    required this.sections,
+    required this.isDark,
+  });
+
+  /// [groupLabel → option labels (already carrying ×qty suffixes)].
+  final List<MapEntry<String, List<String>>> sections;
+  final bool isDark;
+
+  // Stable vibrant accent per group label — matches the admin builder's
+  // per-group identity colors so a group looks the same everywhere.
+  static const List<Color> _accents = [
+    AppColors.primary,
+    AppColors.violet,
+    AppColors.secondary,
+    AppColors.info,
+    AppColors.warning,
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: (isDark ? AppColors.backgroundDark : AppColors.background)
+            .withValues(alpha: isDark ? 0.5 : 1),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: (isDark ? AppColors.borderDark : AppColors.border)
+              .withValues(alpha: 0.6),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          for (var i = 0; i < sections.length; i++) ...[
+            if (i > 0) const SizedBox(height: 8),
+            Builder(builder: (context) {
+              final accent = _accents[
+                  sections[i].key.hashCode.abs() % _accents.length];
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Container(
+                        width: 6,
+                        height: 6,
+                        decoration: BoxDecoration(
+                          color: accent,
+                          borderRadius: BorderRadius.circular(3),
+                        ),
+                      ),
+                      const SizedBox(width: 6),
+                      Text(
+                        sections[i].key.toUpperCase(),
+                        style: AppTypography.labelSmall.copyWith(
+                          fontSize: 10,
+                          letterSpacing: 0.6,
+                          fontWeight: FontWeight.w800,
+                          color: isDark
+                              ? AppColors.textSecondaryDark
+                              : AppColors.textSecondary,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 5),
+                  Wrap(
+                    spacing: 6,
+                    runSpacing: 5,
+                    children: [
+                      for (final label in sections[i].value)
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 9, vertical: 3.5),
+                          decoration: BoxDecoration(
+                            color: accent
+                                .withValues(alpha: isDark ? 0.22 : 0.10),
+                            borderRadius: BorderRadius.circular(14),
+                            border: Border.all(
+                              color: accent.withValues(alpha: 0.45),
+                            ),
+                          ),
+                          child: Text(
+                            label,
+                            style: AppTypography.labelSmall.copyWith(
+                              color: isDark
+                                  ? Color.lerp(
+                                      accent, Colors.white, 0.45)!
+                                  : Color.lerp(
+                                      accent, Colors.black, 0.25)!,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                ],
+              );
+            }),
+          ],
+        ],
+      ),
+    );
+  }
 }
 
 // Marked meta line (preference / submitted time)

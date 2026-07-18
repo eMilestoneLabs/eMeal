@@ -39,6 +39,7 @@ class AttendanceModel {
     this.selections,
     this.preferences,
     this.source,
+    this.userRole,
   });
 
   final String id;
@@ -59,6 +60,16 @@ class AttendanceModel {
 
   /// Joined member phone (admin-facing). Null when not included.
   final String? userPhone;
+
+  /// Live-Test-9 ISSUE-4.5 (additive): the member's role — admin rosters
+  /// order Admin/Manager rows first. Null on older payloads.
+  final String? userRole;
+
+  /// True when this record belongs to an admin/manager-role member.
+  bool get isAdminRole {
+    final r = (userRole ?? '').toLowerCase();
+    return r.contains('admin') || r.contains('manager');
+  }
 
   /// Additive: ₹ price snapshot at mark time (per-day override or master).
   /// Null for pre-pricing records — billing falls back to the master meal price.
@@ -110,6 +121,7 @@ class AttendanceModel {
             ? j['preferences'] as List<dynamic>
             : null,
         source: j['source']?.toString(),
+        userRole: j['userRole']?.toString(),
       );
 
   Map<String, dynamic> toJson() => {
@@ -129,6 +141,7 @@ class AttendanceModel {
         'price': price,
         'preferences': preferences,
         'source': source,
+        'userRole': userRole,
       };
 
   AttendanceModel copyWith({
@@ -159,6 +172,7 @@ class AttendanceModel {
         selections: selections ?? this.selections,
         preferences: preferences ?? this.preferences,
         source: source,
+        userRole: userRole,
       );
 }
 

@@ -291,22 +291,25 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
                               final isDefaultAttend = user?.isDefaultAttendance ?? false;
                               // Read group config from shell scope (set by dashboard load).
                               final groupConfig = GroupConfigScope.maybeOf(context);
-                              final groupPrefsEnabled =
-                                  groupConfig?.preferencesEnabled
-                                      ?? dashProvider.preferencesEnabled;
                               final groupEnabledPrefs =
                                   groupConfig?.enabledPreferences
                                       ?? dashProvider.enabledPreferences;
-                              // Per-day / per-meal config (overlaid by the backend
-                              // onto /meals/today in Weekly & Day-Wise modes) takes
-                              // precedence; fall back to the group-level setting
-                              // when the meal does not specify its own.
-                              final prefsEnabled =
-                                  meal.preferencesEnabled || groupPrefsEnabled;
-                              // Raw tag strings so admin custom preference names
-                              // show exactly; fall back to group-level keys.
-                              final enabledPrefs =
-                                  meal.enabledPreferences.isNotEmpty
+                              // Live-Test-9 ISSUE-003: the meal card from
+                              // /meals/today IS the published day-effective
+                              // truth — the server has already overlaid the
+                              // published schedule (including a per-day
+                              // "preferences OFF"). The old `|| group-level`
+                              // fallback re-enabled the group's default tag
+                              // set (Veg/Non-Veg/Egg/Fish/Chicken) on days the
+                              // published schedule disabled preferences,
+                              // blocking Present until a phantom pick. The
+                              // group-level config now only fills in the TAG
+                              // LIST for legacy meals that are enabled but
+                              // carry no tags of their own.
+                              final prefsEnabled = meal.preferencesEnabled;
+                              final enabledPrefs = !prefsEnabled
+                                  ? const <String>[]
+                                  : meal.enabledPreferences.isNotEmpty
                                       ? meal.enabledPreferences
                                       : groupEnabledPrefs
                                           .map((e) => e.name)
@@ -317,6 +320,10 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
                                 meal: meal,
                                 status: dashProvider.statusForMeal(meal.id),
                                 markedPreference: record?.preference,
+                                // Live-Test-9 ISSUE-4.1: the full per-group
+                                // selection snapshot — rendered group-wise
+                                // (never merged into one flat tag list).
+                                markedSelections: record?.preferences,
                                 markedAt: record?.markedAt,
                                 isWindowOpen: dashProvider.isWindowOpen(meal),
                                 isWindowClosed:

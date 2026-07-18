@@ -22,6 +22,7 @@ class MealConfigForm extends StatefulWidget {
     super.key,
     this.initialMeal,
     required this.onSave,
+    this.onSaveForGroups,
     this.isSaving = false,
     this.initialPreferencesEnabled = false,
     this.pricingEnabled = false,
@@ -29,7 +30,20 @@ class MealConfigForm extends StatefulWidget {
 
   /// If non-null, pre-populates the form for editing.
   final MealModel? initialMeal;
-  final Future<void> Function(MealFormData data) onSave;
+
+  /// Live-Test-9 ISSUE-001: returns null on SUCCESS, or a user-facing error
+  /// message on failure. The form shows the message inline and preserves every
+  /// entered value — the host must only pop its sheet on success, never on
+  /// failure (popping on failure lost the admin's data and, combined with an
+  /// un-disabled Save button, stacked multiple pops into a black screen).
+  final Future<String?> Function(MealFormData data) onSave;
+
+  /// Live-Test-9 ISSUE-5.2 (create mode only): invoked when the admin picks
+  /// "Preference Groups" on a NEW meal. The host saves the meal (groups need
+  /// a meal id), closes the sheet and opens the Groups builder for the newly
+  /// created meal — one seamless step, no manual re-edit. Same success/error
+  /// contract as [onSave].
+  final Future<String?> Function(MealFormData data)? onSaveForGroups;
   final bool isSaving;
 
   /// When creating a new meal ([initialMeal] == null), this mirrors the
@@ -104,6 +118,15 @@ class _MealConfigFormState extends State<MealConfigForm> {
   // ── Validation ─────────────────────────────────────────────────────────────
   String? _windowError;
   bool _shortWindowWarning = false;
+
+  // ── Live-Test-9 ISSUE-001: submit lifecycle owned by the FORM ─────────────
+  // The sheet that hosts this form is built once and never rebuilds on
+  // provider notifications, so `widget.isSaving` is frozen at open time. The
+  // form itself is stateful — it guards re-entry (rapid taps), disables the
+  // button while the request runs, and surfaces the server's error inline
+  // while preserving everything the admin typed.
+  bool _submitting = false;
+  String? _submitError;
 
   @override
   void initState() {
@@ -213,9 +236,68 @@ class _MealConfigFormState extends State<MealConfigForm> {
 
   bool get _canSave =>
       !widget.isSaving &&
+      !_submitting &&
       _nameCtrl.text.trim().isNotEmpty &&
       _windowError == null &&
       _priceValid;
+
+  /// Snapshot of every entered value — shared by Save and the create-mode
+  /// Preference-Groups auto-save so the two paths can never drift.
+  MealFormData _collectFormData() {
+    return MealFormData(
+      name: _nameCtrl.text.trim(),
+      description:
+          _descCtrl.text.trim().isEmpty ? null : _descCtrl.text.trim(),
+      slotKey: _slotKeyCtrl.text.trim().isEmpty
+          ? 'meal'
+          : _slotKeyCtrl.text.trim().toLowerCase(),
+      order: _order,
+      openTime: _formatTime(_openTime),
+      closeTime: _formatTime(_closeTime),
+      menuItems: List.of(_menuItems),
+      // Live-Test-8 ISSUE-002: flat tags apply ONLY in Standalone mode —
+      // Groups mode keeps the flat list empty (mutual exclusivity; groups
+      // ride on bindings).
+      enablePreferences: _preferencesForMeal && !_groupsMode
+          ? List.of(_preferenceTags)
+          : const [],
+      imageBytes: List.of(_imageBytesList),
+      // No new bytes but an existing network photo remains → leave the
+      // server's imageUrl untouched (don't wipe it).
+      imageUntouched: _imageBytesList.isEmpty && _existingImageUrl != null,
+      price:
+          widget.pricingEnabled ? int.tryParse(_priceCtrl.text.trim()) : null,
+    );
+  }
+
+  /// Live-Test-9 ISSUE-001: single-flight submit. Awaits the given handler and
+  /// either clears (success — the host pops its own sheet) or shows the
+  /// returned error inline with all entered data preserved. Re-entry is
+  /// impossible while a submit is in flight. Returns true on success.
+  Future<bool> _submitWith(
+    Future<String?> Function(MealFormData data) handler,
+  ) async {
+    if (_submitting || widget.isSaving) return false;
+    setState(() {
+      _submitting = true;
+      _submitError = null;
+    });
+    String? error;
+    try {
+      error = await handler(_collectFormData());
+    } catch (_) {
+      // A handler that throws must never freeze or crash the sheet.
+      error = 'Something went wrong while saving. Please try again.';
+    }
+    if (!mounted) return error == null;
+    setState(() {
+      _submitting = false;
+      _submitError = error;
+    });
+    return error == null;
+  }
+
+  Future<void> _handleSave() => _submitWith(widget.onSave);
 
   int get _totalImageBytes =>
       _imageBytesList.fold(0, (sum, b) => sum + b.length);
@@ -369,9 +451,26 @@ class _MealConfigFormState extends State<MealConfigForm> {
 
   /// Mode card: Preference Groups → the premium Groups builder (create
   /// groups, restore saved ones, edit rules). Server truth reloads on return.
+  ///
+  /// Live-Test-9 ISSUE-5.1/5.2: on a NEW meal the same card now works too —
+  /// groups need a meal id, so the meal is saved automatically first and the
+  /// host opens the builder for it (identical workflow to Edit Meal, zero
+  /// manual steps).
   Future<void> _openGroupsBuilder() async {
+    if (_bindingsBusy || widget.isSaving || _submitting) return;
     final m = widget.initialMeal;
-    if (m == null || _bindingsBusy || widget.isSaving) return;
+    if (m == null) {
+      final handler = widget.onSaveForGroups;
+      if (handler == null) return;
+      if (!_canSave) {
+        setState(() => _submitError =
+            'Complete the meal details first — a name and a valid attendance '
+            'window are required before configuring Preference Groups.');
+        return;
+      }
+      await _submitWith(handler);
+      return;
+    }
     await Navigator.of(context).push(MaterialPageRoute(
       builder: (_) => PreferenceGroupsScreen(meal: m),
     ));
@@ -787,49 +886,52 @@ class _MealConfigFormState extends State<MealConfigForm> {
         _buildPreferenceToggle(colorScheme),
         const SizedBox(height: 24),
 
+        // ── Live-Test-9 ISSUE-001: inline save error (data preserved) ─────
+        if (_submitError != null) ...[
+          Container(
+            width: double.infinity,
+            margin: const EdgeInsets.only(bottom: 12),
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            decoration: BoxDecoration(
+              color: AppColors.error.withValues(alpha: 0.08),
+              borderRadius: BorderRadius.circular(12),
+              border:
+                  Border.all(color: AppColors.error.withValues(alpha: 0.35)),
+            ),
+            child: Row(
+              children: [
+                const Icon(Icons.error_outline_rounded,
+                    size: 18, color: AppColors.error),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    _submitError!,
+                    style: const TextStyle(
+                      fontSize: 12.5,
+                      height: 1.35,
+                      color: AppColors.error,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+
         // ── Save button ───────────────────────────────────────────────────
         SizedBox(
           width: double.infinity,
           height: 52,
           child: FilledButton(
-            onPressed: _canSave
-                ? () {
-                    widget.onSave(MealFormData(
-                      name: _nameCtrl.text.trim(),
-                      description: _descCtrl.text.trim().isEmpty
-                          ? null
-                          : _descCtrl.text.trim(),
-                      slotKey: _slotKeyCtrl.text.trim().isEmpty
-                          ? 'meal'
-                          : _slotKeyCtrl.text.trim().toLowerCase(),
-                      order: _order,
-                      openTime: _formatTime(_openTime),
-                      closeTime: _formatTime(_closeTime),
-                      menuItems: List.of(_menuItems),
-                      // Live-Test-8 ISSUE-002: flat tags apply ONLY in
-                      // Standalone mode — Groups mode keeps the flat list
-                      // empty (mutual exclusivity; groups ride on bindings).
-                      enablePreferences: _preferencesForMeal && !_groupsMode
-                          ? List.of(_preferenceTags)
-                          : const [],
-                      imageBytes: List.of(_imageBytesList),
-                      // No new bytes but an existing network photo remains →
-                      // leave the server's imageUrl untouched (don't wipe it).
-                      imageUntouched:
-                          _imageBytesList.isEmpty && _existingImageUrl != null,
-                      price: widget.pricingEnabled
-                          ? int.tryParse(_priceCtrl.text.trim())
-                          : null,
-                    ));
-                  }
-                : null,
+            onPressed: _canSave ? _handleSave : null,
             style: FilledButton.styleFrom(
               shape: RoundedRectangleBorder(
                 borderRadius:
                     BorderRadius.circular(AppConstants.buttonRadius),
               ),
             ),
-            child: widget.isSaving
+            child: widget.isSaving || _submitting
                 ? const SizedBox(
                     width: 20,
                     height: 20,
@@ -1137,41 +1239,45 @@ class _MealConfigFormState extends State<MealConfigForm> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // ── Live-Test-8 ISSUE-002: BOTH preference modes, mutually
-                  // exclusive, switchable without losing configuration.
-                  // (Edit mode only — a new meal has no bindings to manage.)
-                  if (widget.initialMeal != null) ...[
-                    Row(
-                      children: [
-                        Expanded(
-                          child: _PrefModeCard(
-                            icon: Icons.sell_rounded,
-                            title: 'Standalone',
-                            subtitle: 'One simple tag list',
-                            selected: !_groupsMode,
-                            busy: _bindingsBusy,
-                            onTap: _selectStandaloneMode,
-                          ),
+                  // ── Live-Test-9 ISSUE-5.1: BOTH preference modes on CREATE
+                  // and EDIT — the exact same workflow. On a new meal,
+                  // choosing Preference Groups auto-saves it and opens the
+                  // builder (ISSUE-5.2); modes stay mutually exclusive and
+                  // switchable without losing configuration.
+                  Row(
+                    children: [
+                      Expanded(
+                        child: _PrefModeCard(
+                          icon: Icons.sell_rounded,
+                          title: 'Standalone',
+                          subtitle: 'Members pick ONE simple tag',
+                          selected: !_groupsMode,
+                          busy: _bindingsBusy || _submitting,
+                          accent: AppColors.secondary,
+                          onTap: _selectStandaloneMode,
                         ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: _PrefModeCard(
-                            icon: Icons.account_tree_rounded,
-                            title: 'Preference Groups',
-                            subtitle: _groupsMode
-                                ? '${_activeGroupNames.length} active group(s)'
-                                : (_suspendedGroupNames.isNotEmpty
-                                    ? '${_suspendedGroupNames.length} saved — tap to manage'
-                                    : 'Rules, veg flags, price add-ons'),
-                            selected: _groupsMode,
-                            busy: _bindingsBusy,
-                            onTap: _openGroupsBuilder,
-                          ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: _PrefModeCard(
+                          icon: Icons.account_tree_rounded,
+                          title: 'Preference Groups',
+                          subtitle: widget.initialMeal == null
+                              ? 'Saves the meal & opens the builder'
+                              : _groupsMode
+                                  ? '${_activeGroupNames.length} active group(s)'
+                                  : (_suspendedGroupNames.isNotEmpty
+                                      ? '${_suspendedGroupNames.length} saved — tap to manage'
+                                      : 'Rules, veg flags, price add-ons'),
+                          selected: _groupsMode,
+                          busy: _bindingsBusy || _submitting,
+                          accent: AppColors.primary,
+                          onTap: _openGroupsBuilder,
                         ),
-                      ],
-                    ),
-                    const SizedBox(height: 12),
-                  ],
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
                   if (_groupsMode)
                     _buildGroupsSummary(colorScheme)
                   else ...[
@@ -1249,19 +1355,6 @@ class _MealConfigFormState extends State<MealConfigForm> {
                           .withValues(alpha: 0.6),
                     ),
                   ),
-                  if (widget.initialMeal == null) ...[
-                    const SizedBox(height: 8),
-                    Text(
-                      'Need multi-part choices (Rice/Roti · Veg/Non-Veg with '
-                      'rules and price add-ons)? Save the meal, then open '
-                      'Edit Meal → Preference Groups.',
-                      style: TextStyle(
-                        fontSize: 10,
-                        color: colorScheme.onSurfaceVariant
-                            .withValues(alpha: 0.6),
-                      ),
-                    ),
-                  ],
                   ],
                 ],
               ),
@@ -1335,10 +1428,12 @@ class _MealConfigFormState extends State<MealConfigForm> {
   }
 }
 
-// ── Live-Test-8 ISSUE-002: compact premium mode card ─────────────────────────
+// ── Live-Test-9 ISSUE-5.3/5.4: premium preference mode card ──────────────────
 
-/// Mini selection card for the Edit-Meal preference mode switch — animated
-/// fill/border/check with explicit high-contrast colors in both themes.
+/// Rich selection card for the preference mode switch (Create AND Edit Meal —
+/// identical workflow). Gradient-tinted icon badge, animated gradient fill,
+/// glow shadow and scaling check on selection; explicit high-contrast colors
+/// in both themes.
 class _PrefModeCard extends StatelessWidget {
   const _PrefModeCard({
     required this.icon,
@@ -1347,6 +1442,7 @@ class _PrefModeCard extends StatelessWidget {
     required this.selected,
     required this.busy,
     required this.onTap,
+    this.accent = AppColors.primary,
   });
 
   final IconData icon;
@@ -1356,45 +1452,86 @@ class _PrefModeCard extends StatelessWidget {
   final bool busy;
   final VoidCallback onTap;
 
+  /// Per-mode identity color — Standalone and Groups get distinct vibrant
+  /// accents so the two modes read at a glance.
+  final Color accent;
+
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final accent = AppColors.primary;
     return Opacity(
       opacity: busy ? 0.55 : 1,
       child: Material(
         color: Colors.transparent,
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(14),
         child: InkWell(
           onTap: busy ? null : onTap,
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(14),
           child: AnimatedContainer(
             duration: const Duration(milliseconds: 220),
             curve: Curves.easeOutCubic,
-            padding: const EdgeInsets.all(10),
+            padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
-              color: selected
-                  ? accent.withValues(alpha: isDark ? 0.16 : 0.07)
-                  : colorScheme.surfaceContainerLowest,
-              borderRadius: BorderRadius.circular(12),
+              gradient: selected
+                  ? LinearGradient(
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                      colors: isDark
+                          ? [
+                              accent.withValues(alpha: 0.28),
+                              accent.withValues(alpha: 0.10),
+                            ]
+                          : [
+                              accent.withValues(alpha: 0.14),
+                              accent.withValues(alpha: 0.04),
+                            ],
+                    )
+                  : null,
+              color: selected ? null : colorScheme.surfaceContainerLowest,
+              borderRadius: BorderRadius.circular(14),
               border: Border.all(
                 color: selected
                     ? accent
                     : colorScheme.outlineVariant.withValues(alpha: 0.5),
-                width: selected ? 1.4 : 1,
+                width: selected ? 1.6 : 1,
               ),
+              boxShadow: selected
+                  ? [
+                      BoxShadow(
+                        color: accent.withValues(alpha: isDark ? 0.30 : 0.18),
+                        blurRadius: 14,
+                        offset: const Offset(0, 4),
+                      ),
+                    ]
+                  : null,
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Row(
                   children: [
-                    Icon(icon,
-                        size: 16,
-                        color: selected
-                            ? accent
-                            : colorScheme.onSurfaceVariant),
+                    // Gradient icon badge — the card's visual identity.
+                    Container(
+                      width: 30,
+                      height: 30,
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                          colors: selected
+                              ? [accent, Color.lerp(accent, Colors.black, 0.25)!]
+                              : [
+                                  accent.withValues(alpha: 0.18),
+                                  accent.withValues(alpha: 0.10),
+                                ],
+                        ),
+                        borderRadius: BorderRadius.circular(9),
+                      ),
+                      child: Icon(icon,
+                          size: 16,
+                          color: selected ? Colors.white : accent),
+                    ),
                     const Spacer(),
                     AnimatedSwitcher(
                       duration: const Duration(milliseconds: 220),
@@ -1405,7 +1542,7 @@ class _PrefModeCard extends StatelessWidget {
                             ? Icons.check_circle_rounded
                             : Icons.radio_button_unchecked_rounded,
                         key: ValueKey(selected),
-                        size: 16,
+                        size: 18,
                         color: selected
                             ? accent
                             : colorScheme.onSurfaceVariant
@@ -1414,13 +1551,18 @@ class _PrefModeCard extends StatelessWidget {
                     ),
                   ],
                 ),
-                const SizedBox(height: 6),
+                const SizedBox(height: 8),
                 Text(
                   title,
                   style: TextStyle(
-                    fontSize: 12,
+                    fontSize: 12.5,
                     fontWeight: FontWeight.w800,
-                    color: selected ? accent : colorScheme.onSurface,
+                    letterSpacing: 0.1,
+                    color: selected
+                        ? (isDark
+                            ? Color.lerp(accent, Colors.white, 0.45)!
+                            : Color.lerp(accent, Colors.black, 0.25)!)
+                        : colorScheme.onSurface,
                   ),
                 ),
                 const SizedBox(height: 2),

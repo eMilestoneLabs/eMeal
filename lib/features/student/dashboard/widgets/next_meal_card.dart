@@ -18,6 +18,7 @@ class NextMealCard extends StatelessWidget {
     super.key,
     this.meal,
     this.status,
+    this.record,
     this.isWindowOpen = false,
     this.isWindowPast = false,
     this.onMarkPresent,
@@ -28,6 +29,11 @@ class NextMealCard extends StatelessWidget {
 
   final MealModel? meal;
   final AttendanceStatus? status;
+
+  /// Live-Test-9 ISSUE-4.1: the meal's attendance record — after marking, the
+  /// dashboard card keeps showing the submitted preferences, GROUP-wise
+  /// ("Rice Type · Roti", "Protein · Milk") — never merged into one flat list.
+  final AttendanceModel? record;
   final bool isWindowOpen;
   final bool isWindowPast;
   final VoidCallback? onMarkPresent;
@@ -39,6 +45,33 @@ class NextMealCard extends StatelessWidget {
   /// Issue 3: tapping the card body (anywhere except the action buttons) opens
   /// the meal's detail screen. Null disables the tap.
   final VoidCallback? onTap;
+
+  /// Live-Test-9 ISSUE-4.1: chips for the submitted preferences. Group
+  /// selections render as "Group · Option (×qty)" so the group relationship
+  /// is never lost; standalone falls back to the single stored tag.
+  List<String> get _prefChips {
+    final rec = record;
+    if (rec == null) return const [];
+    final raw = rec.preferences;
+    if (raw != null && raw.isNotEmpty) {
+      final chips = <String>[];
+      for (final s in raw) {
+        if (s is! Map) continue;
+        final g = s['groupLabel']?.toString().trim() ?? '';
+        final o = s['optionLabel']?.toString().trim() ?? '';
+        if (g.isEmpty || o.isEmpty) continue;
+        final qty = s['quantity'];
+        chips.add(
+            '$g · $o${qty is num && qty > 1 ? ' ×${qty.toInt()}' : ''}');
+      }
+      if (chips.isNotEmpty) return chips;
+    }
+    final p = rec.preference?.trim();
+    if (p != null && p.isNotEmpty) {
+      return [p[0].toUpperCase() + p.substring(1)];
+    }
+    return const [];
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -188,6 +221,43 @@ class NextMealCard extends StatelessWidget {
                   ),
                 ),
               ],
+            ),
+          ],
+          // Live-Test-9 ISSUE-4.1: submitted preferences stay visible after
+          // marking Present — each chip keeps its GROUP relationship
+          // ("Rice Type · Roti"); standalone meals show their single tag.
+          if (status == AttendanceStatus.present &&
+              _prefChips.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            SizedBox(
+              height: 22,
+              child: ListView.separated(
+                scrollDirection: Axis.horizontal,
+                itemCount: _prefChips.length,
+                separatorBuilder: (_, _) => const SizedBox(width: 6),
+                itemBuilder: (context, i) => Container(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 8, vertical: 2.5),
+                  decoration: BoxDecoration(
+                    color: AppColors.primary
+                        .withValues(alpha: isDark ? 0.20 : 0.08),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: AppColors.primary.withValues(alpha: 0.35),
+                    ),
+                  ),
+                  child: Text(
+                    _prefChips[i],
+                    style: AppTypography.labelSmall.copyWith(
+                      fontSize: 10.5,
+                      color: isDark
+                          ? AppColors.primaryLight
+                          : AppColors.primaryDark,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+              ),
             ),
           ],
           if (!isMarked && isWindowOpen) ...[

@@ -53,6 +53,11 @@ abstract final class AppConstants {
   /// Maximum number of images a meal may carry. Exactly one.
   static const int maxMealImages = 1;
 
+  /// SRS Module 03 MMT-001: Master Meal Template cap per group. Mirrors the
+  /// server default (MEALS_MAX_PER_GROUP) — the server stays authoritative;
+  /// this only powers the friendly pre-save gate on Add Meal.
+  static const int maxMasterMealsPerGroup = 10;
+
   // ── Attendance window ──────────────────────────────────────────────────────
   /// Minutes before a meal window closes that reminders fire.
   static const int reminderLeadMinutes1 = 60;

@@ -31,7 +31,12 @@ class OpenNowCarousel extends StatefulWidget {
     required this.onSkip,
     required this.onMarkAttendance,
     this.onTapMeal,
+    this.recordOf,
   });
+
+  /// Live-Test-9 ISSUE-4.1: attendance record lookup so a marked card keeps
+  /// showing the submitted preferences (group-wise) on the dashboard.
+  final AttendanceModel? Function(MealModel meal)? recordOf;
 
   final List<MealModel> meals;
 
@@ -145,15 +150,25 @@ class _OpenNowCarouselState extends State<OpenNowCarousel>
   double _cardHeight() {
     var anyButtons = false;
     var anyMenu = false;
+    var anyPrefs = false;
     for (final m in widget.meals) {
       final st = widget.statusOf(m);
       final marked = st != null && st != AttendanceStatus.pending;
       if (!marked && widget.isWindowOpen(m)) anyButtons = true;
       if (m.menuItems.any((e) => e.trim().isNotEmpty)) anyMenu = true;
+      // Live-Test-9 ISSUE-4.1: room for the submitted-preferences chip row.
+      if (st == AttendanceStatus.present) {
+        final rec = widget.recordOf?.call(m);
+        if ((rec?.preferences?.isNotEmpty ?? false) ||
+            ((rec?.preference ?? '').trim().isNotEmpty)) {
+          anyPrefs = true;
+        }
+      }
     }
     var h = 120.0; // icon row + chip + name + window + padding
     if (anyMenu) h += 28;
     if (anyButtons) h += 54;
+    if (anyPrefs) h += 30;
     return h;
   }
 
@@ -181,6 +196,7 @@ class _OpenNowCarouselState extends State<OpenNowCarousel>
                     child: NextMealCard(
                       meal: meal,
                       status: widget.statusOf(meal),
+                      record: widget.recordOf?.call(meal),
                       isWindowOpen: widget.isWindowOpen(meal),
                       isWindowPast: widget.isWindowPast(meal),
                       onMarkPresent: () => widget.onMarkPresent(meal),

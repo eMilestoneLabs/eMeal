@@ -606,10 +606,14 @@ class _GuestSheetState extends State<_GuestSheet> {
         : 'Guest (${g.typeLabel})';
     final parts = <String>[
       g.typeLabel,
-      if (g.mealPreference != null)
+      // Live-Test-9 ISSUE-4: the flat mealPreference is only the DERIVED
+      // primary (first group's pick) — showing it next to the full group
+      // picks duplicated the first option ("Roti · Roti · Milk"). It renders
+      // only when there are no group picks (standalone meals).
+      if (g.preferencesLabel.isNotEmpty)
+        g.preferencesLabel
+      else if (g.mealPreference != null)
         MealPreferenceOption.display(g.mealPreference!).label,
-      // ISSUE-2: the guest's preference-group picks (e.g. "Ruti · Chicken").
-      if (g.preferencesLabel.isNotEmpty) g.preferencesLabel,
       if (g.priceSnapshot != null) '₹${g.priceSnapshot}',
     ];
     return Column(

@@ -213,13 +213,16 @@ class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
     StudentDashboardProvider provider,
     MealModel meal,
   ) async {
-    // Issue 1: honor per-day/meal-level preference (overlaid by the backend on
-    // /meals/today), not just the group-level flag. If this meal requires a
-    // preference, route to the attendance screen so the student picks a tag.
-    final requiresPreference =
-        (meal.preferencesEnabled || provider.preferencesEnabled) &&
+    // Live-Test-9 ISSUE-003: the meal card from /meals/today IS the published
+    // day-effective truth — when the published day disables preferences the
+    // old `|| group-level` OR still forced the preference detour. The group
+    // list only fills in TAGS for legacy meals that are enabled without their
+    // own. Preference-GROUP meals (day-narrowed by the backend) always route
+    // so the member completes each group on the attendance screen.
+    final requiresPreference = meal.preferenceGroups.isNotEmpty ||
+        (meal.preferencesEnabled &&
             (meal.enabledPreferences.isNotEmpty ||
-                provider.enabledPreferences.isNotEmpty);
+                provider.enabledPreferences.isNotEmpty));
     if (requiresPreference) {
       context.go(RouteNames.studentAttendance);
       return;
@@ -484,6 +487,9 @@ class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
                           meals: provider.openNowMeals,
                           pendingIndex: provider.firstPendingOpenIndex,
                           statusOf: (m) => provider.statusForMeal(m.id),
+                          // Live-Test-9 ISSUE-4.1: marked cards keep showing
+                          // the submitted preferences, group-wise.
+                          recordOf: (m) => provider.recordForMeal(m.id),
                           isWindowOpen: provider.isWindowOpen,
                           isWindowPast: provider.isWindowPast,
                           // Issue #1: mark in place so the card flips to Present.
