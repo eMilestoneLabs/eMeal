@@ -7,6 +7,7 @@ import 'package:smart_meal_management/data/repositories/group_repository.dart';
 import 'package:smart_meal_management/data/repositories/meal_repository.dart';
 import 'package:smart_meal_management/data/services/billing_service.dart';
 import 'package:smart_meal_management/data/services/export_service.dart';
+import 'package:smart_meal_management/data/services/response_cache_service.dart';
 import 'package:smart_meal_management/features/admin/exports/providers/export_provider.dart';
 import 'package:smart_meal_management/features/admin/exports/screens/data_archives_screen.dart';
 import 'package:smart_meal_management/features/admin/exports/screens/export_preview_screen.dart';
@@ -72,17 +73,51 @@ class _ExportScreenState extends State<ExportScreen> {
   Future<void> _loadGroups() async {
     final auth = AuthProviderScope.of(context);
     final user = auth.currentUser;
-    if (user == null) return;
+    if (user == null) {
+      // Live-Test-11 ISSUE-019: never leave the selector on its skeleton —
+      // the old early-return kept _loadingGroups=true forever.
+      if (mounted) setState(() => _loadingGroups = false);
+      return;
+    }
     final orgId = user.organizationId;
+
+    String? resolveSelected(List<GroupModel> groups) {
+      final uid = auth.currentUser?.effectiveGroupIds.firstOrNull;
+      final match = groups.any((g) => g.id == uid);
+      return match ? uid : (groups.isNotEmpty ? groups.first.id : null);
+    }
+
+    // Live-Test-11 ISSUE-019: cache-first (SWR) — paint the selector from the
+    // SAME shared 'admin_groups:$org' cache every other admin screen uses, so
+    // opening Export never blocks on a groups round-trip ("Groups Loading").
+    // Miss-vs-empty aware: only a true cache MISS shows the skeleton.
+    final cached = await ResponseCacheService.instance.readListOrNull(
+        'admin_groups:$orgId', GroupModel.fromJson,
+        maxAge: const Duration(hours: 12));
+    if (!mounted) return;
+    if (cached != null) {
+      setState(() {
+        _loadingGroups = false;
+        _groups = cached;
+        _selectedGroupId = resolveSelected(cached);
+      });
+    }
+
+    // Silent refresh (same SWR discipline as the attendance screen).
     final result = await _groupRepo.getOrganisationGroups(organizationId: orgId);
     if (!mounted) return;
     setState(() {
       _loadingGroups = false;
       if (result case Ok(:final value)) {
         _groups = value.data;
-        final uid = auth.currentUser?.effectiveGroupIds.firstOrNull;
-        final match = _groups.any((g) => g.id == uid);
-        _selectedGroupId = match ? uid : (_groups.isNotEmpty ? _groups.first.id : null);
+        ResponseCacheService.instance
+            .writeList('admin_groups:$orgId', _groups, (g) => g.toJson());
+        // Keep an already-made selection when it still exists; only resolve
+        // fresh when there is none (or it vanished server-side).
+        final sel = _selectedGroupId;
+        if (sel == null || !_groups.any((g) => g.id == sel)) {
+          _selectedGroupId = resolveSelected(_groups);
+        }
       }
     });
   }

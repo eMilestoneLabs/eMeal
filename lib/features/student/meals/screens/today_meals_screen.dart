@@ -411,11 +411,18 @@ class _TodayMealCardState extends State<_TodayMealCard> {
   List<PreferenceSelection> _groupSelections = const [];
   bool _groupComplete = false;
 
+  // Live-Test-11 ISSUE-002: "Present with new choices" — re-opens the
+  // preference action area on an already-marked card (window still open) so
+  // the member can modify picks before returning to Present. A plain
+  // "Mark Present" keeps the previous picks (the server restores them).
+  bool _editingSelections = false;
+
   bool get _hasPreferenceGroups =>
       widget.meal.preferenceGroups.isNotEmpty &&
       widget.onMarkWithSelections != null;
 
   void _submit(AttendanceStatus s) {
+    if (_editingSelections) setState(() => _editingSelections = false);
     if (_hasPreferenceGroups) {
       widget.onMarkWithSelections!(
         s,
@@ -431,7 +438,9 @@ class _TodayMealCardState extends State<_TodayMealCard> {
   bool get _canMark =>
       widget.isWindowOpen &&
       !widget.isVacationMode &&
-      (widget.status == null || widget.status == AttendanceStatus.pending);
+      (widget.status == null ||
+          widget.status == AttendanceStatus.pending ||
+          _editingSelections);
 
   bool get _isMarked =>
       widget.status != null && widget.status != AttendanceStatus.pending;
@@ -656,19 +665,26 @@ class _TodayMealCardState extends State<_TodayMealCard> {
             )
 
           // ── Already marked state ───────────────────────────────────────
-          else if (_isMarked)
+          else if (_isMarked && !_editingSelections)
             _MarkedState(
               status: widget.status!,
               isDark: isDark,
               canChange: widget.isWindowOpen,
               windowClosed: widget.isWindowPast,
               onMark: _submit,
+              // ISSUE-002: preference meals offer "Present with new choices".
+              onEditSelections:
+                  (_hasPreferenceGroups || widget.preferencesEnabled)
+                      ? () => setState(() => _editingSelections = true)
+                      : null,
             )
 
           // ── Action area (pending + window open/past) ───────────────────
           else ...[
             // Default attendance flip: show "Mark Absent" as primary when on
-            if (widget.isDefaultAttend && widget.isWindowOpen)
+            if (widget.isDefaultAttend &&
+                widget.isWindowOpen &&
+                !_editingSelections)
               _DefaultAttendActions(
                 onMarkAbsent: () => _submit(AttendanceStatus.absent),
                 isDark: isDark,
@@ -1044,6 +1060,7 @@ class _MarkedState extends StatelessWidget {
     required this.canChange,
     required this.onMark,
     this.windowClosed = false,
+    this.onEditSelections,
   });
 
   final AttendanceStatus status;
@@ -1051,6 +1068,10 @@ class _MarkedState extends StatelessWidget {
   final bool canChange;
   final bool windowClosed;
   final void Function(AttendanceStatus) onMark;
+
+  /// ISSUE-002: non-null on preference meals — "Present with new choices"
+  /// re-opens the selector so the member can modify picks before Present.
+  final VoidCallback? onEditSelections;
 
   @override
   Widget build(BuildContext context) {
@@ -1152,14 +1173,20 @@ class _MarkedState extends StatelessWidget {
     showModalBottomSheet<void>(
       context: context,
       backgroundColor: Colors.transparent,
-      builder: (_) => _ChangeStatusSheet(onMark: onMark),
+      builder: (_) => _ChangeStatusSheet(
+        onMark: onMark,
+        onEditSelections: onEditSelections,
+      ),
     );
   }
 }
 
 class _ChangeStatusSheet extends StatelessWidget {
-  const _ChangeStatusSheet({required this.onMark});
+  const _ChangeStatusSheet({required this.onMark, this.onEditSelections});
   final void Function(AttendanceStatus) onMark;
+
+  /// ISSUE-002: preference meals — modify picks before returning to Present.
+  final VoidCallback? onEditSelections;
 
   @override
   Widget build(BuildContext context) {
@@ -1188,7 +1215,11 @@ class _ChangeStatusSheet extends StatelessWidget {
           const SizedBox(height: AppConstants.space16),
           _SheetOption(
             icon: Icons.check_circle_rounded,
-            label: 'Mark Present',
+            label: onEditSelections != null
+                // ISSUE-002: previous picks (and auto-cancelled guests) are
+                // restored server-side — say so.
+                ? 'Mark Present (keep previous choices)'
+                : 'Mark Present',
             color: AppColors.present,
             onTap: () {
               Navigator.of(context).pop();
@@ -1196,6 +1227,18 @@ class _ChangeStatusSheet extends StatelessWidget {
             },
           ),
           const SizedBox(height: AppConstants.space8),
+          if (onEditSelections != null) ...[
+            _SheetOption(
+              icon: Icons.tune_rounded,
+              label: 'Present with new choices',
+              color: AppColors.primary,
+              onTap: () {
+                Navigator.of(context).pop();
+                onEditSelections!();
+              },
+            ),
+            const SizedBox(height: AppConstants.space8),
+          ],
           // Q17/Q21: Skip removed — Present or Absent only.
           _SheetOption(
             icon: Icons.cancel_rounded,

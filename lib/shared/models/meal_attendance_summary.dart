@@ -31,6 +31,7 @@ class MealAttendanceSummary {
     this.vacationCount = 0,
     this.pendingCount,
     this.guestPreferenceGroupBreakdown = const {},
+    this.preferenceGroupPickCounts = const {},
     this.guestPendingApproval = 0,
     this.guestCancelled = 0,
     this.guestNoShow = 0,
@@ -91,6 +92,12 @@ class MealAttendanceSummary {
   /// snapshotted labels — every group a guest selected counts (the flat
   /// [guestPreferenceBreakdown] only carries the derived primary tag).
   final Map<String, Map<String, int>> guestPreferenceGroupBreakdown;
+
+  /// Live-Test-11 ISSUE-016 (additive): pick-ROW count per member preference
+  /// group label — headcount validation for quantity-enabled groups where the
+  /// breakdown totals are plate counts ("Ruti ×3" = 1 pick, 3 plates). Empty
+  /// on cached pre-fix payloads (validation then falls back to plate totals).
+  final Map<String, int> preferenceGroupPickCounts;
 
   /// Live-Test-10 Kitchen Summary (additive): administrative guest-request
   /// statuses. Only [guestCount] (approved bookings) feeds kitchen, billing
@@ -165,6 +172,7 @@ class MealAttendanceSummary {
           : int.tryParse(j['pendingCount']?.toString() ?? ''),
       guestPreferenceGroupBreakdown:
           _nestedBreakdown(j['guestPreferenceGroupBreakdown']),
+      preferenceGroupPickCounts: _breakdown(j['preferenceGroupPickCounts']),
       guestPendingApproval: _asInt(j['guestPendingApproval']),
       guestCancelled: _asInt(j['guestCancelled']),
       guestNoShow: _asInt(j['guestNoShow']),
@@ -199,6 +207,7 @@ class MealAttendanceSummary {
         'vacationCount': vacationCount,
         'pendingCount': pendingCount,
         'guestPreferenceGroupBreakdown': guestPreferenceGroupBreakdown,
+        'preferenceGroupPickCounts': preferenceGroupPickCounts,
         'guestPendingApproval': guestPendingApproval,
         'guestCancelled': guestCancelled,
         'guestNoShow': guestNoShow,

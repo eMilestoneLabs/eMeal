@@ -216,6 +216,9 @@ class AttendanceRepository implements IAttendanceRepository {
   @override
   Future<Result<AttendanceModel>> adminOverride({
     required AttendanceModel record,
+    // Live-Test-11 ISSUE-010: admin SAME-DAY self-correction — relaxes only
+    // the closed-window gate for today; no approval, always audited.
+    bool correction = false,
   }) async {
     // Issue 6/5: persist an admin override (bypasses window + vacation; the
     // backend snapshots the effective price). Works for any member and for
@@ -233,6 +236,7 @@ class AttendanceRepository implements IAttendanceRepository {
         // like the member mark path; the server validates them identically.
         if (record.selections != null)
           'selections': record.selections!.map((s) => s.toJson()).toList(),
+        if (correction) 'correction': true,
       },
     );
     return switch (result) {

@@ -250,8 +250,28 @@ class _GroupAppBar extends StatelessWidget {
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
 
+    // Live-Test-11 ISSUE-006: long group names must show in FULL. Measure the
+    // name against the space actually available beside the rename pencil and
+    // the status chip; when one line can't fit, the name wraps to two lines
+    // and the header grows to match — responsive, never a "Midnapore…" cut.
+    const nameStyle = TextStyle(
+      fontSize: 20,
+      fontWeight: FontWeight.w800,
+      color: AppColors.textPrimary,
+    );
+    final screenW = MediaQuery.of(context).size.width;
+    // 40 horizontal padding + rename icon (~30 when shown) + chip ≈ 96.
+    final nameMaxW =
+        screenW - 40 - (group.isActive ? 30 : 0) - 96;
+    final painter = TextPainter(
+      text: TextSpan(text: group.name, style: nameStyle),
+      maxLines: 1,
+      textDirection: TextDirection.ltr,
+    )..layout();
+    final nameWraps = painter.width > nameMaxW;
+
     return SliverAppBar(
-      expandedHeight: 160,
+      expandedHeight: nameWraps ? 188 : 160,
       floating: false,
       pinned: true,
       forceElevated: forceElevated,
@@ -308,12 +328,10 @@ class _GroupAppBar extends StatelessWidget {
                       Flexible(
                         child: Text(
                           group.name,
-                          style: const TextStyle(
-                            fontSize: 20,
-                            fontWeight: FontWeight.w800,
-                            color: AppColors.textPrimary,
-                          ),
-                          maxLines: 1,
+                          style: nameStyle,
+                          // ISSUE-006: wrap to a second line when needed —
+                          // ellipsis only guards truly pathological names.
+                          maxLines: nameWraps ? 2 : 1,
                           overflow: TextOverflow.ellipsis,
                         ),
                       ),

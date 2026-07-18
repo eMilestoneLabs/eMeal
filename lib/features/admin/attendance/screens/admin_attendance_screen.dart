@@ -31,7 +31,14 @@ import 'package:smart_meal_management/shared/widgets/app_skeleton.dart';
 /// Includes a group selector so admins managing multiple groups can switch
 /// context without leaving the screen.
 class AdminAttendanceScreen extends StatefulWidget {
-  const AdminAttendanceScreen({super.key});
+  const AdminAttendanceScreen({super.key, this.autoOpen});
+
+  /// Live-Test-11 ISSUE-001: notification deep-link intent. When opened from a
+  /// bell/tray notification this jumps straight into the actual approval UI:
+  /// 'guests' → hosted-guest approvals sheet (once group context loads),
+  /// 'corrections' → Correction Requests queue, 'vacations' → Vacation
+  /// Requests queue. Null = normal attendance screen.
+  final String? autoOpen;
 
   @override
   State<AdminAttendanceScreen> createState() => _AdminAttendanceScreenState();
@@ -54,6 +61,19 @@ class _AdminAttendanceScreenState extends State<AdminAttendanceScreen> {
       _provider = AdminAttendanceProvider();
       _provider.addListener(_rebuild);
       _loadGroups();
+      // ISSUE-001: corrections/vacations queues need no group context — open
+      // them immediately so the notification tap lands on the approval UI.
+      final open = widget.autoOpen;
+      if (open == 'corrections' || open == 'vacations') {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted) return;
+          Navigator.of(context).push(MaterialPageRoute(
+            builder: (_) => open == 'corrections'
+                ? const CorrectionRequestsScreen()
+                : const VacationRequestsScreen(),
+          ));
+        });
+      }
     }
   }
 
@@ -97,6 +117,7 @@ class _AdminAttendanceScreenState extends State<AdminAttendanceScreen> {
         // two sequential ones. The prevSel check below still prevents a
         // duplicate attendance fetch when the resolved group is unchanged.
         if (_selectedGroupId != null) unawaited(_loadAttendance(orgId));
+        _maybeAutoOpenGuests();
       } else {
         setState(() => _loadingGroups = true);
       }
@@ -124,9 +145,24 @@ class _AdminAttendanceScreenState extends State<AdminAttendanceScreen> {
         if (_selectedGroupId != null && _selectedGroupId != prevSel) {
           await _loadAttendance(orgId);
         }
+        _maybeAutoOpenGuests();
       case Err():
         setState(() => _loadingGroups = false);
     }
+  }
+
+  /// ISSUE-001: one-shot — opens the guest approvals sheet when this screen
+  /// was reached from a guest-request notification and guests are enabled.
+  bool _autoOpenedGuests = false;
+  void _maybeAutoOpenGuests() {
+    if (widget.autoOpen != 'guests' || _autoOpenedGuests) return;
+    if (_selectedGroupId == null) return;
+    final group = _groups.where((g) => g.id == _selectedGroupId).firstOrNull;
+    if (group == null || !group.mealConfig.guestsEnabled) return;
+    _autoOpenedGuests = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _openGuests();
+    });
   }
 
   Future<void> _loadAttendance(String orgId) async {
@@ -818,6 +854,11 @@ class _MyAttendanceSheetState extends State<_MyAttendanceSheet> {
 
   bool _loading = true;
   List<MealModel> _meals = [];
+  // Live-Test-11 ISSUE-010: baseline for org-clock window gating (same
+  // device-elapsed advance the student provider uses) + per-meal correction
+  // mode (same-day, closed-window, no approval — the admin is the approver).
+  DateTime? _fetchedAt;
+  final Set<String> _correcting = {};
   final Map<String, AttendanceStatus> _status = {};
   // Issue 1/2 parity: track each meal's chosen preference like the student
   // flow, seeded from any existing record so the admin sees what they picked.
@@ -863,12 +904,47 @@ class _MyAttendanceSheetState extends State<_MyAttendanceSheet> {
     meals.sort(MealModel.compareChronological);
     setState(() {
       _meals = meals;
+      _fetchedAt = DateTime.now();
       _loading = false;
     });
   }
 
+  /// ISSUE-010: canonical window state for [meal] — the SAME org-clock math
+  /// the student surfaces use (server org-clock advanced by device-elapsed
+  /// time; phone-clock fallback). 'open' includes the grace period.
+  String _windowStateOf(MealModel meal) {
+    final w = meal.attendanceWindow;
+    if (w.openTime == '00:00' && w.closeTime == '23:59') return 'open';
+    int minutesOf(String t) {
+      final p = t.split(':');
+      if (p.length < 2) return 0;
+      return (int.tryParse(p[0]) ?? 0) * 60 + (int.tryParse(p[1]) ?? 0);
+    }
+
+    final open = minutesOf(w.openTime);
+    final close = minutesOf(w.closeTime);
+    int now;
+    final base = meal.orgClockMinutes;
+    final at = _fetchedAt;
+    if (base != null && at != null) {
+      final elapsed = DateTime.now().difference(at).inMinutes;
+      now = (elapsed >= 0 && elapsed <= 12 * 60)
+          ? (base + elapsed) % (24 * 60)
+          : TimeOfDay.now().hour * 60 + TimeOfDay.now().minute;
+    } else {
+      final t = TimeOfDay.now();
+      now = t.hour * 60 + t.minute;
+    }
+    final grace = meal.graceMinutes ?? 0;
+    if (now < open) return 'upcoming';
+    if (now < close + grace) return 'open';
+    return 'closed';
+  }
+
   Future<void> _mark(MealModel meal, AttendanceStatus status,
-      {String? preference, List<PreferenceSelection>? selections}) async {
+      {String? preference,
+      List<PreferenceSelection>? selections,
+      bool correction = false}) async {
     if (_savingMealId != null) return;
     setState(() {
       _savingMealId = meal.id;
@@ -895,7 +971,8 @@ class _MyAttendanceSheetState extends State<_MyAttendanceSheet> {
       // ISSUE-2: group selections travel exactly like the member mark path.
       selections: selections,
     );
-    final res = await _attendanceRepo.adminOverride(record: record);
+    final res = await _attendanceRepo.adminOverride(
+        record: record, correction: correction);
     if (!mounted) return;
     setState(() {
       _savingMealId = null;
@@ -905,12 +982,15 @@ class _MyAttendanceSheetState extends State<_MyAttendanceSheet> {
       case Ok(:final value):
         setState(() {
           _status[meal.id] = value.status;
+          _correcting.remove(meal.id);
           if (value.preference != null) {
             _selectedPref[meal.id] = value.preference;
           }
         });
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text('${meal.name}: marked ${status.name}'),
+          content: Text(correction
+              ? '${meal.name}: corrected to ${status.name}'
+              : '${meal.name}: marked ${status.name}'),
           duration: const Duration(seconds: 2),
         ));
       case Err(:final failure):
@@ -978,6 +1058,13 @@ class _MyAttendanceSheetState extends State<_MyAttendanceSheet> {
                             return _MySelfMealCard(
                               meal: meal,
                               status: st,
+                              // ISSUE-010: member-rule parity — buttons hide
+                              // outside the window; closed offers same-day
+                              // correction (no approval).
+                              windowState: _windowStateOf(meal),
+                              correcting: _correcting.contains(meal.id),
+                              onStartCorrection: () => setState(
+                                  () => _correcting.add(meal.id)),
                               selectedPref: _selectedPref[meal.id],
                               // ISSUE-2: required-group completeness gates
                               // Present exactly like the student card — the
@@ -1009,6 +1096,7 @@ class _MyAttendanceSheetState extends State<_MyAttendanceSheet> {
                                             meal.preferenceGroups.isNotEmpty
                                         ? (_selections[meal.id] ?? const [])
                                         : null,
+                                correction: _correcting.contains(meal.id),
                               ),
                             );
                           },
@@ -1032,11 +1120,21 @@ class _MySelfMealCard extends StatelessWidget {
     required this.onMark,
     this.selectionsComplete = true,
     this.onSelectionsChanged,
+    this.windowState = 'open',
+    this.correcting = false,
+    this.onStartCorrection,
   });
 
   final MealModel meal;
   final AttendanceStatus status;
   final String? selectedPref;
+
+  /// ISSUE-010: 'upcoming' | 'open' (incl. grace) | 'closed' — member parity.
+  final String windowState;
+
+  /// ISSUE-010: closed-window same-day correction mode is active for this meal.
+  final bool correcting;
+  final VoidCallback? onStartCorrection;
   // Non-null when THIS meal has an action saving — the specific action in
   // flight, so only that button animates.
   final AttendanceStatus? savingStatus;
@@ -1060,6 +1158,9 @@ class _MySelfMealCard extends StatelessWidget {
     final canPresent =
         (!prefsOn || selectedPref != null) && (!groupsOn || selectionsComplete);
     final menu = meal.menuItems.where((e) => e.trim().isNotEmpty).toList();
+    // ISSUE-010 member parity: actions render only while the window is open
+    // (incl. grace) — or in explicit same-day correction mode after close.
+    final actionable = windowState == 'open' || correcting;
 
     return Container(
       padding: const EdgeInsets.all(14),
@@ -1101,7 +1202,7 @@ class _MySelfMealCard extends StatelessWidget {
                 )),
           ],
           // Preference chips (Issue 1/2 parity with the student flow).
-          if (prefsOn) ...[
+          if (prefsOn && actionable) ...[
             const SizedBox(height: 12),
             Text('Meal preference (required)',
                 style: AppTypography.labelSmall.copyWith(
@@ -1163,7 +1264,7 @@ class _MySelfMealCard extends StatelessWidget {
           // ISSUE-2: multi-preference groups — the SAME selector the student
           // attendance card uses, so admin self-marks satisfy required groups
           // instead of 422-ing at the server.
-          if (groupsOn) ...[
+          if (groupsOn && actionable) ...[
             const SizedBox(height: 12),
             PreferenceGroupSelector(
               groups: meal.preferenceGroups,
@@ -1173,29 +1274,95 @@ class _MySelfMealCard extends StatelessWidget {
             ),
           ],
           const SizedBox(height: 12),
-          Row(
-            children: [
-              _SelfBtn(
-                label: 'Present',
-                selected: status == AttendanceStatus.present,
-                color: AppColors.present,
-                loading: savingStatus == AttendanceStatus.present,
-                enabled: canPresent && !busy,
-                onTap: () =>
-                    onMark(AttendanceStatus.present, prefsOn ? selectedPref : null),
-              ),
-              const SizedBox(width: 8),
-              // Q17/Q21: Skip button removed — Present or Absent only.
-              _SelfBtn(
-                label: 'Absent',
-                selected: status == AttendanceStatus.absent,
-                color: AppColors.absent,
-                loading: savingStatus == AttendanceStatus.absent,
-                enabled: !busy,
-                onTap: () => onMark(AttendanceStatus.absent, null),
+          // ISSUE-010: EXACT member-rule parity.
+          //   upcoming → no actions, window not open yet.
+          //   open/grace (or correction mode) → Present/Absent, preference-gated.
+          //   closed → buttons hidden; same-day correction entry instead.
+          if (actionable)
+            Row(
+              children: [
+                _SelfBtn(
+                  label: 'Present',
+                  selected: status == AttendanceStatus.present,
+                  color: AppColors.present,
+                  loading: savingStatus == AttendanceStatus.present,
+                  enabled: canPresent && !busy,
+                  onTap: () => onMark(
+                      AttendanceStatus.present, prefsOn ? selectedPref : null),
+                ),
+                const SizedBox(width: 8),
+                // Q17/Q21: Skip button removed — Present or Absent only.
+                _SelfBtn(
+                  label: 'Absent',
+                  selected: status == AttendanceStatus.absent,
+                  color: AppColors.absent,
+                  loading: savingStatus == AttendanceStatus.absent,
+                  enabled: !busy,
+                  onTap: () => onMark(AttendanceStatus.absent, null),
+                ),
+              ],
+            )
+          else if (windowState == 'upcoming')
+            Row(
+              children: [
+                Icon(Icons.schedule_rounded,
+                    size: 14,
+                    color: isDark
+                        ? AppColors.textSecondaryDark
+                        : AppColors.textTertiary),
+                const SizedBox(width: 6),
+                Text(
+                  'Window not open yet',
+                  style: AppTypography.bodySmall.copyWith(
+                    color: isDark
+                        ? AppColors.textSecondaryDark
+                        : AppColors.textTertiary,
+                  ),
+                ),
+              ],
+            )
+          else ...[
+            Row(
+              children: [
+                Icon(Icons.lock_clock_rounded,
+                    size: 14,
+                    color: isDark
+                        ? AppColors.textSecondaryDark
+                        : AppColors.textTertiary),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    'Attendance window closed',
+                    style: AppTypography.bodySmall.copyWith(
+                      color: isDark
+                          ? AppColors.textSecondaryDark
+                          : AppColors.textTertiary,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            if (onStartCorrection != null) ...[
+              const SizedBox(height: 8),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: OutlinedButton.icon(
+                  onPressed: busy ? null : onStartCorrection,
+                  icon: const Icon(Icons.edit_calendar_rounded, size: 16),
+                  label: const Text('Correct attendance'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: AppColors.primary,
+                    side: BorderSide(
+                        color: AppColors.primary.withValues(alpha: 0.4)),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 14, vertical: 8),
+                    textStyle: AppTypography.labelMedium
+                        .copyWith(fontWeight: FontWeight.w600),
+                  ),
+                ),
               ),
             ],
-          ),
+          ],
         ],
       ),
     );

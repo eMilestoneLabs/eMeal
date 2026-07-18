@@ -124,8 +124,14 @@ class _AttendanceActionCardState extends State<AttendanceActionCard> {
       widget.meal.preferenceGroups.isNotEmpty &&
       widget.onMarkWithSelections != null;
 
+  // Live-Test-11 ISSUE-002: "Present with new choices" — re-opens the
+  // selector on a marked card (window open) prefilled with the stored picks.
+  bool _editingSelections = false;
+
   bool get _isPending =>
-      widget.status == null || widget.status == AttendanceStatus.pending;
+      widget.status == null ||
+      widget.status == AttendanceStatus.pending ||
+      _editingSelections;
 
   bool get _canMark =>
       widget.isWindowOpen &&
@@ -146,7 +152,29 @@ class _AttendanceActionCardState extends State<AttendanceActionCard> {
               widget.enabledPreferences.isEmpty ||
               _selectedPreference != null));
 
+  /// ISSUE-002: previous picks rebuilt from the stored snapshot — prefills the
+  /// selector in editing mode so the member modifies rather than restarts.
+  List<PreferenceSelection> get _priorSelections {
+    final raw = widget.markedSelections;
+    if (raw == null || raw.isEmpty) return const [];
+    final out = <PreferenceSelection>[];
+    for (final s in raw) {
+      if (s is! Map) continue;
+      final g = s['groupId']?.toString();
+      final o = s['optionKey']?.toString();
+      if (g == null || g.isEmpty || o == null || o.isEmpty) continue;
+      final qty = s['quantity'];
+      out.add(PreferenceSelection(
+        groupId: g,
+        optionKey: o,
+        quantity: qty is num ? qty.toInt() : 1,
+      ));
+    }
+    return out;
+  }
+
   void _markWithPreference(AttendanceStatus status) {
+    if (_editingSelections) setState(() => _editingSelections = false);
     if (_hasPreferenceGroups) {
       // FR-PG-031: Absent/Skip need no selections; Present sends the set.
       widget.onMarkWithSelections!(
@@ -279,8 +307,13 @@ class _AttendanceActionCardState extends State<AttendanceActionCard> {
               padding: const EdgeInsets.fromLTRB(
                 AppConstants.space16, 0, AppConstants.space16, 4),
               child: PreferenceGroupSelector(
+                // ISSUE-002: editing mode remounts the selector prefilled with
+                // the stored snapshot so the member modifies, not restarts.
+                key: ValueKey('pgs_${widget.meal.id}_$_editingSelections'),
                 groups: widget.meal.preferenceGroups,
                 enabled: !widget.isLoading,
+                initialSelections:
+                    _editingSelections ? _priorSelections : const [],
                 onChanged: (selections, delta, complete) => setState(() {
                   _groupSelections = selections;
                   _groupSelectionComplete = complete;
@@ -322,6 +355,17 @@ class _AttendanceActionCardState extends State<AttendanceActionCard> {
                     isDark: isDark,
                     canChange: widget.isWindowOpen && !widget.isVacationMode,
                     onMark: (s) => _markWithPreference(s),
+                    // ISSUE-002: preference meals can modify picks first.
+                    onEditSelections: (_hasPreferenceGroups ||
+                            (widget.preferencesEnabled &&
+                                widget.enabledPreferences.isNotEmpty))
+                        ? () => setState(() {
+                              _editingSelections = true;
+                              _selectedPreference =
+                                  widget.markedPreference ??
+                                      _selectedPreference;
+                            })
+                        : null,
                   ),
                   // Submitted preferences, rendered from the backend record so
                   // the marked state is fully reflected. Live-Test-9
@@ -711,12 +755,17 @@ class _MarkedRow extends StatelessWidget {
     required this.isDark,
     required this.canChange,
     required this.onMark,
+    this.onEditSelections,
   });
 
   final AttendanceStatus status;
   final bool isDark;
   final bool canChange;
   final void Function(AttendanceStatus) onMark;
+
+  /// Live-Test-11 ISSUE-002: non-null on preference meals — "Present with new
+  /// choices" re-opens the selector (prefilled with the previous picks).
+  final VoidCallback? onEditSelections;
 
   (IconData, String, Color) get _props {
     switch (status) {
@@ -799,9 +848,54 @@ class _MarkedRow extends StatelessWidget {
               ),
             ),
             const SizedBox(height: AppConstants.space16),
-            _sheetOption(context, Icons.check_circle_rounded, 'Mark Present',
-                AppColors.present, AttendanceStatus.present, isDark),
+            _sheetOption(
+                context,
+                Icons.check_circle_rounded,
+                onEditSelections != null
+                    ? 'Mark Present (keep previous choices)'
+                    : 'Mark Present',
+                AppColors.present,
+                AttendanceStatus.present,
+                isDark),
             const SizedBox(height: AppConstants.space8),
+            if (onEditSelections != null) ...[
+              InkWell(
+                onTap: () {
+                  Navigator.of(context).pop();
+                  onEditSelections!();
+                },
+                borderRadius: BorderRadius.circular(AppConstants.cardRadius),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: AppConstants.space16,
+                    vertical: AppConstants.space12,
+                  ),
+                  decoration: BoxDecoration(
+                    color: AppColors.primary.withValues(alpha: 0.07),
+                    borderRadius: BorderRadius.circular(AppConstants.cardRadius),
+                    border: Border.all(
+                        color: AppColors.primary.withValues(alpha: 0.2)),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.tune_rounded,
+                          size: 18, color: AppColors.primary),
+                      const SizedBox(width: AppConstants.space12),
+                      Text(
+                        'Present with new choices',
+                        style: AppTypography.labelLarge.copyWith(
+                          color: isDark
+                              ? AppColors.textPrimaryDark
+                              : AppColors.textPrimary,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: AppConstants.space8),
+            ],
             // Q17/Q21: Skip removed — Present or Absent only.
             _sheetOption(context, Icons.cancel_rounded, 'Mark Absent',
                 AppColors.absent, AttendanceStatus.absent, isDark),

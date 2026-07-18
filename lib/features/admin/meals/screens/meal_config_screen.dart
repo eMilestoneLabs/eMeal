@@ -292,10 +292,11 @@ class _MealConfigScreenState extends State<MealConfigScreen> {
                     ),
                     const SizedBox(height: 12),
 
-                    // ── Billing policy (SRS Module 03 Q17/Q22 + Live-Test-8
-                    // ISSUE-005): ONE toggle. Bill-Skip is date-forward — it
-                    // affects meals from the next window-close onwards, never
-                    // past bills. Absent is ALWAYS free (Bill-Absent removed).
+                    // ── Billing policy (SRS Module 03 Q17/Q22 + Live-Test-11
+                    // ISSUE-017): TWO independent date-forward toggles. Each
+                    // affects meals from the next mark/window-close onwards,
+                    // never past bills (the server snapshots the policy onto
+                    // each record at write time).
                     if (_provider.mealPricingEnabled) ...[
                       _ToggleTile(
                         icon: Icons.rule_folder_rounded,
@@ -304,16 +305,39 @@ class _MealConfigScreenState extends State<MealConfigScreen> {
                                     .billSkippedMeals ??
                                 false)
                             ? 'Unmarked (no-response) meals are billed at the '
-                                'scheduled price from the next meal onwards. '
-                                'Meals marked Absent are always free.'
-                            : 'Unmarked (no-response) meals are free. Meals '
-                                'marked Absent are always free.',
+                                'scheduled price from the next meal onwards.'
+                            : 'Unmarked (no-response) meals are free.',
                         value: _provider.selectedGroup?.mealConfig
                                 .billSkippedMeals ??
                             false,
                         onChanged: _provider.isSaving
                             ? null
                             : (v) => _provider.toggleBillSkippedMeals(
+                                  organizationId: _orgId,
+                                  groupId: _provider.selectedGroup!.id,
+                                  enabled: v,
+                                ),
+                      ),
+                      const SizedBox(height: 12),
+                      // Live-Test-11 ISSUE-017 (survey-locked): independent
+                      // Bill-Absent policy — snapshotted per record at mark
+                      // time, so only FUTURE absents are affected by a flip.
+                      _ToggleTile(
+                        icon: Icons.event_busy_rounded,
+                        title: 'Bill Absent Meals',
+                        subtitle: (_provider.selectedGroup?.mealConfig
+                                    .billAbsentMeals ??
+                                false)
+                            ? 'Meals marked Absent are billed at the scheduled '
+                                'price from the next meal onwards. Past bills '
+                                'never change.'
+                            : 'Meals marked Absent are free.',
+                        value: _provider.selectedGroup?.mealConfig
+                                .billAbsentMeals ??
+                            false,
+                        onChanged: _provider.isSaving
+                            ? null
+                            : (v) => _provider.toggleBillAbsentMeals(
                                   organizationId: _orgId,
                                   groupId: _provider.selectedGroup!.id,
                                   enabled: v,

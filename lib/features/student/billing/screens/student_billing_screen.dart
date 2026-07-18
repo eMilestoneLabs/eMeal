@@ -747,12 +747,17 @@ class _StudentBillingScreenState extends State<StudentBillingScreen> {
   /// Live-Test-8 ISSUE-005 (server-engine parity): the amount a row actually
   /// contributes to the bill. Present = charged price; a REAL skipped record
   /// always bills (it exists only for dates whose Bill-Skip policy was ON at
-  /// window-close — the current flag is not consulted); Absent is always
-  /// FREE. Virtual placeholder rows (autoSkipped) never bill — the engine
-  /// bills only its own system-generated Skip records.
+  /// window-close — the current flag is not consulted). Live-Test-11
+  /// ISSUE-017: an Absent row bills only when its own write-time snapshot
+  /// (r.billAbsent) flagged it — same date-forward rule as the server engine.
+  /// Virtual placeholder rows (autoSkipped) never bill — the engine bills
+  /// only its own system-generated Skip records.
   int _rowBilledAmount(BillingRow r) {
     if (r.status == AttendanceStatus.present) return r.price ?? 0;
     if (!r.autoSkipped && r.status == AttendanceStatus.skipped) {
+      return r.price ?? 0;
+    }
+    if (r.status == AttendanceStatus.absent && r.billAbsent == true) {
       return r.price ?? 0;
     }
     return 0;

@@ -136,14 +136,18 @@ class ExportService {
     String currency = '₹',
     // Live-Test-8 ISSUE-005 (server parity): Present always bills; a REAL
     // Skipped record always bills (it exists only for dates whose Bill-Skip
-    // policy was ON at close — the flag is not consulted); Absent is always
-    // FREE. Virtual placeholder rows (autoSkipped) never bill. The params are
-    // retained for call-site compatibility but no longer affect the math.
+    // policy was ON at close — the flag is not consulted). Live-Test-11
+    // ISSUE-017: an Absent row bills only when its own write-time snapshot
+    // (r.billAbsent) says the Bill-Absent toggle was ON — date-forward,
+    // identical to the server engine. Virtual placeholder rows (autoSkipped)
+    // never bill. The params are retained for call-site compatibility but no
+    // longer affect the math.
     bool billSkippedMeals = false,
     bool? billAbsentMeals,
   }) {
     final billed = r.status == AttendanceStatus.present ||
-        (!r.autoSkipped && r.status == AttendanceStatus.skipped);
+        (!r.autoSkipped && r.status == AttendanceStatus.skipped) ||
+        (r.status == AttendanceStatus.absent && r.billAbsent == true);
     return [
       r.userName,
       groupName,

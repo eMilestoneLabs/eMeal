@@ -20,6 +20,7 @@ class BillingRow {
     required this.date,
     required this.markedAt,
     required this.autoSkipped,
+    this.billAbsent,
   });
 
   final String userId;
@@ -34,6 +35,10 @@ class BillingRow {
 
   /// True when this row was synthesised (member never marked, window closed).
   final bool autoSkipped;
+
+  /// Live-Test-11 ISSUE-017: server write-time Bill-Absent snapshot — true
+  /// only on an absent row that bills. Null on virtual rows / old records.
+  final bool? billAbsent;
 
   bool get isPresent => status == AttendanceStatus.present;
 
@@ -190,6 +195,9 @@ class BillingService {
               date: d,
               markedAt: marked,
               autoSkipped: false,
+              // ISSUE-017: the record's own snapshot rides through so the
+              // client bill matches the server engine row for row.
+              billAbsent: rec.billAbsent,
             ));
           } else if (windowClosed && !vacationUserIds.contains(uid)) {
             // Virtual auto-skip (req 6): member never marked, window closed.
@@ -234,10 +242,13 @@ class BillingService {
   ///     is the only writer), so its existence IS the date-forward gate; the
   ///     current flag must NOT be consulted (flipping Bill-Skip off never
   ///     un-bills already-closed skips);
-  ///   • absent → NEVER billed (Bill-Absent removed — Absent is always free).
+  ///   • absent → bills ONLY when its per-record `billAbsent` snapshot is
+  ///     true (Live-Test-11 ISSUE-017: the server stamps the independent
+  ///     Bill-Absent toggle onto each absent row at write time — the row
+  ///     carries its own date-forward gate, exactly like Bill-Skip).
   /// [billSkippedMeals]/[billAbsentMeals] are retained for call-site
-  /// compatibility but no longer affect the math (matches
-  /// BillingService.billedStatuses on the server).
+  /// compatibility but no longer affect the math (matches the server's
+  /// BillingService.billedAttendanceFilter()).
   static List<BillingSummary> summarize(
     List<BillingRow> rows, {
     bool billSkippedMeals = false,
@@ -266,8 +277,12 @@ class BillingService {
           // placeholders here inflated the detail/export total for the whole
           // period grid (e.g. ₹5435 vs the engine's ₹180).
           case AttendanceStatus.absent:
-            // Live-Test-8 ISSUE-005: Absent is always FREE — count only.
             absent++;
+            // Live-Test-11 ISSUE-017 (server-engine parity): an absent bills
+            // ONLY when its own write-time snapshot says the Bill-Absent
+            // toggle was ON — identical date-forward rule to the backend
+            // engine; the CURRENT flag is never consulted.
+            if (r.billAbsent == true) bill += r.price ?? 0;
           case AttendanceStatus.skipped:
             skipped++;
             // Real skipped records always bill (policy was ON when they were

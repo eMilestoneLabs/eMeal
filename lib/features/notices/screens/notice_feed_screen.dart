@@ -165,7 +165,9 @@ class _NoticeFeedScreenState extends State<NoticeFeedScreen> {
       case 'correctionRequests': // admin: pending correction approvals
         return const CorrectionRequestsScreen();
       case 'guestRequests': // admin: hosted-guest review lives on attendance
-        return const AdminAttendanceScreen();
+        // Live-Test-11 ISSUE-001: land INSIDE the guest approvals sheet, not
+        // just on the attendance screen — the tap opens the actual approval UI.
+        return const AdminAttendanceScreen(autoOpen: 'guests');
       case 'myVacations': // member: their vacation requests + decision
         return const StudentVacationRequestScreen();
       case 'myCorrections': // member: their correction requests + decision
@@ -185,18 +187,6 @@ class _NoticeFeedScreenState extends State<NoticeFeedScreen> {
       default:
         return null;
     }
-  }
-
-  /// Swipe-only mark-read (no navigation). A decision notice never disappears —
-  /// swiping just clears its unread dot.
-  Future<void> _markReadOnly(NoticeModel n) async {
-    if (n.isRead) return;
-    await _repo.markRead(n.id);
-    if (!mounted) return;
-    setState(() {
-      final i = _notices.indexWhere((x) => x.id == n.id);
-      if (i != -1) _notices[i] = _notices[i].copyWith(isRead: true);
-    });
   }
 
   /// Recency bucket for category grouping (Today / Yesterday / This week / …).
@@ -240,29 +230,15 @@ class _NoticeFeedScreenState extends State<NoticeFeedScreen> {
             onDelete: () => _delete(n),
           ),
         );
-        // NTF-006: members swipe a notice away to remove it from their OWN bell
-        // (per-user dismissal). Admins keep the swipe-to-mark-read behaviour so
-        // their management gestures are unchanged.
-        if (!widget.isAdmin) {
-          return Dismissible(
-            key: ValueKey('dis_${n.id}'),
-            direction: DismissDirection.endToStart,
-            background: const _SwipeDismissBackground(),
-            onDismissed: (_) => _dismiss(n),
-            child: card,
-          );
-        }
-        if (n.isRead) return card;
-        // Swipe left to mark read without opening (confirmDismiss returns false
-        // so the row snaps back, now read, instead of being removed).
+        // Live-Test-11 ISSUE-009 (Gmail-style, locked rule): swipe-left is a
+        // PERSONAL dismiss with Undo for BOTH roles — it never deletes the
+        // notice for anyone else. Delete-for-everyone stays exclusively on the
+        // trash icon behind its confirmation dialog.
         return Dismissible(
-          key: ValueKey('sw_${n.id}'),
+          key: ValueKey('dis_${n.id}'),
           direction: DismissDirection.endToStart,
-          background: const _SwipeMarkReadBackground(),
-          confirmDismiss: (_) async {
-            await _markReadOnly(n);
-            return false;
-          },
+          background: const _SwipeDismissBackground(),
+          onDismissed: (_) => _dismiss(n),
           child: card,
         );
       },
@@ -277,10 +253,35 @@ class _NoticeFeedScreenState extends State<NoticeFeedScreen> {
     });
   }
 
-  /// NTF-006: remove ONE notice from THIS member's bell (per-user hide). The
-  /// shared notice is untouched for everyone else.
+  /// NTF-006 + ISSUE-009: remove ONE notice from THIS user's bell (per-user
+  /// hide) with a Gmail-style Undo. The backend dismissal only fires once the
+  /// snackbar closes WITHOUT Undo — tapping Undo restores the row untouched.
+  /// The shared notice is never affected for anyone else.
   Future<void> _dismiss(NoticeModel n) async {
-    setState(() => _notices.removeWhere((x) => x.id == n.id));
+    final index = _notices.indexWhere((x) => x.id == n.id);
+    if (index == -1) return;
+    setState(() => _notices.removeAt(index));
+
+    final messenger = ScaffoldMessenger.of(context);
+    messenger.clearSnackBars();
+    final controller = messenger.showSnackBar(
+      SnackBar(
+        content: const Text('Notification removed'),
+        behavior: SnackBarBehavior.floating,
+        duration: const Duration(seconds: 4),
+        action: SnackBarAction(label: 'UNDO', onPressed: () {}),
+      ),
+    );
+    final reason = await controller.closed;
+    if (reason == SnackBarClosedReason.action) {
+      // Undo: restore in place — nothing was sent to the backend yet.
+      if (!mounted) return;
+      setState(() {
+        final at = index <= _notices.length ? index : _notices.length;
+        _notices.insert(at, n);
+      });
+      return;
+    }
     await _repo.dismissNotice(n.id);
   }
 
@@ -475,36 +476,6 @@ class _DayHeader extends StatelessWidget {
           fontWeight: FontWeight.w800,
           letterSpacing: 0.6,
         ),
-      ),
-    );
-  }
-}
-
-// ── Swipe-to-mark-read background ────────────────────────────────────────────
-
-class _SwipeMarkReadBackground extends StatelessWidget {
-  const _SwipeMarkReadBackground();
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 10),
-      alignment: Alignment.centerRight,
-      padding: const EdgeInsets.only(right: 20),
-      decoration: BoxDecoration(
-        color: AppColors.present.withValues(alpha: 0.15),
-        borderRadius: BorderRadius.circular(14),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          const Icon(Icons.done_all_rounded,
-              size: 18, color: AppColors.present),
-          const SizedBox(width: 6),
-          Text('Mark read',
-              style: AppTypography.labelMedium.copyWith(
-                  color: AppColors.present, fontWeight: FontWeight.w700)),
-        ],
       ),
     );
   }

@@ -639,6 +639,10 @@ class _MealSummaryCard extends StatelessWidget {
           memberCounts: memberGroups[labels[i]] ?? const {},
           guestCounts: guestGroups[labels[i]] ?? const {},
           expectedTotal: expected,
+          // ISSUE-016: quantity groups validate HEADCOUNT (who picked) while
+          // displaying plate totals — "Ruti ×3" is 1 member, 3 plates. Null on
+          // cached pre-fix payloads → validation falls back to plate totals.
+          memberPickCount: s.preferenceGroupPickCounts[labels[i]],
           resolveDisplay: false,
           isDark: isDark,
         ));
@@ -861,6 +865,7 @@ class _PrefSection extends StatelessWidget {
     required this.expectedTotal,
     required this.resolveDisplay,
     required this.isDark,
+    this.memberPickCount,
   });
 
   final String title;
@@ -869,6 +874,11 @@ class _PrefSection extends StatelessWidget {
   final Map<String, int> memberCounts;
   final Map<String, int> guestCounts;
   final int expectedTotal;
+
+  /// ISSUE-016: member pick-ROW count for this group (quantity-independent).
+  /// When present, headcount validation uses picks + guest plates instead of
+  /// the quantity-inflated display totals.
+  final int? memberPickCount;
 
   /// True for standalone tags — labels resolve through
   /// [MealPreferenceOption.display] for emoji + proper casing.
@@ -887,7 +897,13 @@ class _PrefSection extends StatelessWidget {
     };
     options.sort((a, b) => totals[b]!.compareTo(totals[a]!));
     final actual = totals.values.fold<int>(0, (a, b) => a + b);
-    final ok = actual == expectedTotal;
+    // ISSUE-016: with per-option quantities the display total is PLATES, not
+    // people — validate headcount from pick rows (+ guest plates) when the
+    // backend provides them; legacy payloads keep the plate-total check.
+    final guestActual = guestCounts.values.fold<int>(0, (a, b) => a + b);
+    final headcount =
+        memberPickCount != null ? memberPickCount! + guestActual : actual;
+    final ok = headcount == expectedTotal;
     final hasGuestData = guestCounts.values.any((v) => v > 0);
     final textColor =
         isDark ? AppColors.textPrimaryDark : AppColors.textPrimary;
@@ -931,7 +947,7 @@ class _PrefSection extends StatelessWidget {
                           .withValues(alpha: 0.35)),
                 ),
                 child: Text(
-                  ok ? 'Total $actual ✓' : '⚠ $actual of $expectedTotal',
+                  ok ? 'Total $actual ✓' : '⚠ $headcount of $expectedTotal',
                   style: AppTypography.labelSmall.copyWith(
                     fontWeight: FontWeight.w800,
                     color: ok ? AppColors.present : AppColors.absent,
@@ -1002,7 +1018,7 @@ class _PrefSection extends StatelessWidget {
               ),
               child: Text(
                 '⚠ Dashboard Data Mismatch — expected $expectedTotal, '
-                'found $actual. Preferences are mandatory; investigate '
+                'found $headcount. Preferences are mandatory; investigate '
                 'this meal\'s records.',
                 style: AppTypography.labelSmall.copyWith(
                   color: AppColors.absent,

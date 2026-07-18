@@ -1,7 +1,7 @@
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
-import 'package:flutter_image_compress/flutter_image_compress.dart';
+import 'package:smart_meal_management/core/utils/image_compression.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:smart_meal_management/core/constants/app_constants.dart';
 import 'package:smart_meal_management/core/theme/app_colors.dart';
@@ -533,23 +533,11 @@ class _MealConfigFormState extends State<MealConfigForm> {
 
       final rawBytes = await file.readAsBytes();
 
-      // Compress to fit the 100 KB cap. Step the quality down until it fits or
-      // we hit a low floor — production-safe on low-end Android (no huge RGBA
-      // buffers; maxWidth 1080).
-      Uint8List? compressed;
-      for (final q in const [70, 55, 40, 30, 20]) {
-        final out = await FlutterImageCompress.compressWithList(
-          rawBytes,
-          quality: q,
-          minWidth: 1080,
-          minHeight: 720,
-          format: CompressFormat.jpeg,
-          keepExif: false,
-        );
-        if (out.isEmpty) continue;
-        compressed = out;
-        if (out.length <= _maxTotalBytes) break;
-      }
+      // Live-Test-11 ISSUE-007: guaranteed-fit ladder (resolution + quality
+      // steps, aspect ratio preserved, no cropping) — the old quality-only
+      // ladder rejected detailed photos that stayed over the cap at q=20.
+      final compressed =
+          await compressImageToBudget(rawBytes, _maxTotalBytes);
 
       if (!mounted) return;
       if (compressed == null || compressed.isEmpty) {
@@ -571,7 +559,7 @@ class _MealConfigFormState extends State<MealConfigForm> {
         _existingImageUrl = null;
         _imageBytesList
           ..clear()
-          ..add(compressed!);
+          ..add(compressed);
       });
     } catch (_) {
       if (mounted) {
@@ -1244,38 +1232,44 @@ class _MealConfigFormState extends State<MealConfigForm> {
                   // choosing Preference Groups auto-saves it and opens the
                   // builder (ISSUE-5.2); modes stay mutually exclusive and
                   // switchable without losing configuration.
-                  Row(
-                    children: [
-                      Expanded(
-                        child: _PrefModeCard(
-                          icon: Icons.sell_rounded,
-                          title: 'Standalone',
-                          subtitle: 'Members pick ONE simple tag',
-                          selected: !_groupsMode,
-                          busy: _bindingsBusy || _submitting,
-                          accent: AppColors.secondary,
-                          onTap: _selectStandaloneMode,
+                  // Live-Test-11 ISSUE-011: IntrinsicHeight + stretch — both
+                  // mode cards stay the same height however their subtitles
+                  // wrap (identical size/spacing across Create/Edit/Override).
+                  IntrinsicHeight(
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Expanded(
+                          child: _PrefModeCard(
+                            icon: Icons.sell_rounded,
+                            title: 'Standalone',
+                            subtitle: 'Members pick ONE simple tag',
+                            selected: !_groupsMode,
+                            busy: _bindingsBusy || _submitting,
+                            accent: AppColors.secondary,
+                            onTap: _selectStandaloneMode,
+                          ),
                         ),
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: _PrefModeCard(
-                          icon: Icons.account_tree_rounded,
-                          title: 'Preference Groups',
-                          subtitle: widget.initialMeal == null
-                              ? 'Saves the meal & opens the builder'
-                              : _groupsMode
-                                  ? '${_activeGroupNames.length} active group(s)'
-                                  : (_suspendedGroupNames.isNotEmpty
-                                      ? '${_suspendedGroupNames.length} saved — tap to manage'
-                                      : 'Rules, veg flags, price add-ons'),
-                          selected: _groupsMode,
-                          busy: _bindingsBusy || _submitting,
-                          accent: AppColors.primary,
-                          onTap: _openGroupsBuilder,
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: _PrefModeCard(
+                            icon: Icons.account_tree_rounded,
+                            title: 'Preference Groups',
+                            subtitle: widget.initialMeal == null
+                                ? 'Saves the meal & opens the builder'
+                                : _groupsMode
+                                    ? '${_activeGroupNames.length} active group(s)'
+                                    : (_suspendedGroupNames.isNotEmpty
+                                        ? '${_suspendedGroupNames.length} saved — tap to manage'
+                                        : 'Rules, veg flags, price add-ons'),
+                            selected: _groupsMode,
+                            busy: _bindingsBusy || _submitting,
+                            accent: AppColors.primary,
+                            onTap: _openGroupsBuilder,
+                          ),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
                   const SizedBox(height: 12),
                   if (_groupsMode)

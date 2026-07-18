@@ -1206,97 +1206,140 @@ class _MultiPrefGroupsCard extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 12),
-          ...groups.map((g) => Padding(
-                padding: const EdgeInsets.only(bottom: 10),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
+          // Live-Test-11 ISSUE-020: premium selectable tiles — whole-tile tap,
+          // vibrant selected state (accent border + fill + animated check),
+          // matching the Preference Builder's card language. The tiny checkbox
+          // rows had no visual presence in the day editor.
+          ...groups.map((g) {
+            final selected = selectedIds.contains(g.id);
+            final rowAccent = selected ? AppColors.primary : AppColors.textTertiary;
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 10),
+              child: Material(
+                color: Colors.transparent,
+                borderRadius: BorderRadius.circular(12),
+                child: InkWell(
+                  onTap: enabled ? () => onToggle(g.id, !selected) : null,
+                  borderRadius: BorderRadius.circular(12),
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 200),
+                    curve: Curves.easeOutCubic,
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: selected
+                          ? AppColors.primary
+                              .withValues(alpha: isDark ? 0.16 : 0.07)
+                          : (isDark ? AppColors.surfaceDark : AppColors.surface),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: selected
+                            ? AppColors.primary.withValues(alpha: 0.65)
+                            : (isDark ? AppColors.borderDark : AppColors.border),
+                        width: selected ? 1.4 : 1,
+                      ),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        // #3: include/exclude this group for THIS day only.
-                        SizedBox(
-                          width: 24,
-                          height: 24,
-                          child: Checkbox(
-                            value: selectedIds.contains(g.id),
-                            onChanged: enabled
-                                ? (v) => onToggle(g.id, v ?? false)
-                                : null,
-                            visualDensity: VisualDensity.compact,
-                            materialTapTargetSize:
-                                MaterialTapTargetSize.shrinkWrap,
-                          ),
-                        ),
-                        const SizedBox(width: 6),
-                        Flexible(
-                          child: Text(
-                            g.label,
-                            style: AppTypography.labelSmall.copyWith(
-                              color: isDark
-                                  ? AppColors.textPrimaryDark
-                                  : AppColors.textPrimary,
-                              fontWeight: FontWeight.w700,
+                        Row(
+                          children: [
+                            AnimatedContainer(
+                              duration: const Duration(milliseconds: 200),
+                              width: 20,
+                              height: 20,
+                              decoration: BoxDecoration(
+                                color: selected
+                                    ? AppColors.primary
+                                    : Colors.transparent,
+                                borderRadius: BorderRadius.circular(6),
+                                border: Border.all(
+                                  color: selected
+                                      ? AppColors.primary
+                                      : rowAccent.withValues(alpha: 0.6),
+                                  width: 1.4,
+                                ),
+                              ),
+                              child: selected
+                                  ? const Icon(Icons.check_rounded,
+                                      size: 14, color: Colors.white)
+                                  : null,
                             ),
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 7, vertical: 2),
-                          decoration: BoxDecoration(
-                            color: isDark
-                                ? AppColors.surfaceVariantDark
-                                : AppColors.surfaceVariant,
-                            borderRadius: BorderRadius.circular(20),
-                          ),
-                          child: Text(
-                            g.ruleLabel,
-                            style: AppTypography.labelSmall.copyWith(
-                              color: isDark
-                                  ? AppColors.textSecondaryDark
-                                  : AppColors.textSecondary,
-                              fontSize: 10.5,
-                              fontWeight: FontWeight.w600,
+                            const SizedBox(width: 10),
+                            Flexible(
+                              child: Text(
+                                g.label,
+                                style: AppTypography.labelMedium.copyWith(
+                                  color: isDark
+                                      ? AppColors.textPrimaryDark
+                                      : AppColors.textPrimary,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
                             ),
-                          ),
+                            const SizedBox(width: 8),
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 7, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: isDark
+                                    ? AppColors.surfaceVariantDark
+                                    : AppColors.surfaceVariant,
+                                borderRadius: BorderRadius.circular(20),
+                              ),
+                              child: Text(
+                                g.ruleLabel,
+                                style: AppTypography.labelSmall.copyWith(
+                                  color: isDark
+                                      ? AppColors.textSecondaryDark
+                                      : AppColors.textSecondary,
+                                  fontSize: 10.5,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        // Responsive: chips wrap to as many rows as needed.
+                        Wrap(
+                          spacing: 6,
+                          runSpacing: 6,
+                          children: g.options.map((o) {
+                            final priceAdd = o.priceDelta > 0
+                                ? ' +₹${(o.priceDelta / 100).toStringAsFixed(o.priceDelta % 100 == 0 ? 0 : 2)}'
+                                : '';
+                            return Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 10, vertical: 6),
+                              decoration: BoxDecoration(
+                                color: isDark
+                                    ? AppColors.surfaceDark
+                                    : AppColors.surface,
+                                borderRadius: BorderRadius.circular(20),
+                                border: Border.all(
+                                  color: AppColors.primary
+                                      .withValues(alpha: selected ? 0.45 : 0.25),
+                                ),
+                              ),
+                              child: Text(
+                                '${o.displayLabel}$priceAdd',
+                                style: AppTypography.labelSmall.copyWith(
+                                  color: isDark
+                                      ? AppColors.textPrimaryDark
+                                      : AppColors.textPrimary,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            );
+                          }).toList(),
                         ),
                       ],
                     ),
-                    const SizedBox(height: 6),
-                    // Responsive: chips wrap to as many rows as needed.
-                    Wrap(
-                      spacing: 6,
-                      runSpacing: 6,
-                      children: g.options.map((o) {
-                        final priceAdd = o.priceDelta > 0
-                            ? ' +₹${(o.priceDelta / 100).toStringAsFixed(o.priceDelta % 100 == 0 ? 0 : 2)}'
-                            : '';
-                        return Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 10, vertical: 6),
-                          decoration: BoxDecoration(
-                            color:
-                                isDark ? AppColors.surfaceDark : AppColors.surface,
-                            borderRadius: BorderRadius.circular(20),
-                            border: Border.all(
-                              color: AppColors.primary.withValues(alpha: 0.30),
-                            ),
-                          ),
-                          child: Text(
-                            '${o.displayLabel}$priceAdd',
-                            style: AppTypography.labelSmall.copyWith(
-                              color: isDark
-                                  ? AppColors.textPrimaryDark
-                                  : AppColors.textPrimary,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        );
-                      }).toList(),
-                    ),
-                  ],
+                  ),
                 ),
-              )),
+              ),
+            );
+          }),
         ],
       ),
     );

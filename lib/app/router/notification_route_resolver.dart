@@ -77,9 +77,12 @@ const List<String> _knownPrefixes = [
 ];
 
 bool _isRegisteredRoute(String route) {
-  if (_knownRoutes.contains(route)) return true;
+  // Live-Test-11 ISSUE-001: deep-links may carry query intents
+  // (e.g. /admin/attendance?open=corrections) — match on the path alone.
+  final path = route.split('?').first;
+  if (_knownRoutes.contains(path)) return true;
   for (final p in _knownPrefixes) {
-    if (route.startsWith(p)) return true;
+    if (path.startsWith(p)) return true;
   }
   return false;
 }

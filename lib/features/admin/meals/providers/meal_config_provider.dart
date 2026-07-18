@@ -1,7 +1,7 @@
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
-import 'package:flutter_image_compress/flutter_image_compress.dart';
+import 'package:smart_meal_management/core/utils/image_compression.dart';
 import 'package:smart_meal_management/core/constants/app_constants.dart';
 import 'package:smart_meal_management/shared/models/attendance_model.dart';
 import 'package:smart_meal_management/data/repositories/group_repository.dart';
@@ -654,8 +654,8 @@ class MealConfigProvider extends ChangeNotifier {
   /// SRS Module 03 (survey Q17/Q22) + Live-Test-8 ISSUE-005: "Bill Skip"
   /// policy — when ON, unmarked (no-response) meals get a system-generated
   /// Skip at window-close billed at the scheduled price, date-forward only
-  /// (never affects past bills). Absent is always free. Kitchen counts stay
-  /// Present-only.
+  /// (never affects past bills). Absent billing is governed by the separate
+  /// Bill-Absent toggle (ISSUE-017). Kitchen counts stay Present-only.
   Future<bool> toggleBillSkippedMeals({
     required String organizationId,
     required String groupId,
@@ -671,8 +671,25 @@ class MealConfigProvider extends ChangeNotifier {
     );
   }
 
-  // Live-Test-8 ISSUE-005: toggleBillAbsentMeals REMOVED — Absent is always
-  // free; the server billing engine no longer consults the flag.
+  /// Live-Test-11 ISSUE-017 (survey-locked): independent "Bill Absent Meals"
+  /// policy — when ON, meals marked Absent bill at the scheduled price,
+  /// DATE-FORWARD only: the server snapshots the policy onto each absent
+  /// record at mark time, so flipping the toggle never rewrites past bills.
+  /// Fully independent from Bill-Skip.
+  Future<bool> toggleBillAbsentMeals({
+    required String organizationId,
+    required String groupId,
+    required bool enabled,
+  }) async {
+    if (_selectedGroup == null) return false;
+    return _patchMealConfigOptimistic(
+      organizationId: organizationId,
+      groupId: groupId,
+      updatedConfig: _selectedGroup!.mealConfig.copyWith(
+        billAbsentMeals: enabled,
+      ),
+    );
+  }
 
   /// Pass 11 (FR-VACX-001): approval-gated vacation — when ON, members must
   /// submit a dated request; the instant toggle is refused server-side.
@@ -1075,15 +1092,11 @@ class MealConfigProvider extends ChangeNotifier {
         continue;
       }
 
-      final result = await FlutterImageCompress.compressWithList(
-        bytes,
-        quality: 70,
-        minWidth: 1080,
-        minHeight: 720,
-        format: CompressFormat.jpeg,
-        keepExif: false,
-      );
-      if (result.isNotEmpty) compressed.add(result);
+      // Live-Test-11 ISSUE-007: guaranteed-fit ladder (resolution + quality),
+      // matching the form's picker — the provider guard can no longer reject
+      // a photo the ladder could have fitted.
+      final result = await compressImageToBudget(bytes, cap ~/ raw.length);
+      if (result != null && result.isNotEmpty) compressed.add(result);
     }
 
     final total = compressed.fold<int>(0, (s, b) => s + b.length);

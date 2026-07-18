@@ -18,6 +18,7 @@ class NoteCard extends StatelessWidget {
     required this.onTogglePin,
     this.selectionMode = false,
     this.selected = false,
+    this.onTagTap,
   });
 
   final Note note;
@@ -26,6 +27,10 @@ class NoteCard extends StatelessWidget {
   final VoidCallback onTogglePin;
   final bool selectionMode;
   final bool selected;
+
+  /// Live-Test-11 ISSUE-022: tapping a tag chip filters the list by that tag
+  /// (routed through the existing search pipeline). Null = chips stay static.
+  final void Function(String tag)? onTagTap;
 
   @override
   Widget build(BuildContext context) {
@@ -302,18 +307,23 @@ class NoteCard extends StatelessWidget {
       runSpacing: 4,
       children: [
         ...shown.map(
-          (t) => Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-            decoration: BoxDecoration(
-              color: AppColors.primary.withValues(alpha: isDark ? 0.20 : 0.10),
-              borderRadius: BorderRadius.circular(AppConstants.chipRadius),
-            ),
-            child: Text(
-              '#$t',
-              style: AppTypography.labelSmall.copyWith(
-                fontSize: 11,
-                color: isDark ? AppColors.primaryLight : AppColors.primary,
-                fontWeight: FontWeight.w600,
+          // ISSUE-022: tags are functional — tap filters the list by the tag.
+          (t) => GestureDetector(
+            onTap: onTagTap == null ? null : () => onTagTap!(t),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+              decoration: BoxDecoration(
+                color:
+                    AppColors.primary.withValues(alpha: isDark ? 0.20 : 0.10),
+                borderRadius: BorderRadius.circular(AppConstants.chipRadius),
+              ),
+              child: Text(
+                '#$t',
+                style: AppTypography.labelSmall.copyWith(
+                  fontSize: 11,
+                  color: isDark ? AppColors.primaryLight : AppColors.primary,
+                  fontWeight: FontWeight.w600,
+                ),
               ),
             ),
           ),

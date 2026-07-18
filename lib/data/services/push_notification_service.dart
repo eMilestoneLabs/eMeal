@@ -126,6 +126,8 @@ class PushNotificationService {
       registerTokenWithBackend();
     } else if (state is AuthUnauthenticated) {
       _lastRegisteredToken = null;
+      // Local reminders resume ownership until the next successful registration.
+      NotificationService.pushRemindersActive = false;
     }
   }
 
@@ -153,6 +155,9 @@ class PushNotificationService {
     switch (result) {
       case Ok():
         _lastRegisteredToken = token;
+        // P1 single-notification rule: the backend now owns the 30/10-min
+        // window-close reminders for this device — suppress the local copies.
+        NotificationService.pushRemindersActive = true;
         debugPrint('[Push] FCM token registered with backend.');
       case Err(:final failure):
         debugPrint('[Push] FCM token registration failed: ${failure.message}');

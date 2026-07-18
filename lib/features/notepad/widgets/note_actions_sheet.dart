@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:smart_meal_management/core/constants/app_constants.dart';
 import 'package:smart_meal_management/core/theme/app_colors.dart';
 import 'package:smart_meal_management/core/theme/app_typography.dart';
+import 'package:smart_meal_management/data/services/notification_service.dart';
 import 'package:smart_meal_management/features/notepad/models/note.dart';
 import 'package:smart_meal_management/features/notepad/providers/notepad_provider.dart';
 
@@ -296,5 +297,10 @@ Future<DateTime?> pickReminderDateTime(
     initialTime: TimeOfDay.fromDateTime(base),
   );
   if (time == null) return null;
+  // Live-Test-11 ISSUE-021 (permission flow): the user just committed to a
+  // reminder — if Android 14+ has exact alarms denied (its default), open the
+  // system "Alarms & reminders" screen once so the reminder can fire on time.
+  // Fail-soft: even unanswered, the inexact fallback still delivers.
+  await NotificationService.instance.ensureExactAlarmPermission();
   return DateTime(date.year, date.month, date.day, time.hour, time.minute);
 }

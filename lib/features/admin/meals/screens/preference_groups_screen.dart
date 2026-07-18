@@ -222,7 +222,10 @@ class _PreferenceGroupsScreenState extends State<PreferenceGroupsScreen> {
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (_) => _OptionEditorSheet(quantityEnabled: g.quantityEnabled),
+      builder: (_) => _OptionEditorSheet(
+        quantityEnabled: g.quantityEnabled,
+        vegOnly: g.vegOnly,
+      ),
     );
     if (body == null) return;
     final res = await _repo.addOption(g.id, body);
@@ -504,34 +507,40 @@ class _ModeSelector extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    return Row(
-      children: [
-        Expanded(
-          child: _modeCard(
-            context,
-            isDark: isDark,
-            selected: standaloneActive,
-            icon: Icons.style_rounded,
-            title: 'Standalone',
-            description: 'One simple list — members pick a single tag',
-            accent: AppColors.secondary,
-            onTap: onStandalone,
+    // Live-Test-11 ISSUE-011: IntrinsicHeight + stretch — both mode cards are
+    // ALWAYS the same height regardless of how their descriptions wrap, so
+    // the pair reads as one premium control everywhere it appears.
+    return IntrinsicHeight(
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Expanded(
+            child: _modeCard(
+              context,
+              isDark: isDark,
+              selected: standaloneActive,
+              icon: Icons.style_rounded,
+              title: 'Standalone',
+              description: 'One simple list — members pick a single tag',
+              accent: AppColors.secondary,
+              onTap: onStandalone,
+            ),
           ),
-        ),
-        const SizedBox(width: 10),
-        Expanded(
-          child: _modeCard(
-            context,
-            isDark: isDark,
-            selected: groupsActive,
-            icon: Icons.tune_rounded,
-            title: 'Preference Groups',
-            description: 'Multi-choice dimensions, rules & ₹ add-ons',
-            accent: AppColors.primary,
-            onTap: onGroups,
+          const SizedBox(width: 10),
+          Expanded(
+            child: _modeCard(
+              context,
+              isDark: isDark,
+              selected: groupsActive,
+              icon: Icons.tune_rounded,
+              title: 'Preference Groups',
+              description: 'Multi-choice dimensions, rules & ₹ add-ons',
+              accent: AppColors.primary,
+              onTap: onGroups,
+            ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 
@@ -1279,7 +1288,11 @@ class _GroupEditorSheetState extends State<_GroupEditorSheet> {
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (_) => _OptionEditorSheet(quantityEnabled: _quantity),
+      builder: (_) => _OptionEditorSheet(
+        quantityEnabled: _quantity,
+        // ISSUE-014: draft options inside a Veg-Only group are locked veg.
+        vegOnly: _vegOnly,
+      ),
     );
     if (body != null) setState(() => _options.add(body));
   }
@@ -1559,8 +1572,15 @@ class _GroupEditorSheetState extends State<_GroupEditorSheet> {
 // ── Option editor sheet ───────────────────────────────────────────────────────
 
 class _OptionEditorSheet extends StatefulWidget {
-  const _OptionEditorSheet({required this.quantityEnabled});
+  const _OptionEditorSheet({
+    required this.quantityEnabled,
+    this.vegOnly = false,
+  });
   final bool quantityEnabled;
+
+  /// Live-Test-11 ISSUE-014: the parent group is Veg-Only — the option's veg
+  /// flag is locked ON (the group is the policy; the server enforces too).
+  final bool vegOnly;
 
   @override
   State<_OptionEditorSheet> createState() => _OptionEditorSheetState();
@@ -1591,7 +1611,7 @@ class _OptionEditorSheetState extends State<_OptionEditorSheet> {
       'key': _GroupEditorSheetState._keyOf(label),
       'label': label,
       if (_emoji.text.trim().isNotEmpty) 'emoji': _emoji.text.trim(),
-      'isVeg': _isVeg,
+      'isVeg': widget.vegOnly ? true : _isVeg,
       'priceDelta': (rupees * 100).round(),
       if (widget.quantityEnabled && _maxQty > 1) 'maxQty': _maxQty,
     });
@@ -1659,8 +1679,15 @@ class _OptionEditorSheetState extends State<_OptionEditorSheet> {
               dense: true,
               contentPadding: EdgeInsets.zero,
               title: const Text('Vegetarian'),
-              value: _isVeg,
-              onChanged: (v) => setState(() => _isVeg = v),
+              // ISSUE-014: locked ON inside a Veg-Only group — the group is
+              // the parent policy; change the group to change the options.
+              subtitle: widget.vegOnly
+                  ? const Text('Locked — this group is Veg-Only')
+                  : null,
+              value: widget.vegOnly ? true : _isVeg,
+              onChanged: widget.vegOnly
+                  ? null
+                  : (v) => setState(() => _isVeg = v),
             ),
             if (widget.quantityEnabled)
               Row(

@@ -1,3 +1,4 @@
+import 'package:flutter/services.dart' show PlatformException;
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:smart_meal_management/app/router/route_names.dart';
 import 'package:smart_meal_management/core/utils/time_format.dart';
@@ -144,6 +145,14 @@ class NotificationService {
   /// Cancels ids 1000–1149 (reserved for meal reminders; 50 meals × 3 slots)
   /// before scheduling fresh ones, so stale entries don't linger after admin
   /// schedule changes.
+  /// Live-Test-11 P1 (single-notification rule): set by
+  /// [PushNotificationService] once the device's FCM token is registered with
+  /// the backend. The backend then owns the 30-min and 10-min window-close
+  /// reminders (FCM push), so the matching LOCAL reminders are suppressed —
+  /// the same reminder must never arrive twice. The 60-min local reminder has
+  /// no push counterpart and always stays scheduled (fail-safe early warning).
+  static bool pushRemindersActive = false;
+
   Future<void> syncReminders(
     List<MealModel> meals, {
     bool isVacationMode = false,
@@ -200,7 +209,13 @@ class NotificationService {
       }
 
       // 2. Schedule 30-minute reminder (PRD: "attendance ends in 30 minutes")
+      // P1 single-notification rule: skipped when the backend FCM reminder
+      // (same 30-min offset) will reach this device — see [pushRemindersActive].
       final remind30 = closeTime.subtract(const Duration(minutes: 30));
+      if (pushRemindersActive) {
+        notifId += 2; // keep the 30-min and 10-min slots reserved
+        continue;
+      }
       if (remind30.isAfter(now)) {
         await _scheduleReminder(
           id: notifId++,
@@ -233,6 +248,65 @@ class NotificationService {
 
   // ── Internals ──────────────────────────────────────────────────────────────
 
+  /// Live-Test-11 ISSUE-021: exact-alarm fail-safe. Android 14+ denies
+  /// SCHEDULE_EXACT_ALARM by default for sideloaded/new installs — an exact
+  /// zonedSchedule then throws `exact_alarms_not_permitted` and the reminder
+  /// silently never fires. Retrying with an INEXACT mode still delivers the
+  /// notification (the OS may shift it by a few minutes) — reliably late
+  /// beats reliably never.
+  Future<void> _zonedScheduleWithFallback(
+    int id,
+    String title,
+    String body,
+    tz.TZDateTime when,
+    NotificationDetails details, {
+    String? payload,
+  }) async {
+    try {
+      await _plugin.zonedSchedule(
+        id,
+        title,
+        body,
+        when,
+        details,
+        androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
+        uiLocalNotificationDateInterpretation:
+            UILocalNotificationDateInterpretation.absoluteTime,
+        payload: payload,
+      );
+    } on PlatformException {
+      await _plugin.zonedSchedule(
+        id,
+        title,
+        body,
+        when,
+        details,
+        androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
+        uiLocalNotificationDateInterpretation:
+            UILocalNotificationDateInterpretation.absoluteTime,
+        payload: payload,
+      );
+    }
+  }
+
+  /// ISSUE-021 permission flow: when Android denies exact alarms (14+ default),
+  /// ask once via the system "Alarms & reminders" screen. Safe no-op on iOS,
+  /// on already-granted devices, and on plugin versions without the API.
+  Future<void> ensureExactAlarmPermission() async {
+    try {
+      final androidPlugin = _plugin.resolvePlatformSpecificImplementation<
+          AndroidFlutterLocalNotificationsPlugin>();
+      if (androidPlugin == null) return;
+      final canExact =
+          await androidPlugin.canScheduleExactNotifications() ?? true;
+      if (!canExact) {
+        await androidPlugin.requestExactAlarmsPermission();
+      }
+    } catch (_) {
+      // Fail soft — the inexact fallback still delivers reminders.
+    }
+  }
+
   Future<void> _scheduleReminder({
     required int id,
     required String title,
@@ -240,7 +314,7 @@ class NotificationService {
     required DateTime scheduledAt,
     String? payload,
   }) async {
-    await _plugin.zonedSchedule(
+    await _zonedScheduleWithFallback(
       id,
       title,
       body,
@@ -256,9 +330,6 @@ class NotificationService {
         ),
         iOS: DarwinNotificationDetails(),
       ),
-      androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
-      uiLocalNotificationDateInterpretation:
-          UILocalNotificationDateInterpretation.absoluteTime,
       payload: payload,
     );
   }
@@ -322,7 +393,10 @@ class NotificationService {
     if (!_initialized) return;
     if (!when.isAfter(DateTime.now())) return;
     try {
-      await _plugin.zonedSchedule(
+      // ISSUE-021: exact first, inexact fallback — a denied exact-alarm
+      // permission (Android 14+ default) must delay a reminder by minutes,
+      // never swallow it entirely (the old single-mode call did).
+      await _zonedScheduleWithFallback(
         _noteNotificationId(noteId),
         title.trim().isEmpty ? 'Note reminder' : title.trim(),
         'Tap to open your note.',
@@ -337,14 +411,11 @@ class NotificationService {
           ),
           iOS: DarwinNotificationDetails(),
         ),
-        androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
-        uiLocalNotificationDateInterpretation:
-            UILocalNotificationDateInterpretation.absoluteTime,
         payload: RouteNames.notepad,
       );
     } catch (_) {
       // Fail soft — a reminder that cannot be scheduled must never crash the
-      // notepad (e.g. exact-alarm permission revoked on Android 14).
+      // notepad (even the inexact mode can throw on exotic OEM builds).
     }
   }
 

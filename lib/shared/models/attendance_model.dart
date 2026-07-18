@@ -36,6 +36,7 @@ class AttendanceModel {
     this.userName,
     this.userPhone,
     this.price,
+    this.billAbsent,
     this.selections,
     this.preferences,
     this.source,
@@ -74,6 +75,12 @@ class AttendanceModel {
   /// Additive: ₹ price snapshot at mark time (per-day override or master).
   /// Null for pre-pricing records — billing falls back to the master meal price.
   final int? price;
+
+  /// Live-Test-11 ISSUE-017 (additive): Bill-Absent policy snapshot taken by
+  /// the server when this record was written as Absent. True = this absent
+  /// bills at its price snapshot; null/false = free. Date-forward by
+  /// construction — later toggle flips never change existing records.
+  final bool? billAbsent;
 
   /// Module 36 (FR-PG-031): outgoing multi-group selection set — sent with
   /// Present marks on meals that carry explicit preference groups.
@@ -117,6 +124,7 @@ class AttendanceModel {
             : (j['price'] != null
                 ? int.tryParse(j['price'].toString())
                 : null),
+        billAbsent: j['billAbsent'] is bool ? j['billAbsent'] as bool : null,
         preferences: j['preferences'] is List
             ? j['preferences'] as List<dynamic>
             : null,
@@ -139,6 +147,7 @@ class AttendanceModel {
         'userName': userName,
         'userPhone': userPhone,
         'price': price,
+        'billAbsent': billAbsent,
         'preferences': preferences,
         'source': source,
         'userRole': userRole,
@@ -169,6 +178,7 @@ class AttendanceModel {
         userName: userName,
         userPhone: userPhone,
         price: price ?? this.price,
+        billAbsent: billAbsent,
         selections: selections ?? this.selections,
         preferences: preferences ?? this.preferences,
         source: source,

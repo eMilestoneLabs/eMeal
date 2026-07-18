@@ -275,6 +275,15 @@ class _NotepadListScreenState extends State<NotepadListScreen> {
     });
   }
 
+  /// Live-Test-11 ISSUE-022: tag chips are functional — tapping one opens the
+  /// search bar pre-filled with the tag, filtering the list to notes carrying
+  /// it (the provider's query already matches tags). Clearing search restores
+  /// the full list; no new state machinery needed.
+  void _filterByTag(String tag) {
+    setState(() => _searching = true);
+    _searchController.text = tag;
+  }
+
   // ── Build ────────────────────────────────────────────────────────────────────
 
   @override
@@ -497,6 +506,9 @@ class _NotepadListScreenState extends State<NotepadListScreen> {
                 ? () => _provider.toggleSelection(note.id)
                 : () => _openSheet(note),
         onTogglePin: selecting ? () {} : () => _provider.togglePin(note.id),
+        // Live-Test-11 ISSUE-022: tapping a #tag filters the list by that tag
+        // through the existing search pipeline (query matches tags).
+        onTagTap: selecting ? null : _filterByTag,
       );
 
       children.add(
@@ -613,6 +625,8 @@ class _NotepadListScreenState extends State<NotepadListScreen> {
                       : () => _openSheet(note),
               onTogglePin:
                   selecting ? () {} : () => _provider.togglePin(note.id),
+              // ISSUE-022: tag chips filter in the grid layout too.
+              onTagTap: selecting ? null : _filterByTag,
             )
             .animate(key: ValueKey('anim_${note.id}'))
             .fadeIn(duration: AppConstants.animFast)

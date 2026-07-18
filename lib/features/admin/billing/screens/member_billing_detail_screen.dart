@@ -506,10 +506,13 @@ class _MemberBillingDetailScreenState extends State<MemberBillingDetailScreen> {
 
   /// Live-Test-8 ISSUE-005 (server parity): a REAL skipped record always
   /// bills — it exists only for dates whose Bill-Skip policy was ON at
-  /// window-close, so the current flag is not consulted. Absent is always
-  /// FREE. Virtual placeholder rows (autoSkipped) are never billed.
+  /// window-close, so the current flag is not consulted. Live-Test-11
+  /// ISSUE-017: an Absent row bills only when its own write-time snapshot
+  /// (r.billAbsent) flagged it — same date-forward rule as the server engine.
+  /// Virtual placeholder rows (autoSkipped) are never billed.
   bool _isPolicyBilled(BillingRow r) =>
-      !r.autoSkipped && r.status == AttendanceStatus.skipped;
+      (!r.autoSkipped && r.status == AttendanceStatus.skipped) ||
+      (r.status == AttendanceStatus.absent && r.billAbsent == true);
 
   Widget _dateGroup(ColorScheme cs, DateTime date, List<BillingRow> rows) {
     final subtotal = rows

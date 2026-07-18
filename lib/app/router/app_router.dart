@@ -322,7 +322,11 @@ GoRouter buildRouter(AuthProvider auth) {
           ),
           GoRoute(
             path: RouteNames.adminAttendance,
-            builder: (context, state) => const AdminAttendanceScreen(),
+            // Live-Test-11 ISSUE-001: ?open=guests|corrections|vacations jumps
+            // straight into the matching approval UI (notification deep-link).
+            builder: (context, state) => AdminAttendanceScreen(
+              autoOpen: state.uri.queryParameters['open'],
+            ),
           ),
           GoRoute(
             path: RouteNames.adminGroups,
