@@ -61,12 +61,19 @@ class _NoticeComposerScreenState extends State<NoticeComposerScreen> {
   // (auto-compressed to <=100 KB else rejected) + ONE document (<=50 KB) +
   // external links. All optional; text-only notices are fully supported.
   Uint8List? _imageBytes; // compressed JPEG bytes
+  String _imageMime = 'image/jpeg';
   String? _docDataUri;
   String? _docName;
   final _linkCtrl = TextEditingController();
 
   static const int _imageMaxBytes = 100 * 1024;
   static const int _docMaxBytes = 50 * 1024;
+  // ISSUE-001 (Live-Test-10): the backend now auto-compresses oversized
+  // attachments (sharp for images, pdf-lib for PDFs). These transport caps
+  // mirror the server DTO ceilings — anything under them may be sent even when
+  // above the stored limit; the server compresses it to fit.
+  static const int _imageTransportMaxBytes = 2 * 1024 * 1024;
+  static const int _docTransportMaxBytes = 1024 * 1024;
 
   // Issue 2: targeting. 'org' = entire organisation; 'groups' = specific
   // groups. Specific-group delivery reuses the existing single-groupId contract
@@ -106,8 +113,11 @@ class _NoticeComposerScreenState extends State<NoticeComposerScreen> {
     super.dispose();
   }
 
-  /// NTC-012: pick + auto-compress the image; reject with the exact SRS
-  /// message when it cannot reach <=100 KB.
+  /// NTC-012 + ISSUE-001: pick + auto-compress the image. A progressive
+  /// (dimension, quality) ladder makes <=100 KB reachable for any real photo;
+  /// each rung is guarded so an unsupported codec falls through to the
+  /// server-side sharp fallback instead of failing silently. Rejection happens
+  /// ONLY when nothing uploadable remains (extreme case).
   Future<void> _pickImage() async {
     final picked = await ImagePicker().pickImage(
       source: ImageSource.gallery,
@@ -117,32 +127,65 @@ class _NoticeComposerScreenState extends State<NoticeComposerScreen> {
     if (picked == null || !mounted) return;
     final raw = await picked.readAsBytes();
     Uint8List? best;
-    for (final quality in const [80, 60, 40, 25, 10]) {
-      final out = await FlutterImageCompress.compressWithList(
-        raw,
-        quality: quality,
-        minWidth: 1024,
-        minHeight: 1024,
-        format: CompressFormat.jpeg,
-      );
-      if (out.length <= _imageMaxBytes) {
-        best = out;
-        break;
+    var reachedLimit = false;
+    const ladder = [
+      (1280, 85),
+      (1024, 70),
+      (1024, 55),
+      (800, 45),
+      (640, 35),
+      (480, 28),
+      (360, 22),
+    ];
+    for (final (dim, quality) in ladder) {
+      try {
+        final out = await FlutterImageCompress.compressWithList(
+          raw,
+          quality: quality,
+          minWidth: dim,
+          minHeight: dim,
+          format: CompressFormat.jpeg,
+        );
+        if (best == null || out.length < best.length) best = out;
+        if (out.length <= _imageMaxBytes) {
+          reachedLimit = true;
+          break;
+        }
+      } catch (_) {
+        // This rung could not encode (rare codec) — try the next one.
       }
     }
     if (!mounted) return;
-    if (best == null) {
+    if (reachedLimit && best != null) {
+      setState(() {
+        _imageBytes = best;
+        _imageMime = 'image/jpeg';
+        _error = null;
+      });
+      return;
+    }
+    // Device compression could not reach the limit — send the smallest bytes
+    // we have (compressed JPEG, else the original with its real mime type) and
+    // let the server auto-compress. Only a file too large even for transport
+    // is rejected, with the exact SRS message.
+    final fallback = best ?? raw;
+    if (fallback.length > _imageTransportMaxBytes) {
       setState(() => _error =
           'Unable to upload image. Please select an image smaller than 100 KB.');
       return;
     }
     setState(() {
-      _imageBytes = best;
+      _imageBytes = fallback;
+      _imageMime =
+          best != null ? 'image/jpeg' : (picked.mimeType ?? 'image/jpeg');
       _error = null;
     });
   }
 
-  /// NTC-013: pick a PDF/DOC/DOCX/TXT document, hard <=50 KB.
+  /// NTC-013 + ISSUE-001: pick a PDF/DOC/DOCX/TXT document. PDFs above 50 KB
+  /// (up to the transport cap) are sent anyway — the server auto-compresses
+  /// them to fit. DOC/DOCX/TXT cannot be recompressed, so they keep the strict
+  /// 50 KB limit.
   Future<void> _pickDocument() async {
     final res = await FilePicker.platform.pickFiles(
       type: FileType.custom,
@@ -152,7 +195,11 @@ class _NoticeComposerScreenState extends State<NoticeComposerScreen> {
     final file = res?.files.firstOrNull;
     if (file == null || !mounted) return;
     final bytes = file.bytes;
-    if (bytes == null || bytes.length > _docMaxBytes) {
+    final pickedExt = (file.extension ?? '').toLowerCase();
+    final serverCompressible =
+        pickedExt == 'pdf' && (bytes?.length ?? 0) <= _docTransportMaxBytes;
+    if (bytes == null ||
+        (bytes.length > _docMaxBytes && !serverCompressible)) {
       setState(() => _error =
           'Unable to upload document. Please select a document smaller than 50 KB.');
       return;
@@ -215,7 +262,7 @@ class _NoticeComposerScreenState extends State<NoticeComposerScreen> {
     // selected group (reuses the single-groupId contract; fully additive).
     String? firstError;
     final imageData = _imageBytes != null
-        ? 'data:image/jpeg;base64,${base64Encode(_imageBytes!)}'
+        ? 'data:$_imageMime;base64,${base64Encode(_imageBytes!)}'
         : null;
     final links = _parseLinks();
     if (_scope == 'org') {
@@ -421,8 +468,9 @@ class _NoticeComposerScreenState extends State<NoticeComposerScreen> {
             ),
           const SizedBox(height: 4),
           Text(
-            'One image (JPG/PNG/WEBP, auto-compressed to 100 KB) and one '
-            'document (PDF/DOC/DOCX/TXT, up to 50 KB).',
+            'One image (JPG/PNG/WEBP — large files are compressed '
+            'automatically) and one document (PDF auto-compressed when '
+            'possible; DOC/DOCX/TXT up to 50 KB).',
             style:
                 AppTypography.labelSmall.copyWith(color: AppColors.textTertiary),
           ),

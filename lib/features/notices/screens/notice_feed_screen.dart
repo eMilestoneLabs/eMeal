@@ -22,6 +22,7 @@ import 'package:smart_meal_management/shared/models/notification_diagnostics_mod
 import 'package:smart_meal_management/shared/models/result.dart';
 import 'package:smart_meal_management/shared/widgets/app_skeleton.dart';
 import 'package:smart_meal_management/shared/widgets/cached_photo.dart';
+import 'package:smart_meal_management/shared/widgets/link_text.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 /// Notice board feed (Phase B) — bell center for students + admins.
@@ -775,21 +776,39 @@ class _NoticeDetailSheet extends StatelessWidget {
                         .onSurfaceVariant
                         .withValues(alpha: 0.7))),
             const SizedBox(height: 16),
-            Text(notice.body,
+            // ISSUE-002 (Live-Test-10): URLs typed inside the notice body are
+            // now tappable hyperlinks (https/http/www), light + dark safe.
+            LinkText(notice.body,
                 style: AppTypography.bodyMedium.copyWith(
                     color: Theme.of(context).colorScheme.onSurfaceVariant,
                     height: 1.5)),
             // SRS Module 03 NTC-003/012/013: optional rich content.
+            // ISSUE-003 (Live-Test-10): the image keeps its natural aspect
+            // ratio (no fixed-height cover crop) — the ENTIRE image is always
+            // visible, portrait or landscape. Tap opens a full-screen
+            // pinch-to-zoom viewer of the original.
             if (notice.imageUrl != null) ...[
               const SizedBox(height: 14),
-              ClipRRect(
-                borderRadius: BorderRadius.circular(12),
-                child: CachedPhoto(
-                  url: notice.imageUrl,
-                  width: double.infinity,
-                  height: 180,
-                  fit: BoxFit.cover,
-                  cacheWidth: 800,
+              GestureDetector(
+                onTap: () => _openImageFullScreen(context, notice.imageUrl!),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(12),
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxHeight: 380),
+                    child: CachedPhoto(
+                      url: notice.imageUrl,
+                      width: double.infinity,
+                      fit: BoxFit.contain,
+                      cacheWidth: 1080,
+                      placeholder: AppShimmer(
+                        child: Container(
+                          height: 200,
+                          width: double.infinity,
+                          color: AppColors.surfaceVariant,
+                        ),
+                      ),
+                    ),
+                  ),
                 ),
               ),
             ],
@@ -836,6 +855,48 @@ class _NoticeDetailSheet extends StatelessWidget {
     } catch (_) {
       // Best-effort — an unopenable link is not a crash.
     }
+  }
+
+  /// ISSUE-003: full-screen premium viewer for the notice image.
+  static void _openImageFullScreen(BuildContext context, String url) {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => _FullScreenImageViewer(url: url),
+      ),
+    );
+  }
+}
+
+/// ISSUE-003 (Live-Test-10): full-screen, pinch-to-zoom viewer — the original
+/// notice image is shown uncropped at its natural aspect ratio on a black
+/// canvas (identical in light and dark mode).
+class _FullScreenImageViewer extends StatelessWidget {
+  const _FullScreenImageViewer({required this.url});
+  final String url;
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.black,
+      appBar: AppBar(
+        backgroundColor: Colors.black,
+        surfaceTintColor: Colors.transparent,
+        iconTheme: const IconThemeData(color: Colors.white),
+        elevation: 0,
+      ),
+      body: SafeArea(
+        child: Center(
+          child: InteractiveViewer(
+            maxScale: 5,
+            child: CachedPhoto(
+              url: url,
+              width: double.infinity,
+              fit: BoxFit.contain,
+            ),
+          ),
+        ),
+      ),
+    );
   }
 }
 
