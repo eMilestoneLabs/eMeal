@@ -29,12 +29,18 @@ class AppAnalyticsCard extends StatelessWidget {
     this.deltaPositive,
     this.onTap,
     this.compact = false,
+    this.vibrant = false,
   });
 
   final String label;
   final String value;
   final IconData? icon;
   final Color? iconColor;
+
+  /// Additive (Live-Test-10): premium "executive" rendering — an accent
+  /// gradient wash, gradient icon badge and accent-tinted value. Defaults to
+  /// false so every existing call site renders exactly as before.
+  final bool vibrant;
 
   /// Change string, e.g. '+4%' or '-2 members'.
   final String? delta;
@@ -52,6 +58,7 @@ class AppAnalyticsCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final accent = iconColor ?? AppColors.primary;
+    final cardBg = isDark ? AppColors.surfaceDark : AppColors.surface;
 
     return GestureDetector(
       onTap: onTap,
@@ -59,14 +66,45 @@ class AppAnalyticsCard extends StatelessWidget {
         padding: EdgeInsets.all(
           compact ? AppConstants.space12 : AppConstants.space16,
         ),
-        decoration: BoxDecoration(
-          color: isDark ? AppColors.surfaceDark : AppColors.surface,
-          borderRadius: BorderRadius.circular(AppConstants.cardRadius),
-          border: Border.all(
-            color: isDark ? AppColors.borderDark : AppColors.border,
-            width: 1,
-          ),
-        ),
+        decoration: vibrant
+            // Premium executive tile: a soft accent gradient wash (opaque —
+            // pre-blended over the surface so text contrast is unchanged),
+            // accent border and a feather-light accent glow in light mode.
+            ? BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [
+                    Color.alphaBlend(
+                        accent.withValues(alpha: isDark ? 0.20 : 0.10),
+                        cardBg),
+                    Color.alphaBlend(
+                        accent.withValues(alpha: isDark ? 0.05 : 0.02),
+                        cardBg),
+                  ],
+                ),
+                borderRadius: BorderRadius.circular(AppConstants.cardRadius),
+                border: Border.all(
+                  color: accent.withValues(alpha: isDark ? 0.45 : 0.28),
+                ),
+                boxShadow: isDark
+                    ? null
+                    : [
+                        BoxShadow(
+                          color: accent.withValues(alpha: 0.10),
+                          blurRadius: 12,
+                          offset: const Offset(0, 4),
+                        ),
+                      ],
+              )
+            : BoxDecoration(
+                color: cardBg,
+                borderRadius: BorderRadius.circular(AppConstants.cardRadius),
+                border: Border.all(
+                  color: isDark ? AppColors.borderDark : AppColors.border,
+                  width: 1,
+                ),
+              ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisSize: MainAxisSize.min,
@@ -79,13 +117,34 @@ class AppAnalyticsCard extends StatelessWidget {
                   Container(
                     width: compact ? 32 : 40,
                     height: compact ? 32 : 40,
-                    decoration: BoxDecoration(
-                      color: accent.withValues(alpha: 0.12),
-                      borderRadius: BorderRadius.circular(10),
-                    ),
+                    decoration: vibrant
+                        // Rich gradient badge with a soft accent glow — the
+                        // white glyph pops like a fintech KPI tile.
+                        ? BoxDecoration(
+                            gradient: LinearGradient(
+                              begin: Alignment.topLeft,
+                              end: Alignment.bottomRight,
+                              colors: [
+                                accent,
+                                Color.lerp(accent, Colors.black, 0.22)!,
+                              ],
+                            ),
+                            borderRadius: BorderRadius.circular(10),
+                            boxShadow: [
+                              BoxShadow(
+                                color: accent.withValues(alpha: 0.35),
+                                blurRadius: 8,
+                                offset: const Offset(0, 3),
+                              ),
+                            ],
+                          )
+                        : BoxDecoration(
+                            color: accent.withValues(alpha: 0.12),
+                            borderRadius: BorderRadius.circular(10),
+                          ),
                     child: Icon(
                       icon,
-                      color: accent,
+                      color: vibrant ? Colors.white : accent,
                       size: compact ? 16 : 20,
                     ),
                   ),
@@ -102,7 +161,15 @@ class AppAnalyticsCard extends StatelessWidget {
                       ? AppTypography.numericSmall
                       : AppTypography.numericMedium)
                   .copyWith(
-                color: isDark ? AppColors.textPrimaryDark : AppColors.textPrimary,
+                // Vibrant tiles color the headline number with the accent
+                // (lightened on dark / deepened on light for AA contrast).
+                color: vibrant
+                    ? (isDark
+                        ? Color.lerp(accent, Colors.white, 0.40)!
+                        : Color.lerp(accent, Colors.black, 0.30)!)
+                    : (isDark
+                        ? AppColors.textPrimaryDark
+                        : AppColors.textPrimary),
               ),
             ),
 

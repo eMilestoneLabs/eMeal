@@ -34,6 +34,7 @@ class StatsSummaryRow extends StatelessWidget {
             icon: Icons.people_rounded,
             iconColor: AppColors.primary,
             compact: true,
+            vibrant: true,
           ),
           const SizedBox(width: 10),
           AppAnalyticsCard(
@@ -42,6 +43,7 @@ class StatsSummaryRow extends StatelessWidget {
             icon: Icons.check_circle_rounded,
             iconColor: AppColors.present,
             compact: true,
+            vibrant: true,
           ),
           const SizedBox(width: 10),
           AppAnalyticsCard(
@@ -50,6 +52,7 @@ class StatsSummaryRow extends StatelessWidget {
             icon: Icons.cancel_rounded,
             iconColor: AppColors.absent,
             compact: true,
+            vibrant: true,
           ),
           const SizedBox(width: 10),
           AppAnalyticsCard(
@@ -58,6 +61,7 @@ class StatsSummaryRow extends StatelessWidget {
             icon: Icons.bar_chart_rounded,
             iconColor: AppColors.vacation,
             compact: true,
+            vibrant: true,
             deltaPositive: attendanceRate >= 0.75,
           ),
         ],

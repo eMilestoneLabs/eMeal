@@ -389,21 +389,51 @@ class _MealSummaryCard extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: isDark ? AppColors.surfaceDark : AppColors.surface,
-        borderRadius: BorderRadius.circular(14),
+        color: isDark ? AppColors.surfaceElevatedDark : AppColors.surface,
+        borderRadius: BorderRadius.circular(16),
         border: Border.all(
             color: (isDark ? AppColors.borderDark : AppColors.border)
                 .withValues(alpha: 0.4)),
+        // Feather-light depth so cards float off the background (light mode
+        // only — dark mode layers via the elevated surface color instead).
+        boxShadow: isDark
+            ? null
+            : [
+                BoxShadow(
+                  color: AppColors.primary.withValues(alpha: 0.05),
+                  blurRadius: 14,
+                  offset: const Offset(0, 5),
+                ),
+              ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Meal name
+          // Meal name — premium gradient slot badge + name + price pill.
           Row(
             children: [
-              Icon(MealModel.slotIcon(meal.slotKey),
-                  size: 16, color: AppColors.primary),
-              const SizedBox(width: 8),
+              Container(
+                width: 30,
+                height: 30,
+                decoration: BoxDecoration(
+                  gradient: const LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [AppColors.primary, AppColors.gradientViolet],
+                  ),
+                  borderRadius: BorderRadius.circular(9),
+                  boxShadow: [
+                    BoxShadow(
+                      color: AppColors.primary.withValues(alpha: 0.30),
+                      blurRadius: 7,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
+                ),
+                child: Icon(MealModel.slotIcon(meal.slotKey),
+                    size: 16, color: Colors.white),
+              ),
+              const SizedBox(width: 10),
               Expanded(
                 child: Text(
                   meal.name,
@@ -421,43 +451,74 @@ class _MealSummaryCard extends StatelessWidget {
               if ((summary?.snapshotPrice ??
                       (_mealWindowOpenNow(meal) ? meal.price : null)) !=
                   null)
-                Text(
-                  '₹${summary?.snapshotPrice ?? meal.price}',
-                  style: AppTypography.labelMedium.copyWith(
-                    fontWeight: FontWeight.w800,
-                    color: AppColors.primary,
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: isDark
+                        ? AppColors.primary.withValues(alpha: 0.22)
+                        : AppColors.primaryContainer,
+                    borderRadius: BorderRadius.circular(9),
+                    border: Border.all(
+                      color: AppColors.primary
+                          .withValues(alpha: isDark ? 0.45 : 0.25),
+                    ),
+                  ),
+                  child: Text(
+                    '₹${summary?.snapshotPrice ?? meal.price}',
+                    style: AppTypography.labelMedium.copyWith(
+                      fontWeight: FontWeight.w800,
+                      color: isDark
+                          ? AppColors.primaryLight
+                          : AppColors.primaryDark,
+                    ),
                   ),
                 ),
             ],
           ),
           const SizedBox(height: 10),
           // Live-Test-9 ISSUE-4.2: full status row — Present / Absent /
-          // System Skip / Vacation / live Pending. Wrap keeps it responsive
-          // on narrow phones instead of overflowing a fixed Row.
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: [
-              _CountPill(
-                  label: 'Present', value: present, color: AppColors.present),
-              _CountPill(
-                  label: 'Absent', value: absent, color: AppColors.absent),
-              _CountPill(
-                  label: 'System Skip',
-                  value: skipped,
-                  color: AppColors.skipped),
-              if ((summary?.vacationCount ?? 0) > 0)
+          // System Skip / Vacation / live Pending. A Wrap of fixed-width
+          // pills (never Expanded — Wrap is not a Flex, Expanded inside it
+          // throws and release builds paint the grey ErrorWidget) keeps the
+          // classic equal-thirds grid and overflows extra pills to the next
+          // row on narrow phones.
+          LayoutBuilder(builder: (context, constraints) {
+            final pillWidth = (constraints.maxWidth - 16) / 3;
+            return Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
                 _CountPill(
-                    label: 'Vacation',
-                    value: summary!.vacationCount,
-                    color: AppColors.info),
-              if ((summary?.pendingCount ?? 0) > 0)
+                    label: 'Present',
+                    value: present,
+                    color: AppColors.present,
+                    width: pillWidth),
                 _CountPill(
-                    label: 'Pending',
-                    value: summary!.pendingCount!,
-                    color: AppColors.warning),
-            ],
-          ),
+                    label: 'Absent',
+                    value: absent,
+                    color: AppColors.absent,
+                    width: pillWidth),
+                _CountPill(
+                    label: 'System Skip',
+                    value: skipped,
+                    color: AppColors.skipped,
+                    width: pillWidth),
+                if ((summary?.vacationCount ?? 0) > 0)
+                  _CountPill(
+                      label: 'Vacation',
+                      value: summary!.vacationCount,
+                      color: AppColors.info,
+                      width: pillWidth),
+                if ((summary?.pendingCount ?? 0) > 0)
+                  _CountPill(
+                      label: 'Pending',
+                      value: summary!.pendingCount!,
+                      color: AppColors.warning,
+                      width: pillWidth),
+              ],
+            );
+          }),
           // Pass 15 (FR-ANL-003): expected participants for this meal —
           // active, non-blocked members minus anyone on vacation. Shown as a
           // quiet caption so admins can read "present vs. expected" at a glance.
@@ -478,21 +539,29 @@ class _MealSummaryCard extends StatelessWidget {
           // kitchen's real plate count never has to be derived by hand.
           if (summary != null) ...[
             const SizedBox(height: 8),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                if (summary!.guestCount > 0)
+            LayoutBuilder(builder: (context, constraints) {
+              final hasGuests = summary!.guestCount > 0;
+              // Equal halves — with no guests the lone Total pill keeps the
+              // same half width so the grid never stretches edge-to-edge.
+              final pillWidth = (constraints.maxWidth - 8) / 2;
+              return Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  if (hasGuests)
+                    _CountPill(
+                        label: 'Guests',
+                        value: summary!.guestCount,
+                        color: AppColors.secondary,
+                        width: pillWidth),
                   _CountPill(
-                      label: 'Guests',
-                      value: summary!.guestCount,
-                      color: AppColors.secondary),
-                _CountPill(
-                    label: 'Total attendance',
-                    value: summary!.effectiveAttendingTotal,
-                    color: AppColors.primary),
-              ],
-            ),
+                      label: 'Total attendance',
+                      value: summary!.effectiveAttendingTotal,
+                      color: AppColors.primary,
+                      width: pillWidth),
+                ],
+              );
+            }),
             if (summary!.guestCount > 0) ...[
               const SizedBox(height: 6),
               Text(
@@ -743,20 +812,40 @@ class _MealSummaryCard extends StatelessWidget {
 
 class _CountPill extends StatelessWidget {
   const _CountPill(
-      {required this.label, required this.value, required this.color});
+      {required this.label,
+      required this.value,
+      required this.color,
+      required this.width});
   final String label;
   final int value;
   final Color color;
 
+  /// Explicit width — pills live inside a [Wrap], which is not a Flex, so
+  /// [Expanded] is illegal there (ParentDataWidget error → grey ErrorWidget
+  /// in release builds). The parent computes an equal-column width instead.
+  final double width;
+
   @override
   Widget build(BuildContext context) {
-    return Expanded(
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return SizedBox(
+      width: width,
       child: Container(
         padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 8),
         decoration: BoxDecoration(
-          color: color.withValues(alpha: 0.09),
+          // Vibrant two-tone wash — richer at the top, airy at the bottom —
+          // with a stronger accent border for that executive-tile pop.
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [
+              color.withValues(alpha: isDark ? 0.24 : 0.13),
+              color.withValues(alpha: isDark ? 0.08 : 0.04),
+            ],
+          ),
           borderRadius: BorderRadius.circular(10),
-          border: Border.all(color: color.withValues(alpha: 0.2)),
+          border: Border.all(
+              color: color.withValues(alpha: isDark ? 0.45 : 0.30)),
         ),
         child: Column(
           children: [
@@ -766,9 +855,15 @@ class _CountPill extends StatelessWidget {
                   .copyWith(fontWeight: FontWeight.w800, color: color),
             ),
             const SizedBox(height: 2),
-            Text(
-              label,
-              style: AppTypography.labelSmall.copyWith(color: color),
+            // One line, auto-scaled down on very narrow widths — the label
+            // can never wrap (uneven pill heights) or clip on any device.
+            FittedBox(
+              fit: BoxFit.scaleDown,
+              child: Text(
+                label,
+                maxLines: 1,
+                style: AppTypography.labelSmall.copyWith(color: color),
+              ),
             ),
           ],
         ),
