@@ -83,6 +83,13 @@ const _breakfastSummary = MealAttendanceSummary(
   guestPreferenceGroupBreakdown: {
     'Option 2': {'Milk': 2},
   },
+  // Kitchen Summary (Live-Test-10): 2 approved + 2 awaiting + 1 cancelled +
+  // 1 no-show. Option 2 totals 4 (= present 2 + guests 2) → green ✓;
+  // Option 3 totals 2 ≠ 4 → exercises the red Data Mismatch banner.
+  guestPendingApproval: 2,
+  guestCancelled: 1,
+  guestNoShow: 1,
+  guestTotalRequests: 6,
 );
 
 /// Lunch: minimal standalone card — flat guest preferences only.
@@ -95,12 +102,15 @@ const _lunchSummary = MealAttendanceSummary(
   presentCount: 3,
   absentCount: 0,
   skippedCount: 0,
-  preferenceBreakdown: {'rice': 1},
+  // Standalone mode, fully valid: members 2+1 + guest 1 = 4 = present 3 +
+  // approved guest 1 → the green “Total 4 ✓” chip path.
+  preferenceBreakdown: {'rice': 2, 'roti': 1},
   guestCount: 1,
   guestAdults: 1,
   attendingTotal: 4,
   expectedParticipants: 3,
   guestPreferenceBreakdown: {'veg': 1},
+  guestTotalRequests: 1,
 );
 
 final _activity = [
@@ -181,13 +191,23 @@ const _mustSee = <String>{
   'Overview',
   'Total Members',
   'Present',
-  'System Skip',
+  'Skip',
   'Vacation',
   'Pending',
-  'Guests',
-  'Total attendance',
   'Your Groups',
   'North Wing Hostel',
+};
+
+/// Substring targets (chips/banners whose full text embeds counts).
+const _mustContain = <String>{
+  'GUEST SUMMARY',
+  'Approved / Present',
+  'Awaiting Approval',
+  'Cancelled / Rejected',
+  'TOTAL TO SERVE',
+  'Standalone Preference',
+  'Total 4 ✓',
+  'Dashboard Data Mismatch',
 };
 
 Future<Set<String>> _pumpDashboard(
@@ -216,6 +236,9 @@ Future<Set<String>> _pumpDashboard(
   void record() {
     for (final label in _mustSee) {
       if (find.text(label).evaluate().isNotEmpty) seen.add(label);
+    }
+    for (final part in _mustContain) {
+      if (find.textContaining(part).evaluate().isNotEmpty) seen.add(part);
     }
   }
 
@@ -249,7 +272,7 @@ void main() {
           theme: AppTheme.light, size: entry.value);
       // Every section + every count-pill branch scrolled through the
       // viewport and rendered.
-      expect(seen, containsAll(_mustSee));
+      expect(seen, containsAll({..._mustSee, ..._mustContain}));
       await tester.binding.setSurfaceSize(null);
     });
 
@@ -257,7 +280,7 @@ void main() {
         (tester) async {
       final seen = await _pumpDashboard(tester,
           theme: AppTheme.dark, size: entry.value);
-      expect(seen, containsAll(_mustSee));
+      expect(seen, containsAll({..._mustSee, ..._mustContain}));
       await tester.binding.setSurfaceSize(null);
     });
   }

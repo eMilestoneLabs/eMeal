@@ -381,11 +381,6 @@ class _MealSummaryCard extends StatelessWidget {
     final present = summary?.presentCount ?? 0;
     final absent = summary?.absentCount ?? 0;
     final skipped = summary?.skippedCount ?? 0;
-    final prefs = summary?.preferenceBreakdown ?? const <String, int>{};
-
-    final sortedPrefs = prefs.entries.toList()
-      ..sort((a, b) => b.value.compareTo(a.value));
-
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
@@ -477,12 +472,16 @@ class _MealSummaryCard extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 10),
-          // Live-Test-9 ISSUE-4.2: full status row — Present / Absent /
-          // System Skip / Vacation / live Pending. A Wrap of fixed-width
-          // pills (never Expanded — Wrap is not a Flex, Expanded inside it
-          // throws and release builds paint the grey ErrorWidget) keeps the
-          // classic equal-thirds grid and overflows extra pills to the next
-          // row on narrow phones.
+          // Live-Test-10 Kitchen Summary — MEMBERS block. Present / Absent /
+          // Skip / Vacation (+ live Pending). A Wrap of fixed-width pills
+          // (never Expanded — Wrap is not a Flex, Expanded inside it throws
+          // and release builds paint the grey ErrorWidget) keeps the classic
+          // equal-thirds grid and overflows extra pills to the next row.
+          const _SectionLabel(
+              icon: Icons.people_alt_rounded,
+              label: 'MEMBERS',
+              color: AppColors.primary),
+          const SizedBox(height: 8),
           LayoutBuilder(builder: (context, constraints) {
             final pillWidth = (constraints.maxWidth - 16) / 3;
             return Wrap(
@@ -500,16 +499,15 @@ class _MealSummaryCard extends StatelessWidget {
                     color: AppColors.absent,
                     width: pillWidth),
                 _CountPill(
-                    label: 'System Skip',
+                    label: 'Skip',
                     value: skipped,
                     color: AppColors.skipped,
                     width: pillWidth),
-                if ((summary?.vacationCount ?? 0) > 0)
-                  _CountPill(
-                      label: 'Vacation',
-                      value: summary!.vacationCount,
-                      color: AppColors.info,
-                      width: pillWidth),
+                _CountPill(
+                    label: 'Vacation',
+                    value: summary?.vacationCount ?? 0,
+                    color: AppColors.info,
+                    width: pillWidth),
                 if ((summary?.pendingCount ?? 0) > 0)
                   _CountPill(
                       label: 'Pending',
@@ -534,274 +532,483 @@ class _MealSummaryCard extends StatelessWidget {
               ),
             ),
           ],
-          // Module 22 (FR-HG-060/061) + Live-Test-9 ISSUE-4.2: guests and the
-          // combined Student+Guest total — the total is ALWAYS shown so the
-          // kitchen's real plate count never has to be derived by hand.
+          // Live-Test-10 Kitchen Summary — GUEST SUMMARY ledger. Approved
+          // bookings are the ONLY guests that feed kitchen/attendance/billing
+          // totals; Awaiting / Cancelled / No-show are administrative rows.
+          if (summary != null &&
+              (summary!.guestTotalRequests > 0 || summary!.guestCount > 0)) ...[
+            const SizedBox(height: 12),
+            const _SectionLabel(
+                icon: Icons.group_add_rounded,
+                label: 'GUEST SUMMARY',
+                color: AppColors.secondary),
+            const SizedBox(height: 6),
+            _LedgerRow(
+                label: 'Approved / Present',
+                value: summary!.guestCount,
+                color: AppColors.present),
+            if (summary!.guestPendingApproval > 0)
+              _LedgerRow(
+                  label: 'Awaiting Approval',
+                  value: summary!.guestPendingApproval,
+                  color: AppColors.warning),
+            if (summary!.guestCancelled > 0)
+              _LedgerRow(
+                  label: 'Cancelled / Rejected',
+                  value: summary!.guestCancelled,
+                  color: AppColors.absent),
+            if (summary!.guestNoShow > 0)
+              _LedgerRow(
+                  label: 'No-show',
+                  value: summary!.guestNoShow,
+                  color: AppColors.skipped),
+            if (summary!.guestTotalRequests > 0) ...[
+              const _LedgerDivider(),
+              _LedgerRow(
+                  label: 'Total guest requests',
+                  value: summary!.guestTotalRequests,
+                  color: AppColors.secondary,
+                  bold: true),
+            ],
+            if (summary!.guestCount > 0)
+              Padding(
+                padding: const EdgeInsets.only(top: 2),
+                child: Text(
+                  '${summary!.guestAdults} adult · ${summary!.guestChildren} '
+                  'child approved plates, hosted by members',
+                  style: AppTypography.labelSmall.copyWith(
+                    color: isDark
+                        ? AppColors.textSecondaryDark
+                        : AppColors.textSecondary,
+                  ),
+                ),
+              ),
+          ],
+          // Live-Test-10 Kitchen Summary — TOTAL TO SERVE. Present members +
+          // approved guests: the kitchen preparation count, no mental math.
           if (summary != null) ...[
-            const SizedBox(height: 8),
-            LayoutBuilder(builder: (context, constraints) {
-              final hasGuests = summary!.guestCount > 0;
-              // Equal halves — with no guests the lone Total pill keeps the
-              // same half width so the grid never stretches edge-to-edge.
-              final pillWidth = (constraints.maxWidth - 8) / 2;
-              return Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: [
-                  if (hasGuests)
-                    _CountPill(
-                        label: 'Guests',
-                        value: summary!.guestCount,
-                        color: AppColors.secondary,
-                        width: pillWidth),
-                  _CountPill(
-                      label: 'Total attendance',
-                      value: summary!.effectiveAttendingTotal,
-                      color: AppColors.primary,
-                      width: pillWidth),
-                ],
-              );
-            }),
-            if (summary!.guestCount > 0) ...[
-              const SizedBox(height: 6),
-              Text(
-                '${summary!.guestAdults} adult · ${summary!.guestChildren} child '
-                'guest plates, hosted by members',
-                style: AppTypography.labelSmall.copyWith(
-                  color: isDark
-                      ? AppColors.textSecondaryDark
-                      : AppColors.textSecondary,
+            const SizedBox(height: 12),
+            _ServePanel(
+              members: summary!.presentCount,
+              guests: summary!.guestCount,
+              total: summary!.effectiveAttendingTotal,
+            ),
+          ],
+          // Live-Test-10 Kitchen Summary — preference sections. Preference is
+          // either DISABLED (no section at all) or MANDATORY: standalone
+          // totals and every preference-group total must equal Present
+          // members + approved guests; any deviation is a data-integrity
+          // fault surfaced as a Dashboard Data Mismatch banner.
+          ..._buildPreferenceSections(isDark),
+        ],
+      ),
+    );
+  }
+
+  /// Distinct accent per section — enterprise dashboards colour-code groups.
+  static const _sectionAccents = <Color>[
+    AppColors.primary,
+    AppColors.secondary,
+    AppColors.violet,
+    AppColors.info,
+    AppColors.warning,
+  ];
+
+  /// Kitchen Summary preference sections. GROUPS mode: one validated section
+  /// per configured group (member + guest picks merged per option, split
+  /// shown). STANDALONE mode: a single validated section. Preference disabled
+  /// (no data): no section at all.
+  List<Widget> _buildPreferenceSections(bool isDark) {
+    final s = summary;
+    if (s == null) return const [];
+    final expected = s.presentCount + s.guestCount;
+    final memberGroups = s.preferenceGroupBreakdown;
+    final guestGroups = s.guestPreferenceGroupBreakdown;
+    final out = <Widget>[];
+
+    if (memberGroups.isNotEmpty || guestGroups.isNotEmpty) {
+      final labels = <String>[
+        ...memberGroups.keys,
+        ...guestGroups.keys.where((g) => !memberGroups.containsKey(g)),
+      ];
+      for (var i = 0; i < labels.length; i++) {
+        out.add(_PrefSection(
+          title: labels[i],
+          icon: Icons.tune_rounded,
+          accent: _sectionAccents[i % _sectionAccents.length],
+          memberCounts: memberGroups[labels[i]] ?? const {},
+          guestCounts: guestGroups[labels[i]] ?? const {},
+          expectedTotal: expected,
+          resolveDisplay: false,
+          isDark: isDark,
+        ));
+      }
+      return out;
+    }
+
+    // Standalone mode — 'unspecified' means a REQUIRED pick is missing; it is
+    // excluded from the rows so the shortfall drives the mismatch banner.
+    final memberFlat = Map<String, int>.from(s.preferenceBreakdown)
+      ..remove('unspecified');
+    final guestFlat = Map<String, int>.from(s.guestPreferenceBreakdown)
+      ..remove('unspecified');
+    if (memberFlat.isNotEmpty || guestFlat.isNotEmpty) {
+      out.add(_PrefSection(
+        title: 'Standalone Preference',
+        icon: Icons.local_offer_rounded,
+        accent: AppColors.violet,
+        memberCounts: memberFlat,
+        guestCounts: guestFlat,
+        expectedTotal: expected,
+        resolveDisplay: true,
+        isDark: isDark,
+      ));
+    }
+    return out;
+  }
+}
+
+// ── Kitchen Summary building blocks (Live-Test-10) ─────────────────────────
+
+/// Small-caps section label with a colored icon — MEMBERS / GUEST SUMMARY.
+class _SectionLabel extends StatelessWidget {
+  const _SectionLabel(
+      {required this.icon, required this.label, required this.color});
+  final IconData icon;
+  final String label;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Icon(icon, size: 13, color: color),
+        const SizedBox(width: 5),
+        Text(
+          label,
+          style: AppTypography.labelSmall.copyWith(
+            fontWeight: FontWeight.w800,
+            letterSpacing: 0.8,
+            color: color,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// One ledger line: colored status dot · label ····· value.
+class _LedgerRow extends StatelessWidget {
+  const _LedgerRow({
+    required this.label,
+    required this.value,
+    required this.color,
+    this.bold = false,
+  });
+  final String label;
+  final int value;
+  final Color color;
+  final bool bold;
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final textColor =
+        isDark ? AppColors.textPrimaryDark : AppColors.textPrimary;
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 3),
+      child: Row(
+        children: [
+          Container(
+            width: 8,
+            height: 8,
+            decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: AppTypography.labelSmall.copyWith(
+                color: bold ? textColor : (isDark
+                    ? AppColors.textSecondaryDark
+                    : AppColors.textSecondary),
+                fontWeight: bold ? FontWeight.w800 : FontWeight.w600,
+              ),
+            ),
+          ),
+          Text(
+            '$value',
+            style: AppTypography.labelMedium.copyWith(
+              fontWeight: FontWeight.w800,
+              color: bold ? color : textColor,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _LedgerDivider extends StatelessWidget {
+  const _LedgerDivider();
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Container(
+        height: 1,
+        color: (isDark ? AppColors.borderDark : AppColors.border)
+            .withValues(alpha: 0.6),
+      ),
+    );
+  }
+}
+
+/// TOTAL TO SERVE — the kitchen preparation count on a vibrant gradient
+/// panel: present members + approved guests, no mental math ever.
+class _ServePanel extends StatelessWidget {
+  const _ServePanel(
+      {required this.members, required this.guests, required this.total});
+  final int members;
+  final int guests;
+  final int total;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [AppColors.primary, AppColors.gradientViolet],
+        ),
+        borderRadius: BorderRadius.circular(13),
+        boxShadow: [
+          BoxShadow(
+            color: AppColors.primary.withValues(alpha: 0.30),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'TOTAL TO SERVE',
+                  style: AppTypography.labelSmall.copyWith(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 0.8,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  'Members $members · Guests $guests — kitchen '
+                  'preparation count',
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: AppTypography.labelSmall.copyWith(
+                    color: Colors.white.withValues(alpha: 0.85),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 10),
+          Container(
+            padding:
+                const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.18),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(
+                  color: Colors.white.withValues(alpha: 0.35)),
+            ),
+            child: Text(
+              '$total',
+              style: AppTypography.titleMedium.copyWith(
+                color: Colors.white,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// A validated preference section — per-option rows with Members · Guests
+/// split, and a self-checking total: green ✓ when the sum equals Present
+/// members + approved guests, red Dashboard Data Mismatch banner otherwise
+/// (preferences are mandatory when enabled, so any deviation is a
+/// data-integrity fault).
+class _PrefSection extends StatelessWidget {
+  const _PrefSection({
+    required this.title,
+    required this.icon,
+    required this.accent,
+    required this.memberCounts,
+    required this.guestCounts,
+    required this.expectedTotal,
+    required this.resolveDisplay,
+    required this.isDark,
+  });
+
+  final String title;
+  final IconData icon;
+  final Color accent;
+  final Map<String, int> memberCounts;
+  final Map<String, int> guestCounts;
+  final int expectedTotal;
+
+  /// True for standalone tags — labels resolve through
+  /// [MealPreferenceOption.display] for emoji + proper casing.
+  final bool resolveDisplay;
+  final bool isDark;
+
+  @override
+  Widget build(BuildContext context) {
+    final options = <String>[
+      ...memberCounts.keys,
+      ...guestCounts.keys.where((k) => !memberCounts.containsKey(k)),
+    ];
+    final totals = <String, int>{
+      for (final o in options)
+        o: (memberCounts[o] ?? 0) + (guestCounts[o] ?? 0),
+    };
+    options.sort((a, b) => totals[b]!.compareTo(totals[a]!));
+    final actual = totals.values.fold<int>(0, (a, b) => a + b);
+    final ok = actual == expectedTotal;
+    final hasGuestData = guestCounts.values.any((v) => v > 0);
+    final textColor =
+        isDark ? AppColors.textPrimaryDark : AppColors.textPrimary;
+
+    return Container(
+      margin: const EdgeInsets.only(top: 12),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: accent.withValues(alpha: isDark ? 0.10 : 0.05),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: accent.withValues(alpha: 0.25)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(icon, size: 14, color: accent),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: AppTypography.labelMedium.copyWith(
+                    fontWeight: FontWeight.w800,
+                    color: accent,
+                  ),
+                ),
+              ),
+              // Validated total chip: ✓ N (green) or ⚠ (red).
+              Container(
+                padding: const EdgeInsets.symmetric(
+                    horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                  color: (ok ? AppColors.present : AppColors.absent)
+                      .withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(
+                      color: (ok ? AppColors.present : AppColors.absent)
+                          .withValues(alpha: 0.35)),
+                ),
+                child: Text(
+                  ok ? 'Total $actual ✓' : '⚠ $actual of $expectedTotal',
+                  style: AppTypography.labelSmall.copyWith(
+                    fontWeight: FontWeight.w800,
+                    color: ok ? AppColors.present : AppColors.absent,
+                  ),
                 ),
               ),
             ],
-          ],
-          // Per-meal preference breakdown
-          if (sortedPrefs.isNotEmpty) ...[
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                const Icon(Icons.local_offer_rounded,
-                    size: 13, color: AppColors.primary),
-                const SizedBox(width: 5),
-                Text(
-                  'Preferences',
-                  style: AppTypography.labelSmall
-                      .copyWith(fontWeight: FontWeight.w700),
-                ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            Wrap(
-              spacing: 6,
-              runSpacing: 6,
-              children: sortedPrefs.map((e) {
-                final disp = MealPreferenceOption.display(e.key);
-                final label =
-                    disp.emoji.isEmpty ? disp.label : '${disp.emoji} ${disp.label}';
-                return Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                  decoration: BoxDecoration(
-                    color: AppColors.primary.withValues(alpha: 0.08),
-                    borderRadius: BorderRadius.circular(20),
-                    border: Border.all(
-                        color: AppColors.primary.withValues(alpha: 0.2)),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        label,
-                        style: AppTypography.labelSmall.copyWith(
-                          fontWeight: FontWeight.w600,
-                          color: AppColors.primary,
-                        ),
+          ),
+          const SizedBox(height: 8),
+          ...options.map((o) {
+            String label = o;
+            if (resolveDisplay) {
+              final disp = MealPreferenceOption.display(o);
+              label = disp.emoji.isEmpty
+                  ? disp.label
+                  : '${disp.emoji} ${disp.label}';
+            }
+            final m = memberCounts[o] ?? 0;
+            final g = guestCounts[o] ?? 0;
+            return Padding(
+              padding: const EdgeInsets.symmetric(vertical: 3),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      label,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: AppTypography.labelSmall.copyWith(
+                        fontWeight: FontWeight.w700,
+                        color: textColor,
                       ),
-                      const SizedBox(width: 6),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 6, vertical: 1),
-                        decoration: BoxDecoration(
-                          color: AppColors.primary.withValues(alpha: 0.16),
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                        child: Text(
-                          '${e.value}',
-                          style: AppTypography.labelSmall.copyWith(
-                            fontWeight: FontWeight.w800,
-                            color: AppColors.primary,
-                          ),
-                        ),
+                    ),
+                  ),
+                  if (hasGuestData) ...[
+                    Text(
+                      'M $m · G $g',
+                      style: AppTypography.labelSmall.copyWith(
+                        color: isDark
+                            ? AppColors.textSecondaryDark
+                            : AppColors.textSecondary,
                       ),
-                    ],
+                    ),
+                    const SizedBox(width: 10),
+                  ],
+                  Text(
+                    '${totals[o]}',
+                    style: AppTypography.labelMedium.copyWith(
+                      fontWeight: FontWeight.w800,
+                      color: accent,
+                    ),
                   ),
-                );
-              }).toList(),
-            ),
-          ],
-          // Module 36 (FR-PG-050): multi-preference-group selections of
-          // present members — one row per configured group (labels are the
-          // immutable snapshots captured at mark time).
-          if ((summary?.preferenceGroupBreakdown.isNotEmpty ?? false))
-            ...summary!.preferenceGroupBreakdown.entries.map((group) {
-              final options = group.value.entries.toList()
-                ..sort((a, b) => b.value.compareTo(a.value));
-              return Padding(
-                padding: const EdgeInsets.only(top: 10),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        const Icon(Icons.tune_rounded,
-                            size: 13, color: AppColors.primary),
-                        const SizedBox(width: 5),
-                        Expanded(
-                          child: Text(
-                            group.key,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: AppTypography.labelSmall
-                                .copyWith(fontWeight: FontWeight.w700),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 8),
-                    Wrap(
-                      spacing: 6,
-                      runSpacing: 6,
-                      children: options.map((e) {
-                        return Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 10, vertical: 6),
-                          decoration: BoxDecoration(
-                            color: AppColors.primary.withValues(alpha: 0.08),
-                            borderRadius: BorderRadius.circular(20),
-                            border: Border.all(
-                                color:
-                                    AppColors.primary.withValues(alpha: 0.2)),
-                          ),
-                          child: Text(
-                            '${e.key} · ${e.value}',
-                            style: AppTypography.labelSmall.copyWith(
-                              fontWeight: FontWeight.w600,
-                              color: AppColors.primary,
-                            ),
-                          ),
-                        );
-                      }).toList(),
-                    ),
-                  ],
-                ),
-              );
-            }),
-          // Live-Test-9 ISSUE-4.3: GUEST preference-GROUP sections — every
-          // group a guest selected counts ("Roti 1" AND "Milk 1"), one
-          // section per group exactly like the member sections above. The
-          // flat guest breakdown below is suppressed when these exist (it
-          // only carries the derived primary tag and under-counted).
-          if ((summary?.guestPreferenceGroupBreakdown.isNotEmpty ?? false))
-            ...summary!.guestPreferenceGroupBreakdown.entries.map((group) {
-              final options = group.value.entries.toList()
-                ..sort((a, b) => b.value.compareTo(a.value));
-              return Padding(
-                padding: const EdgeInsets.only(top: 10),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        const Icon(Icons.group_add_rounded,
-                            size: 13, color: AppColors.secondary),
-                        const SizedBox(width: 5),
-                        Expanded(
-                          child: Text(
-                            'Guests · ${group.key}',
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: AppTypography.labelSmall
-                                .copyWith(fontWeight: FontWeight.w700),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 8),
-                    Wrap(
-                      spacing: 6,
-                      runSpacing: 6,
-                      children: options.map((e) {
-                        return Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 10, vertical: 6),
-                          decoration: BoxDecoration(
-                            color:
-                                AppColors.secondary.withValues(alpha: 0.08),
-                            borderRadius: BorderRadius.circular(20),
-                            border: Border.all(
-                                color: AppColors.secondary
-                                    .withValues(alpha: 0.2)),
-                          ),
-                          child: Text(
-                            '${e.key} · ${e.value}',
-                            style: AppTypography.labelSmall.copyWith(
-                              fontWeight: FontWeight.w600,
-                              color: AppColors.secondary,
-                            ),
-                          ),
-                        );
-                      }).toList(),
-                    ),
-                  ],
-                ),
-              );
-            }),
-          // Module 22 (FR-HG-061): guest plates by preference — the kitchen
-          // cooks these ON TOP of the member preference counts above.
-          // (Flat derived-primary view — only for meals WITHOUT guest
-          // preference-group data, per ISSUE-4.3.)
-          if ((summary?.guestPreferenceGroupBreakdown.isEmpty ?? true) &&
-              (summary?.guestPreferenceBreakdown.isNotEmpty ?? false)) ...[
-            const SizedBox(height: 10),
-            Row(
-              children: [
-                const Icon(Icons.group_add_rounded,
-                    size: 13, color: AppColors.secondary),
-                const SizedBox(width: 5),
-                Text(
-                  'Guest preferences',
-                  style: AppTypography.labelSmall
-                      .copyWith(fontWeight: FontWeight.w700),
-                ),
-              ],
-            ),
+                ],
+              ),
+            );
+          }),
+          if (!ok) ...[
             const SizedBox(height: 8),
-            Wrap(
-              spacing: 6,
-              runSpacing: 6,
-              children: summary!.guestPreferenceBreakdown.entries.map((e) {
-                final disp = MealPreferenceOption.display(e.key);
-                final label = disp.emoji.isEmpty
-                    ? disp.label
-                    : '${disp.emoji} ${disp.label}';
-                return Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                  decoration: BoxDecoration(
-                    color: AppColors.secondary.withValues(alpha: 0.08),
-                    borderRadius: BorderRadius.circular(20),
-                    border: Border.all(
-                        color: AppColors.secondary.withValues(alpha: 0.2)),
-                  ),
-                  child: Text(
-                    '$label · ${e.value}',
-                    style: AppTypography.labelSmall.copyWith(
-                      fontWeight: FontWeight.w600,
-                      color: AppColors.secondary,
-                    ),
-                  ),
-                );
-              }).toList(),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(
+                  horizontal: 10, vertical: 8),
+              decoration: BoxDecoration(
+                color: AppColors.absent.withValues(alpha: 0.10),
+                borderRadius: BorderRadius.circular(9),
+                border: Border.all(
+                    color: AppColors.absent.withValues(alpha: 0.35)),
+              ),
+              child: Text(
+                '⚠ Dashboard Data Mismatch — expected $expectedTotal, '
+                'found $actual. Preferences are mandatory; investigate '
+                'this meal\'s records.',
+                style: AppTypography.labelSmall.copyWith(
+                  color: AppColors.absent,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
             ),
           ],
         ],

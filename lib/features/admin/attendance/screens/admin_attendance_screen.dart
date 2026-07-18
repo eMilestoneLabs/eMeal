@@ -471,9 +471,18 @@ class _AdminAttendanceScreenState extends State<AdminAttendanceScreen> {
                                   // policy): hosted guests are part of the
                                   // day's attendance — a dedicated section
                                   // BELOW the member list, never merged in.
-                                  if (_provider.guests.isNotEmpty)
+                                  // Live-Test-10: guests now FOLLOW the
+                                  // active filter (Present→approved,
+                                  // Absent→cancelled/no-show, Pending→
+                                  // awaiting approval, Skipped/Vacation→
+                                  // none) instead of always showing all.
+                                  if (_provider.visibleGuests.isNotEmpty)
                                     _HostedGuestsSection(
-                                      guests: _provider.guests,
+                                      guests: _provider.visibleGuests,
+                                      title: _provider.filterStatus ==
+                                              AttendanceStatus.pending
+                                          ? 'Guest Approval Pending'
+                                          : 'Hosted Guests',
                                       onManage: _openGuests,
                                     ),
                                 ],
@@ -541,10 +550,18 @@ class _QuickActionPill extends StatelessWidget {
 // header's manage action opens the full management sheet.
 
 class _HostedGuestsSection extends StatelessWidget {
-  const _HostedGuestsSection({required this.guests, required this.onManage});
+  const _HostedGuestsSection({
+    required this.guests,
+    required this.onManage,
+    this.title = 'Hosted Guests',
+  });
 
   final List<MealGuestModel> guests;
   final VoidCallback onManage;
+
+  /// Live-Test-10: the Pending filter renders this section as a clearly
+  /// separated "Guest Approval Pending" block (survey-locked wording).
+  final String title;
 
   Color _statusColor(MealGuestModel g) {
     if (g.isCancelled) return AppColors.absent;
@@ -575,7 +592,7 @@ class _HostedGuestsSection extends StatelessWidget {
                   size: 18, color: AppColors.secondary),
               const SizedBox(width: 8),
               Expanded(
-                child: Text('Hosted Guests (${guests.length})',
+                child: Text('$title (${guests.length})',
                     style: AppTypography.labelLarge
                         .copyWith(fontWeight: FontWeight.w700)),
               ),

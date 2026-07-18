@@ -31,6 +31,10 @@ class MealAttendanceSummary {
     this.vacationCount = 0,
     this.pendingCount,
     this.guestPreferenceGroupBreakdown = const {},
+    this.guestPendingApproval = 0,
+    this.guestCancelled = 0,
+    this.guestNoShow = 0,
+    this.guestTotalRequests = 0,
   });
 
   final String mealId;
@@ -87,6 +91,15 @@ class MealAttendanceSummary {
   /// snapshotted labels — every group a guest selected counts (the flat
   /// [guestPreferenceBreakdown] only carries the derived primary tag).
   final Map<String, Map<String, int>> guestPreferenceGroupBreakdown;
+
+  /// Live-Test-10 Kitchen Summary (additive): administrative guest-request
+  /// statuses. Only [guestCount] (approved bookings) feeds kitchen, billing
+  /// and attendance totals — these are dashboard visibility rows. All default
+  /// to 0 on cached pre-fix payloads.
+  final int guestPendingApproval;
+  final int guestCancelled;
+  final int guestNoShow;
+  final int guestTotalRequests;
 
   /// Total plates to cook: present members + confirmed guests.
   int get effectiveAttendingTotal => attendingTotal ?? (presentCount + guestCount);
@@ -152,8 +165,16 @@ class MealAttendanceSummary {
           : int.tryParse(j['pendingCount']?.toString() ?? ''),
       guestPreferenceGroupBreakdown:
           _nestedBreakdown(j['guestPreferenceGroupBreakdown']),
+      guestPendingApproval: _asInt(j['guestPendingApproval']),
+      guestCancelled: _asInt(j['guestCancelled']),
+      guestNoShow: _asInt(j['guestNoShow']),
+      guestTotalRequests: _asInt(j['guestTotalRequests']),
     );
   }
+
+  /// Tolerant int parse — 0 on null/garbage (cached pre-fix payloads).
+  static int _asInt(dynamic v) =>
+      v is int ? v : int.tryParse(v?.toString() ?? '') ?? 0;
 
   /// Round-trip serializer for the local response cache (cache-first paint).
   /// Emits the backend field names so [fromJson] parses it back unchanged.
@@ -178,5 +199,9 @@ class MealAttendanceSummary {
         'vacationCount': vacationCount,
         'pendingCount': pendingCount,
         'guestPreferenceGroupBreakdown': guestPreferenceGroupBreakdown,
+        'guestPendingApproval': guestPendingApproval,
+        'guestCancelled': guestCancelled,
+        'guestNoShow': guestNoShow,
+        'guestTotalRequests': guestTotalRequests,
       };
 }

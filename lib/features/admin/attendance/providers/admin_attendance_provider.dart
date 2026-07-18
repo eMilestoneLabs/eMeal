@@ -104,6 +104,29 @@ class AdminAttendanceProvider extends ChangeNotifier {
   List<MealGuestModel> _guests = [];
   List<MealGuestModel> get guests => _guests;
 
+  /// Live-Test-10 (filter mapping, survey-locked): guests follow the active
+  /// status filter instead of always rendering in full —
+  ///   All → every guest · Present → approved bookings · Absent →
+  ///   cancelled/rejected + no-show · Pending → awaiting approval ·
+  ///   Skipped / Vacation → none (member-only concepts).
+  List<MealGuestModel> get visibleGuests {
+    switch (_filterStatus) {
+      case null:
+        return _guests;
+      case AttendanceStatus.present:
+        return _guests.where((g) => g.isConfirmed).toList();
+      case AttendanceStatus.absent:
+        return _guests
+            .where((g) => g.isCancelled || g.status == 'no_show')
+            .toList();
+      case AttendanceStatus.pending:
+        return _guests.where((g) => g.isPending).toList();
+      case AttendanceStatus.skipped:
+      case AttendanceStatus.onVacation:
+        return const [];
+    }
+  }
+
   /// Confirmed guest meals (booked + fully approved) — the "Hosted Guests"
   /// stat; cancelled/pending rows are listed but not counted here.
   int get confirmedGuestCount => _guests.where((g) => g.isConfirmed).length;
