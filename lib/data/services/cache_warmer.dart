@@ -41,17 +41,37 @@ class CacheWarmer {
   /// cost small on very large groups (the rest load on demand, as before).
   static const int _maxAvatarPrefetch = 30;
 
-  /// Id of the user we have already warmed for. `didChangeDependencies` (the
-  /// shell hook) can fire many times, so warming must run **once per account**:
-  /// keying the guard on the user id also makes account-switching self-healing
-  /// (a different account warms fresh) with no logout coupling required.
-  String? _warmedUserId;
+  /// Signature of the session we have already warmed for.
+  /// `didChangeDependencies` (the shell hook) can fire many times, so warming
+  /// must run **once per account state** — but "state" is more than the user
+  /// id: a brand-new student joins a group (org + groupIds appear) and a
+  /// brand-new admin creates their first group, and in both cases every cache
+  /// key changes, so the old warm is worthless. Keying the guard on
+  /// user + org + memberships makes those transitions self-healing (the next
+  /// shell hook re-warms with the fresh scope), and account-switching stays
+  /// self-healing exactly as before with no logout coupling required.
+  String? _warmedSignature;
+
+  /// Composite warm signature — any org/membership change re-warms.
+  static String _signatureFor(UserModel user) {
+    final groups = user.effectiveGroupIds.toList()..sort();
+    return '${user.id}|${user.organizationId}|${groups.join(',')}';
+  }
+
+  /// Drops the warm guard so the **next shell hook re-warms** with fresh data.
+  /// Call after account-shape writes the user model alone cannot signal —
+  /// e.g. an admin creating a group (org/memberships unchanged, but the
+  /// groups/attendance/meals caches all change scope). Fire-and-forget safe.
+  void rewarm() {
+    _warmedSignature = null;
+  }
 
   /// Warm the student tabs: attendance records, 30-day profile summary, and the
   /// member's groups. Dashboard + weekly menu are warmed by the dashboard.
   void warmStudent(UserModel user, {required AuthProvider auth}) {
-    if (_warmedUserId == user.id) return;
-    _warmedUserId = user.id;
+    final signature = _signatureFor(user);
+    if (_warmedSignature == signature) return;
+    _warmedSignature = signature;
 
     final orgId = user.organizationId;
     if (orgId.isEmpty) return;
@@ -96,8 +116,9 @@ class CacheWarmer {
   /// attendance for the first group (the Attendance tab's default view).
   /// Dashboard is warmed by its own landing load.
   void warmAdmin(UserModel user) {
-    if (_warmedUserId == user.id) return;
-    _warmedUserId = user.id;
+    final signature = _signatureFor(user);
+    if (_warmedSignature == signature) return;
+    _warmedSignature = signature;
 
     final orgId = user.organizationId;
     if (orgId.isEmpty) return;

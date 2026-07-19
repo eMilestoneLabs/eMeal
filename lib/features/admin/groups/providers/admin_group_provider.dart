@@ -7,6 +7,7 @@ import 'package:smart_meal_management/data/repositories/meal_repository.dart';
 import 'package:smart_meal_management/shared/models/group_model.dart';
 import 'package:smart_meal_management/shared/models/meal_model.dart';
 import 'package:smart_meal_management/shared/models/result.dart';
+import 'package:smart_meal_management/data/services/cache_warmer.dart';
 import 'package:smart_meal_management/data/services/response_cache_service.dart';
 import 'package:smart_meal_management/shared/models/user_model.dart';
 
@@ -409,6 +410,12 @@ class AdminGroupProvider extends ChangeNotifier {
       case Ok(:final value):
         _groups = [value, ..._groups];
         _isCreating = false;
+        // Smart cache lifecycle: a new group changes the scope of every
+        // groups/attendance/meals cache (the classic case is a brand-new
+        // admin creating their FIRST group — nothing was warmable before).
+        // Drop the warm guard so the next shell hook re-primes all tabs in
+        // the background and every tap stays an instant cache hit.
+        CacheWarmer.instance.rewarm();
         notifyListeners();
         return value;
       case Err(:final failure):

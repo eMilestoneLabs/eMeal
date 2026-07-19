@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:smart_meal_management/data/repositories/group_repository.dart';
 import 'package:smart_meal_management/shared/models/group_model.dart';
 import 'package:smart_meal_management/shared/models/result.dart';
+import 'package:smart_meal_management/data/services/cache_warmer.dart';
 import 'package:smart_meal_management/data/services/response_cache_service.dart';
 
 /// Drives the student-side group join flow and group listing.
@@ -154,6 +155,11 @@ class GroupProvider extends ChangeNotifier {
           } else {
             _myGroups = [..._myGroups, value];
           }
+          // Smart cache lifecycle: joining a group re-scopes every cache key
+          // (a brand-new student gains org + group here). Drop the warm guard
+          // so the next shell hook re-primes attendance/menu/groups tabs in
+          // the background — no more cold 4-5s wave on each first tap.
+          CacheWarmer.instance.rewarm();
         }
         success = true;
       case Err(:final failure):
