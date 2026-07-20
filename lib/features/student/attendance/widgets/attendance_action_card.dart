@@ -329,7 +329,15 @@ class _AttendanceActionCardState extends State<AttendanceActionCard> {
               !widget.isVacationMode &&
               widget.isWindowOpen)
             _PreferenceRow(
-              options: widget.enabledPreferences,
+              // ISSUE-008: the system "None" choice is ALWAYS offered last —
+              // "attending, but no preference item". Never admin-managed.
+              options: [
+                ...widget.enabledPreferences,
+                if (!widget.enabledPreferences
+                    .any((p) => p.trim().toLowerCase() ==
+                        MealPreferenceOption.noneKey))
+                  MealPreferenceOption.noneKey,
+              ],
               selected: _selectedPreference,
               onSelect: (opt) => setState(() {
                 _selectedPreference =

@@ -4,6 +4,7 @@ import 'package:smart_meal_management/core/utils/time_format.dart';
 import 'package:smart_meal_management/core/theme/app_colors.dart';
 import 'package:smart_meal_management/core/theme/app_typography.dart';
 import 'package:smart_meal_management/shared/models/attendance_model.dart';
+import 'package:smart_meal_management/shared/widgets/user_avatar.dart';
 
 /// A single row in the admin attendance list.
 ///
@@ -46,16 +47,12 @@ class MemberAttendanceRow extends StatelessWidget {
                       color: statusColor.withValues(alpha: 0.55), width: 2),
                 ),
                 padding: const EdgeInsets.all(2),
-                child: CircleAvatar(
+                // ISSUE-003: real profile photo (cached thumbnail) with the
+                // same initials fallback as before.
+                child: UserAvatar(
+                  name: name,
+                  avatarUrl: record.userAvatarUrl,
                   radius: 18,
-                  backgroundColor: AppColors.primaryContainer,
-                  child: Text(
-                    name.isNotEmpty ? name[0].toUpperCase() : '?',
-                    style: AppTypography.labelLarge.copyWith(
-                      color: AppColors.primary,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
                 ),
               ),
               const SizedBox(width: 12),

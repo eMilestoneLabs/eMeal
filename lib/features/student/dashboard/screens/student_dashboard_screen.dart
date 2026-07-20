@@ -68,9 +68,9 @@ class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
   AuthProvider? _authProvider;
   bool _initialized = false;
 
-  /// The group currently selected in the group-switcher chip row.
-  /// Null means use the user's default [UserModel.groupId].
-  String? _activeGroupId;
+  // ISSUE-001: the active group now lives centrally in AuthProvider — every
+  // group-scoped screen reads it via currentUser.groupId, so a switch here
+  // propagates to attendance/billing/menu/notices/profile automatically.
 
   @override
   void didChangeDependencies() {
@@ -96,11 +96,9 @@ class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
     }
   }
 
-  /// Returns [user] with [groupId] overridden to [_activeGroupId] when set.
-  UserModel _userWithActiveGroup(UserModel user) {
-    if (_activeGroupId == null) return user;
-    return user.copyWith(groupId: _activeGroupId);
-  }
+  /// The auth-effective user — [AuthProvider.currentUser] already applies the
+  /// active group override (ISSUE-001), so no per-screen patching is needed.
+  UserModel _userWithActiveGroup(UserModel user) => user;
 
   /// ISSUE 2: open the read-only group details page for the active group.
   void _openGroupDetails(String groupId, String organizationId) {
@@ -114,14 +112,23 @@ class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
     );
   }
 
-  /// Switches the active group and reloads dashboard data.
+  /// Switches the active group centrally (ISSUE-001) and reloads all data.
+  ///
+  /// [AuthProvider.setActiveGroup] notifies the whole tree — the shell
+  /// rebuilds its tabs for the new group's config, and every group-scoped
+  /// screen re-reads `currentUser.groupId` (SWR caches are group-keyed, so no
+  /// stale cross-group paint is possible). The dashboard reloads immediately.
   Future<void> _switchGroup(String groupId) async {
-    if (_activeGroupId == groupId) return;
-    setState(() => _activeGroupId = groupId);
-    final user = _authProvider?.currentUser;
+    final auth = _authProvider;
+    if (auth == null) return;
+    final current = auth.currentUser?.groupId;
+    if (current == groupId) return;
+    // Capture before the awaits — no BuildContext across async gaps.
+    final provider = StudentDashboardScope.of(context);
+    await auth.setActiveGroup(groupId);
+    final user = auth.currentUser;
     if (user != null) {
-      final provider = StudentDashboardScope.of(context);
-      await provider.load(user: _userWithActiveGroup(user));
+      await provider.load(user: user);
     }
   }
 
@@ -346,18 +353,18 @@ class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
                           ),
                           // ISSUE 2: always-visible entry point to the read-only
                           // group details page (info, admin, role, QR, Leave).
-                          if ((_activeGroupId ?? currentUser.groupId) != null)
+                          if (currentUser.groupId != null)
                             IconButton(
                               tooltip: 'Group details',
                               icon: const Icon(Icons.info_outline_rounded),
                               onPressed: () => _openGroupDetails(
-                                _activeGroupId ?? currentUser.groupId!,
+                                currentUser.groupId!,
                                 currentUser.organizationId,
                               ),
                             ),
                           NoticeBell(
                             organizationId: currentUser.organizationId,
-                            groupId: _activeGroupId ?? currentUser.groupId,
+                            groupId: currentUser.groupId,
                             isAdmin: false,
                           ),
                         ],
@@ -399,8 +406,9 @@ class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
                     SliverToBoxAdapter(
                       child: _GroupSwitcherRow(
                         groupIds: currentUser.effectiveGroupIds,
-                        activeGroupId: _activeGroupId ??
-                            currentUser.groupId ??
+                        // ISSUE-001: real group names for chip labels.
+                        groupBriefs: currentUser.groups,
+                        activeGroupId: currentUser.groupId ??
                             currentUser.effectiveGroupIds.first,
                         onSwitch: _switchGroup,
                         onJoinAnother: () =>
@@ -1203,13 +1211,16 @@ class _ErrorView extends StatelessWidget {
 // ── Group Switcher Row ──────────────────────────────────────────────────────
 
 /// Horizontal chip row letting a multi-group student switch their active group.
-/// Labels are positional ("Group N") — raw group IDs are never shown.
+/// ISSUE-001: labels show the REAL group name (from the user payload's
+/// membership briefs); positional "Group N" remains only as a fallback for
+/// payloads that predate the `groups` field. Raw group IDs are never shown.
 /// MEM-013/015: premium group switcher. Displays joined groups as chips in the
 /// member's saved (drag-reorderable) order and lets them switch the active
 /// group. Long-press any chip to open the "Reorder groups" sheet.
 class _GroupSwitcherRow extends StatefulWidget {
   const _GroupSwitcherRow({
     required this.groupIds,
+    required this.groupBriefs,
     required this.activeGroupId,
     required this.onSwitch,
     required this.onJoinAnother,
@@ -1217,6 +1228,9 @@ class _GroupSwitcherRow extends StatefulWidget {
   });
 
   final List<String> groupIds;
+
+  /// ISSUE-001: membership briefs ({id, name}) used to label the chips.
+  final List<UserGroupBrief> groupBriefs;
   final String activeGroupId;
   final ValueChanged<String> onSwitch;
   // ISSUE 3: navigate to the join flow to add another group.
@@ -1230,6 +1244,14 @@ class _GroupSwitcherRow extends StatefulWidget {
 class _GroupSwitcherRowState extends State<_GroupSwitcherRow> {
   List<String> _order = const [];
   String _userId = '';
+
+  /// Real group name for [id]; positional fallback when unknown.
+  String _nameFor(String id, int index) {
+    for (final g in widget.groupBriefs) {
+      if (g.id == id && g.name.trim().isNotEmpty) return g.name;
+    }
+    return 'Group ${index + 1}';
+  }
 
   @override
   void didChangeDependencies() {
@@ -1310,7 +1332,11 @@ class _GroupSwitcherRowState extends State<_GroupSwitcherRow> {
                     return ListTile(
                       key: ValueKey(id),
                       leading: const Icon(Icons.drag_indicator_rounded),
-                      title: Text('Group ${i + 1}${active ? '  (active)' : ''}'),
+                      title: Text(
+                        '${_nameFor(id, i)}${active ? '  (active)' : ''}',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
                       trailing: active
                           ? const Icon(Icons.check_circle_rounded,
                               color: AppColors.primary, size: 18)
@@ -1375,7 +1401,16 @@ class _GroupSwitcherRowState extends State<_GroupSwitcherRow> {
           return GestureDetector(
             onLongPress: _openReorderSheet,
             child: ChoiceChip(
-              label: Text('Group ${i + 1}'),
+              // ISSUE-001: real group name; constrained so very long names
+              // stay a single tidy chip instead of stretching the row.
+              label: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 180),
+                child: Text(
+                  _nameFor(id, i),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
               selected: selected,
               onSelected: (_) => widget.onSwitch(id),
               selectedColor: AppColors.primary.withValues(alpha: 0.15),

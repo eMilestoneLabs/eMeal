@@ -1417,19 +1417,64 @@ class _GroupEditorSheetState extends State<_GroupEditorSheet> {
                 dense: true,
                 contentPadding: EdgeInsets.zero,
                 title: const Text('Veg-only group'),
+                // ISSUE-010: the group is the PARENT policy — enabling it
+                // cascades every drafted option to Veg immediately (options
+                // drafted before the toggle could otherwise sneak in
+                // non-veg). Per-option editors are already veg-locked while
+                // this is ON; the server enforces the same cascade + lock.
+                subtitle: _vegOnly
+                    ? const Text(
+                        'Every option in this group stays Veg — locked per option')
+                    : null,
                 value: _vegOnly,
-                onChanged: (v) => setState(() => _vegOnly = v),
+                onChanged: (v) => setState(() {
+                  _vegOnly = v;
+                  if (v) {
+                    for (final o in _options) {
+                      o['isVeg'] = true;
+                    }
+                  }
+                }),
               ),
               if (!_isEdit) ...[
                 const SizedBox(height: 8),
-                Text(
-                  'Options  ·  ${_options.length} of $_maxOptions',
-                  style: AppTypography.labelMedium.copyWith(
-                    color: isDark
-                        ? AppColors.textPrimaryDark
-                        : AppColors.textPrimary,
-                    fontWeight: FontWeight.w700,
-                  ),
+                // ISSUE-009: the 2–5 window is explicit — the counter shows
+                // the minimum, turns red while below it, and green once valid.
+                Row(
+                  children: [
+                    Text(
+                      'Options  ·  ${_options.length} of $_maxOptions',
+                      style: AppTypography.labelMedium.copyWith(
+                        color: isDark
+                            ? AppColors.textPrimaryDark
+                            : AppColors.textPrimary,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: (_options.length < _minOptions
+                                ? AppColors.warning
+                                : AppColors.present)
+                            .withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: Text(
+                        _options.length < _minOptions
+                            ? 'add ${_minOptions - _options.length} more · min $_minOptions'
+                            : '$_minOptions–$_maxOptions ✓',
+                        style: AppTypography.labelSmall.copyWith(
+                          fontWeight: FontWeight.w700,
+                          color: _options.length < _minOptions
+                              ? AppColors.warning
+                              : AppColors.present,
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
                 const SizedBox(height: 8),
                 // Live-Test-6 ISSUE-1: premium high-contrast draft chips —
@@ -1443,6 +1488,11 @@ class _GroupEditorSheetState extends State<_GroupEditorSheet> {
                     for (var i = 0; i < _options.length; i++)
                       _draftOptionChip(i, isDark),
                     if (_options.length < _maxOptions) _addOptionCta(),
+                    // ISSUE-008: the system "None" option — always added
+                    // automatically as the LAST choice, free of charge, and
+                    // NOT counted in the 2–5 limit. Shown locked so admins
+                    // know it exists without being able to edit/remove it.
+                    _systemNoneChip(isDark),
                   ],
                 ),
               ],
@@ -1463,6 +1513,45 @@ class _GroupEditorSheetState extends State<_GroupEditorSheet> {
               ),
             ],
           ),
+        ),
+      ),
+    );
+  }
+
+  /// ISSUE-008: locked chip for the system "None" option — always present,
+  /// last, ₹0, never editable/removable, excluded from the 2–5 count.
+  Widget _systemNoneChip(bool isDark) {
+    final fg = isDark ? AppColors.textSecondaryDark : AppColors.textSecondary;
+    return Tooltip(
+      message:
+          '"None" is added automatically — members who want no item pick it. '
+          'It is free, always last, and does not count toward the 2–5 limit.',
+      child: Container(
+        padding:
+            const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+        decoration: BoxDecoration(
+          color: isDark ? AppColors.backgroundDark : AppColors.background,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: (isDark ? AppColors.borderDark : AppColors.border)
+                .withValues(alpha: 0.8),
+          ),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.block_rounded, size: 12, color: fg),
+            const SizedBox(width: 5),
+            Text(
+              'None · system',
+              style: AppTypography.labelSmall.copyWith(
+                color: fg,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(width: 4),
+            Icon(Icons.lock_rounded, size: 11, color: fg),
+          ],
         ),
       ),
     );

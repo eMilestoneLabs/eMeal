@@ -20,6 +20,7 @@ import 'package:smart_meal_management/shared/widgets/app_section_title.dart';
 import 'package:smart_meal_management/shared/widgets/app_screen_states.dart';
 import 'package:smart_meal_management/features/auth/providers/auth_provider.dart';
 import 'package:smart_meal_management/shared/widgets/app_skeleton.dart';
+import 'package:smart_meal_management/shared/widgets/user_avatar.dart';
 
 /// Admin home dashboard — greeting, KPI stats, quick actions, group list.
 ///
@@ -639,10 +640,13 @@ class _MealSummaryCard extends StatelessWidget {
           memberCounts: memberGroups[labels[i]] ?? const {},
           guestCounts: guestGroups[labels[i]] ?? const {},
           expectedTotal: expected,
-          // ISSUE-016: quantity groups validate HEADCOUNT (who picked) while
-          // displaying plate totals — "Ruti ×3" is 1 member, 3 plates. Null on
-          // cached pre-fix payloads → validation falls back to plate totals.
-          memberPickCount: s.preferenceGroupPickCounts[labels[i]],
+          // ISSUE-004: headcount validation uses DISTINCT RESPONDENTS (1
+          // member = 1, however many options/plates they picked) — safe for
+          // Multiple Pick AND Quantity mode. Falls back to pick rows
+          // (ISSUE-016, quantity-safe only) then plate totals on cached
+          // pre-fix payloads.
+          memberPickCount: s.preferenceGroupRespondentCounts[labels[i]] ??
+              s.preferenceGroupPickCounts[labels[i]],
           resolveDisplay: false,
           isDark: isDark,
         ));
@@ -875,9 +879,10 @@ class _PrefSection extends StatelessWidget {
   final Map<String, int> guestCounts;
   final int expectedTotal;
 
-  /// ISSUE-016: member pick-ROW count for this group (quantity-independent).
-  /// When present, headcount validation uses picks + guest plates instead of
-  /// the quantity-inflated display totals.
+  /// ISSUE-004/016: member HEADCOUNT for this group — distinct respondents
+  /// when the backend provides them (multi-pick + quantity safe; 1 member =
+  /// 1), else pick rows. When present, validation uses this + guest plates
+  /// instead of the pick/quantity-inflated display totals.
   final int? memberPickCount;
 
   /// True for standalone tags — labels resolve through
@@ -1017,9 +1022,12 @@ class _PrefSection extends StatelessWidget {
                     color: AppColors.absent.withValues(alpha: 0.35)),
               ),
               child: Text(
-                '⚠ Dashboard Data Mismatch — expected $expectedTotal, '
-                'found $headcount. Preferences are mandatory; investigate '
-                'this meal\'s records.',
+                // ISSUE-004: the check compares people who ANSWERED (1 member
+                // = 1, regardless of picks/quantities) against Present +
+                // approved guests — plate totals may legitimately be larger.
+                '⚠ Dashboard Data Mismatch — expected $expectedTotal '
+                'answered, found $headcount. Preferences are mandatory; '
+                'investigate this meal\'s records.',
                 style: AppTypography.labelSmall.copyWith(
                   color: AppColors.absent,
                   fontWeight: FontWeight.w700,
@@ -1142,15 +1150,6 @@ class _ActivityRow extends StatelessWidget {
     }
   }
 
-  IconData get _icon {
-    switch (record.status) {
-      case AttendanceStatus.present: return Icons.check_circle_rounded;
-      case AttendanceStatus.absent: return Icons.cancel_rounded;
-      case AttendanceStatus.skipped: return Icons.remove_circle_outline_rounded;
-      default: return Icons.help_outline_rounded;
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     final time = record.markedAt != null
@@ -1160,13 +1159,21 @@ class _ActivityRow extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
       child: Row(
         children: [
+          // ISSUE-003: member profile photo with a status-tinted ring (the
+          // status itself stays on the right-hand chip) — consistent with the
+          // attendance roster rows. Initials fallback when no photo.
           Container(
-            width: 36, height: 36,
             decoration: BoxDecoration(
-              color: _color.withValues(alpha: 0.1),
-              borderRadius: BorderRadius.circular(10),
+              shape: BoxShape.circle,
+              border: Border.all(
+                  color: _color.withValues(alpha: 0.55), width: 2),
             ),
-            child: Icon(_icon, color: _color, size: 18),
+            padding: const EdgeInsets.all(2),
+            child: UserAvatar(
+              name: record.userName ?? 'Member',
+              avatarUrl: record.userAvatarUrl,
+              radius: 15,
+            ),
           ),
           const SizedBox(width: 12),
           Expanded(

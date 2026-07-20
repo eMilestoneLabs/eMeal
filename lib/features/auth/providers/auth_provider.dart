@@ -42,12 +42,74 @@ class AuthProvider extends ChangeNotifier {
 
   AuthState get state => _state;
   AuthSession? get session => _session;
-  UserModel? get currentUser => _session?.user;
+
+  /// The authenticated user, with the ACTIVE group applied (ISSUE-001).
+  ///
+  /// For multi-group members the switcher-selected group overrides the
+  /// default: [UserModel.groupId] becomes the active group and [groupIds] is
+  /// re-ordered active-first, so every group-scoped screen (dashboard,
+  /// attendance, billing, menu, notices, vacation, profile role) follows the
+  /// switch automatically — no per-screen wiring. Falls back to the raw user
+  /// when no valid active group is stored.
+  UserModel? get currentUser {
+    final u = _session?.user;
+    if (u == null) return null;
+    final a = _activeGroupId;
+    if (a == null || a == u.groupId || !u.groupIds.contains(a)) return u;
+    return u.copyWith(
+      groupId: a,
+      groupIds: [a, ...u.groupIds.where((g) => g != a)],
+    );
+  }
   bool get isAuthenticated => _state is AuthAuthenticated;
   bool get isLoading => _state is AuthLoading;
 
   /// Locally-picked avatar image bytes (not yet persisted to backend).
   Uint8List? get avatarBytes => _avatarBytes;
+
+  // ── Active group (ISSUE-001: central group switching) ──────────────────────
+
+  /// SharedPreferences key prefix — the chosen group persists per user so the
+  /// switch survives restarts AND app updates (per-user namespaced).
+  static const String _kActiveGroupPrefix = 'active_group:';
+
+  String? _activeGroupId;
+
+  /// The switcher-selected group id, validated against current memberships.
+  String? get activeGroupId {
+    final u = _session?.user;
+    if (u == null || _activeGroupId == null) return null;
+    return u.groupIds.contains(_activeGroupId) ? _activeGroupId : null;
+  }
+
+  /// Central group switch: notifies every listener (shell, tabs, bells) and
+  /// persists the choice per user. Pass null to fall back to the default.
+  Future<void> setActiveGroup(String? groupId) async {
+    if (_activeGroupId == groupId) return;
+    _activeGroupId = groupId;
+    notifyListeners();
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final uid = _session?.user.id;
+      if (uid == null) return;
+      if (groupId == null) {
+        await prefs.remove('$_kActiveGroupPrefix$uid');
+      } else {
+        await prefs.setString('$_kActiveGroupPrefix$uid', groupId);
+      }
+    } catch (_) {/* persistence is best-effort — in-memory switch already applied */}
+  }
+
+  /// Restores the persisted active group for [userId] (called at every session
+  /// establishment, before the session is exposed to the tree).
+  Future<void> _restoreActiveGroup(String userId) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      _activeGroupId = prefs.getString('$_kActiveGroupPrefix$userId');
+    } catch (_) {
+      _activeGroupId = null;
+    }
+  }
 
   // ── Smart cache ownership ──────────────────────────────────────────────────
 
@@ -84,6 +146,9 @@ class AuthProvider extends ChangeNotifier {
         await prefs.setString(_kCacheOwnerKey, userId);
       }
     } catch (_) {/* best-effort — cache hygiene must never block auth */}
+    // ISSUE-001: restore this user's persisted group switch alongside cache
+    // adoption — every session-establishment path funnels through here.
+    await _restoreActiveGroup(userId);
   }
 
   // ── Initialise ─────────────────────────────────────────────────────────────
@@ -382,6 +447,9 @@ class AuthProvider extends ChangeNotifier {
     // B10: close realtime socket on logout (no-op in mock).
     RealtimeService.instance.disconnect();
     _session = null;
+    // ISSUE-001: drop the in-memory switch (the per-user persisted choice is
+    // kept so the same user gets their group back on next login).
+    _activeGroupId = null;
     _state = const AuthUnauthenticated();
     _avatarBytes = null;
     notifyListeners();

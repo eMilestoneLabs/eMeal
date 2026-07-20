@@ -66,6 +66,9 @@ class VacationRequestModel {
     DateTime day, {
     required int? mealOpenMinutes,
     required int? Function(String slotKey) slotOpenMinutes,
+    // ISSUE-005: slotKey of the meal being evaluated — identity-first
+    // boundary coverage (mirror of the server's mealSlotKey parameter).
+    String? mealSlotKey,
   }) {
     DateTime d(DateTime x) => DateTime.utc(x.year, x.month, x.day);
     final t = d(day);
@@ -79,6 +82,21 @@ class VacationRequestModel {
         (!isEndDay || endSlotKey == null)) {
       return true; // interior day, or boundary day without a slot bound
     }
+
+    // ISSUE-005: the boundary meal itself is covered by IDENTITY — the start
+    // meal is always the first covered meal and the end meal the last, even
+    // when per-day window overrides shift its clock (server mirror).
+    if (mealSlotKey != null) {
+      final startIdentity = isStartDay && startSlotKey == mealSlotKey;
+      final endIdentity = isEndDay && endSlotKey == mealSlotKey;
+      if (startIdentity && (!isEndDay || endSlotKey == null || endIdentity)) {
+        return true;
+      }
+      if (endIdentity && (!isStartDay || startSlotKey == null || startIdentity)) {
+        return true;
+      }
+    }
+
     if (mealOpenMinutes == null) return true; // windowless meal → fail-safe
 
     if (isStartDay && startSlotKey != null) {

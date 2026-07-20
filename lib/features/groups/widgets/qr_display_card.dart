@@ -68,6 +68,10 @@ class _QrDisplayCardState extends State<QrDisplayCard> {
     );
 
     return Container(
+      // ISSUE-001: full-width card so the QR block sits centered on the page
+      // (previously shrink-wrapped and left-aligned under a start-aligned
+      // parent column).
+      width: double.infinity,
       padding: const EdgeInsets.all(24),
       decoration: BoxDecoration(
         color: colorScheme.surface,

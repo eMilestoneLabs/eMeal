@@ -150,9 +150,15 @@ class _PreferenceGroupSelectorState extends State<PreferenceGroupSelector> {
   bool get _complete {
     for (final g in widget.groups) {
       if (!_isVisible(g) || !g.required) continue;
-      if (_visibleOptions(g).isEmpty) continue; // fail-safe (FR-PG-031)
-      final count = _picked[g.id]?.length ?? 0;
-      if (count < (g.minSelect < 1 ? 1 : g.minSelect)) return false;
+      // Fail-safe (FR-PG-031): only REAL options count — the virtual system
+      // "None" never turns an auto-satisfied group into a demanding one.
+      final real = _visibleOptions(g)
+          .where((o) => o.key != PreferenceOptionModel.noneKey);
+      if (real.isEmpty) continue;
+      final picks = _picked[g.id] ?? const <String, int>{};
+      // ISSUE-008: a lone "None" satisfies any required group.
+      if (picks.containsKey(PreferenceOptionModel.noneKey)) continue;
+      if (picks.length < (g.minSelect < 1 ? 1 : g.minSelect)) return false;
     }
     return true;
   }
@@ -179,6 +185,14 @@ class _PreferenceGroupSelectorState extends State<PreferenceGroupSelector> {
       if (picks.containsKey(o.key)) {
         picks.remove(o.key);
       } else {
+        // ISSUE-008: the system "None" is mutually exclusive with every other
+        // pick — selecting it clears the group; selecting anything else
+        // deselects "None" (mirror of the server-authoritative rule).
+        if (o.key == PreferenceOptionModel.noneKey) {
+          picks.clear();
+        } else {
+          picks.remove(PreferenceOptionModel.noneKey);
+        }
         if (g.isSingle || g.maxSelect == 1) picks.clear();
         if (picks.length < g.maxSelect || g.maxSelect == 1) {
           picks[o.key] = g.quantityEnabled ? o.minQty : 1;

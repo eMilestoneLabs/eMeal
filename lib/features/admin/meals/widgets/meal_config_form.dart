@@ -26,6 +26,7 @@ class MealConfigForm extends StatefulWidget {
     this.isSaving = false,
     this.initialPreferencesEnabled = false,
     this.pricingEnabled = false,
+    this.globalPreferencesEnabled = true,
   });
 
   /// If non-null, pre-populates the form for editing.
@@ -53,6 +54,12 @@ class MealConfigForm extends StatefulWidget {
 
   /// Additive: when true (group meal pricing ON), a Meal Price (₹) field shows.
   final bool pricingEnabled;
+
+  /// ISSUE-011 (user-confirmed rule): the Global Meal Preferences switch is a
+  /// HARD master gate. While it is OFF, the per-meal preference toggle is
+  /// read-only — the stored per-meal setting is preserved (and takes effect
+  /// again when Global is turned back ON), but it cannot be changed here.
+  final bool globalPreferencesEnabled;
 
   @override
   State<MealConfigForm> createState() => _MealConfigFormState();
@@ -1196,9 +1203,16 @@ class _MealConfigFormState extends State<MealConfigForm> {
                             fontWeight: FontWeight.w600, fontSize: 13),
                       ),
                       Text(
-                        _groupsMode
-                            ? 'Members complete each preference group when marking attendance.'
-                            : 'Students select a tag (Veg, Fish, etc.) when marking attendance.',
+                        // ISSUE-011: Global OFF = hard master gate — the
+                        // per-meal toggle locks (setting preserved, returns
+                        // when Global is switched back ON).
+                        !widget.globalPreferencesEnabled
+                            ? 'Locked — the Global Meal Preferences switch is '
+                                'OFF (Meal System settings). This meal\'s '
+                                'saved setting returns when it is turned ON.'
+                            : _groupsMode
+                                ? 'Members complete each preference group when marking attendance.'
+                                : 'Students select a tag (Veg, Fish, etc.) when marking attendance.',
                         style: TextStyle(
                           fontSize: 11,
                           color: colorScheme.onSurfaceVariant,
@@ -1211,8 +1225,10 @@ class _MealConfigFormState extends State<MealConfigForm> {
                   value: _preferencesForMeal,
                   // Live-Test-8 ISSUE-002: non-destructive both ways — OFF
                   // saves active groups, ON restores the last active mode.
-                  onChanged:
-                      _bindingsBusy ? null : (v) => _onPreferenceToggle(v),
+                  // ISSUE-011: read-only while the Global switch is OFF.
+                  onChanged: (_bindingsBusy || !widget.globalPreferencesEnabled)
+                      ? null
+                      : (v) => _onPreferenceToggle(v),
                 ),
               ],
             ),

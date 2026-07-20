@@ -4,6 +4,7 @@ import 'package:smart_meal_management/app/router/route_names.dart';
 import 'package:smart_meal_management/core/theme/app_colors.dart';
 import 'package:smart_meal_management/core/theme/app_typography.dart';
 import 'package:smart_meal_management/features/auth/providers/auth_provider.dart';
+import 'package:smart_meal_management/shared/widgets/user_avatar.dart';
 
 /// Admin "More" hub screen — surfaces Profile, Settings and Exports links
 /// that don't fit in the primary bottom nav.
@@ -55,19 +56,17 @@ class AdminMoreScreen extends StatelessWidget {
             ),
             child: Row(
               children: [
-                CircleAvatar(
+                // ISSUE-003: real profile photo (locally picked bytes first,
+                // then cached network avatar) with the same initials fallback.
+                UserAvatar(
+                  name: user?.name ?? 'Admin',
+                  avatarUrl: user?.avatarUrl,
+                  bytes: auth.avatarBytes,
                   radius: 28,
                   backgroundColor: isDark
                       ? AppColors.onPrimary.withValues(alpha: 0.2)
                       : AppColors.primary,
-                  child: Text(
-                    user?.initials ?? 'A',
-                    style: TextStyle(
-                      fontSize: user?.initials.length == 2 ? 18 : 22,
-                      fontWeight: FontWeight.w700,
-                      color: AppColors.onPrimary,
-                    ),
-                  ),
+                  foregroundColor: AppColors.onPrimary,
                 ),
                 const SizedBox(width: 14),
                 Expanded(

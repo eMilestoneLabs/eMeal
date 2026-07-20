@@ -104,15 +104,21 @@ class _StudentVacationRequestScreenState
   }
 
   Future<void> _pick(bool isStart) async {
+    // ISSUE-005: date-only anchors (no time component) so the picker can
+    // never render/return an off-by-one day around midnight, and the END
+    // picker can never go before the chosen start (19/07 → 18/07 bug).
     final now = DateTime.now();
-    final initial = isStart
-        ? (_start ?? now)
-        : (_end ?? _start ?? now.add(const Duration(days: 1)));
+    final today = DateTime(now.year, now.month, now.day);
+    final minDate = isStart ? today : (_start ?? today);
+    var initial = isStart
+        ? (_start ?? today)
+        : (_end ?? _start ?? today.add(const Duration(days: 1)));
+    if (initial.isBefore(minDate)) initial = minDate;
     final picked = await showDatePicker(
       context: context,
       initialDate: initial,
-      firstDate: now,
-      lastDate: now.add(const Duration(days: 365)),
+      firstDate: minDate,
+      lastDate: today.add(const Duration(days: 365)),
     );
     if (picked == null) return;
     setState(() {
@@ -123,6 +129,15 @@ class _StudentVacationRequestScreenState
         _end = picked;
       }
     });
+  }
+
+  /// ISSUE-005: boundary slots display the MEAL NAME, never a raw slotKey
+  /// ("(dinner+)" stays readable even for custom slots like test_meal_03).
+  String _slotName(String slotKey) {
+    for (final m in _slotMeals) {
+      if (m.slotKey == slotKey) return m.name;
+    }
+    return slotKey;
   }
 
   Future<void> _submit() async {
@@ -448,9 +463,9 @@ class _StudentVacationRequestScreenState
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                    '${_fmt(r.startDate)}${r.startSlotKey != null ? ' (${r.startSlotKey}+)' : ''}'
+                    '${_fmt(r.startDate)}${r.startSlotKey != null ? ' (from ${_slotName(r.startSlotKey!)})' : ''}'
                     '  →  '
-                    '${_fmt(r.endDate)}${r.endSlotKey != null ? ' (till ${r.endSlotKey})' : ''}',
+                    '${_fmt(r.endDate)}${r.endSlotKey != null ? ' (till ${_slotName(r.endSlotKey!)})' : ''}',
                     style: AppTypography.bodyMedium
                         .copyWith(fontWeight: FontWeight.w600)),
                 if (r.reason != null && r.reason!.isNotEmpty) ...[

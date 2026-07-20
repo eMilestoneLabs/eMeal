@@ -1,6 +1,30 @@
 import 'package:equatable/equatable.dart';
 import 'package:smart_meal_management/shared/enums/user_role.dart';
 
+/// ISSUE-001: lightweight per-membership brief carried on the user payload so
+/// the group switcher can label chips with REAL group names (never "Group N")
+/// and show the member's per-group functional role after a switch.
+class UserGroupBrief extends Equatable {
+  const UserGroupBrief({required this.id, required this.name, this.role});
+
+  final String id;
+  final String name;
+
+  /// Per-group functional role name (e.g. 'messManager'), null → global role.
+  final String? role;
+
+  factory UserGroupBrief.fromJson(Map<String, dynamic> j) => UserGroupBrief(
+        id: j['id'] ?? '',
+        name: j['name'] ?? '',
+        role: j['role'] as String?,
+      );
+
+  Map<String, dynamic> toJson() => {'id': id, 'name': name, 'role': role};
+
+  @override
+  List<Object?> get props => [id, name, role];
+}
+
 /// Core user model shared across student and admin features.
 class UserModel extends Equatable {
   const UserModel({
@@ -11,6 +35,7 @@ class UserModel extends Equatable {
     required this.organizationId,
     this.groupId,
     this.groupIds = const [],
+    this.groups = const [],
     this.avatarUrl,
     this.phone,
     this.gender,
@@ -32,6 +57,11 @@ class UserModel extends Equatable {
   final String organizationId;
   final String? groupId;
   final List<String> groupIds;
+
+  /// ISSUE-001: membership briefs ({id, name, role}) parallel to [groupIds].
+  /// Additive — empty when the backend payload predates the field.
+  final List<UserGroupBrief> groups;
+
   final String? avatarUrl;
   final String? phone;
 
@@ -94,6 +124,12 @@ class UserModel extends Equatable {
         organizationId: j['organizationId'] ?? '',
         groupId: j['groupId'],
         groupIds: List<String>.from(j['groupIds'] ?? []),
+        groups: (j['groups'] as List?)
+                ?.whereType<Map>()
+                .map((g) =>
+                    UserGroupBrief.fromJson(Map<String, dynamic>.from(g)))
+                .toList() ??
+            const [],
         avatarUrl: j['avatarUrl'],
         phone: j['phone'],
         gender: j['gender'],
@@ -118,6 +154,7 @@ class UserModel extends Equatable {
         'organizationId': organizationId,
         'groupId': groupId,
         'groupIds': groupIds,
+        'groups': groups.map((g) => g.toJson()).toList(),
         'avatarUrl': avatarUrl,
         'phone': phone,
         'gender': gender,
@@ -160,6 +197,7 @@ class UserModel extends Equatable {
     /// Pass [UserModel.absent] to explicitly clear this field to null.
     Object? groupId = _absent,
     List<String>? groupIds,
+    List<UserGroupBrief>? groups,
     /// Pass [UserModel.absent] to explicitly clear this field to null.
     Object? avatarUrl = _absent,
     /// Pass [UserModel.absent] to explicitly clear this field to null.
@@ -189,6 +227,7 @@ class UserModel extends Equatable {
             ? this.groupId
             : groupId as String?,
         groupIds: groupIds ?? this.groupIds,
+        groups: groups ?? this.groups,
         avatarUrl: identical(avatarUrl, _absent)
             ? this.avatarUrl
             : avatarUrl as String?,

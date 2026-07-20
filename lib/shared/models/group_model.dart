@@ -121,12 +121,22 @@ enum MealPreferenceOption {
     'vegan': '🥬',
   };
 
+  /// ISSUE-008: reserved key of the SYSTEM "None" choice — always offered
+  /// last on standalone preference pickers ("attending, no preference item").
+  static const String noneKey = 'none';
+
   /// Display (emoji, label) for ANY preference key — standard or custom.
   /// Emoji is auto-assigned when the (case-insensitive) name matches a known
   /// standard tag; unknown custom tags get an empty emoji (name only).
   static ({String emoji, String label}) display(String key) {
     final t = key.trim();
-    final emoji = standardEmoji[t.toLowerCase()] ?? '';
+    // ISSUE-008: both the flat 'none' key and the group-mode '__none__'
+    // snapshot key render as the same clean "None" label everywhere.
+    final lower = t.toLowerCase();
+    if (lower == noneKey || lower == '__none__') {
+      return (emoji: '🚫', label: 'None');
+    }
+    final emoji = standardEmoji[lower] ?? '';
     final label = t.isEmpty ? t : t[0].toUpperCase() + t.substring(1);
     return (emoji: emoji, label: label);
   }

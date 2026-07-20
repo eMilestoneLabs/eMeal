@@ -7,6 +7,7 @@ import 'package:smart_meal_management/features/auth/providers/auth_provider.dart
 import 'package:smart_meal_management/shared/utils/verification_gate.dart';
 import 'package:smart_meal_management/shared/models/correction_request_model.dart';
 import 'package:smart_meal_management/shared/models/meal_model.dart';
+import 'package:smart_meal_management/shared/models/group_model.dart';
 import 'package:smart_meal_management/shared/models/preference_group_model.dart';
 import 'package:smart_meal_management/shared/models/result.dart';
 import 'package:smart_meal_management/shared/widgets/preference_group_selector.dart';
@@ -177,7 +178,15 @@ class _CorrectionRequestSheetState extends State<_CorrectionRequestSheet> {
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final bottomInset = MediaQuery.of(context).viewInsets.bottom;
-    final prefs = _meal.enabledPreferences;
+    // ISSUE-008: the system "None" choice is always offered last on the
+    // standalone picker ("attending, no preference item").
+    final prefs = [
+      ..._meal.enabledPreferences,
+      if (_meal.enabledPreferences.isNotEmpty &&
+          !_meal.enabledPreferences.any((p) =>
+              p.trim().toLowerCase() == MealPreferenceOption.noneKey))
+        MealPreferenceOption.noneKey,
+    ];
 
     return Container(
       margin: EdgeInsets.only(bottom: bottomInset),
@@ -307,8 +316,13 @@ class _CorrectionRequestSheetState extends State<_CorrectionRequestSheet> {
                 runSpacing: 6,
                 children: prefs.map((p) {
                   final sel = _preference == p;
+                  // ISSUE-008: shared display resolver — 'none' renders as
+                  // the system 🚫 None chip, custom tags keep their name.
+                  final disp = MealPreferenceOption.display(p);
                   return ChoiceChip(
-                    label: Text(p[0].toUpperCase() + p.substring(1)),
+                    label: Text(disp.emoji.isEmpty
+                        ? disp.label
+                        : '${disp.emoji} ${disp.label}'),
                     selected: sel,
                     onSelected: (_) => setState(() => _preference = p),
                   );

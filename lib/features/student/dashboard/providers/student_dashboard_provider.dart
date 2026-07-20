@@ -782,6 +782,8 @@ class StudentDashboardProvider extends ChangeNotifier {
       today,
       mealOpenMinutes: _openMinutesOrNull(meal),
       slotOpenMinutes: slotOpen,
+      // ISSUE-005: identity-first boundary (start/end meal always inclusive).
+      mealSlotKey: meal.slotKey,
     );
   }
 

@@ -1215,7 +1215,13 @@ class _MySelfMealCard extends StatelessWidget {
             Wrap(
               spacing: 8,
               runSpacing: 8,
-              children: meal.enabledPreferences.map((opt) {
+              // ISSUE-008: the system "None" choice is always offered last.
+              children: [
+                ...meal.enabledPreferences,
+                if (!meal.enabledPreferences.any((p) =>
+                    p.trim().toLowerCase() == MealPreferenceOption.noneKey))
+                  MealPreferenceOption.noneKey,
+              ].map((opt) {
                 final isSelected = selectedPref == opt;
                 final disp = MealPreferenceOption.display(opt);
                 return GestureDetector(

@@ -3,6 +3,7 @@ import 'package:smart_meal_management/core/constants/app_constants.dart';
 import 'package:smart_meal_management/core/theme/app_colors.dart';
 import 'package:smart_meal_management/core/theme/app_typography.dart';
 import 'package:smart_meal_management/shared/models/user_model.dart';
+import 'package:smart_meal_management/shared/widgets/user_avatar.dart';
 
 /// Greeting card at top of the student dashboard.
 ///
@@ -100,20 +101,43 @@ class StudentGreetingCard extends StatelessWidget {
               ),
             ),
 
-          // ── Greeting ─────────────────────────────────────────────────────
-          Text(
-            '$_greeting,',
-            style: AppTypography.bodyLarge.copyWith(
-              color: AppColors.onPrimary.withValues(alpha: 0.8),
-            ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            _displayName,
-            style: AppTypography.headlineSmall.copyWith(
-              color: AppColors.onPrimary,
-              fontWeight: FontWeight.w700,
-            ),
+          // ── Greeting + avatar (ISSUE-003) ─────────────────────────────────
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '$_greeting,',
+                      style: AppTypography.bodyLarge.copyWith(
+                        color: AppColors.onPrimary.withValues(alpha: 0.8),
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      _displayName,
+                      style: AppTypography.headlineSmall.copyWith(
+                        color: AppColors.onPrimary,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 12),
+              // ISSUE-003: profile photo on the hero card — consistent with
+              // the rest of the app; taps through to the profile tab.
+              UserAvatar(
+                name: _displayName,
+                avatarUrl: user?.avatarUrl,
+                radius: 24,
+                backgroundColor: Colors.white.withValues(alpha: 0.2),
+                foregroundColor: AppColors.onPrimary,
+                onTap: onAvatarTap,
+              ),
+            ],
           ),
 
           // ── Group label + per-group role (#2) ─────────────────────────────

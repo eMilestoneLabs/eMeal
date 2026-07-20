@@ -279,6 +279,8 @@ class _MealScheduleScreenState extends State<MealScheduleScreen>
             : const ['veg', 'chicken', 'fish', 'mutton', 'egg', 'jain'],
         templatePreferenceGroups: template.preferenceGroups,
         pricingEnabled: _provider.mealPricingEnabled,
+        // ISSUE-011: Global OFF locks the per-day preference toggle.
+        globalPreferencesEnabled: _provider.preferencesEnabled,
         templatePrice: template.price,
         onSave: ({
           required String name,
@@ -1366,6 +1368,7 @@ class _DayMealEditSheet extends StatefulWidget {
     required this.templatePreferenceGroups,
     required this.pricingEnabled,
     this.templatePrice,
+    this.globalPreferencesEnabled = true,
     required this.onSave,
   });
 
@@ -1386,6 +1389,11 @@ class _DayMealEditSheet extends StatefulWidget {
 
   /// Additive: when true (group pricing ON), a per-day Price (₹) field shows.
   final bool pricingEnabled;
+
+  /// ISSUE-011 (user-confirmed rule): Global Meal Preferences OFF is a HARD
+  /// master gate — the per-day preference toggle locks read-only (the saved
+  /// per-day setting is preserved and returns when Global is turned ON).
+  final bool globalPreferencesEnabled;
 
   /// Master meal price used as the placeholder when no per-day override is set.
   final int? templatePrice;
@@ -1954,7 +1962,10 @@ class _DayMealEditSheetState extends State<_DayMealEditSheet> {
                   ),
                   Switch(
                     value: _prefsEnabled,
-                    onChanged: (v) => setState(() => _prefsEnabled = v),
+                    // ISSUE-011: read-only while Global Preferences is OFF.
+                    onChanged: widget.globalPreferencesEnabled
+                        ? (v) => setState(() => _prefsEnabled = v)
+                        : null,
                     activeThumbColor: Colors.white,
                     activeTrackColor: AppColors.primary,
                   ),
@@ -1990,7 +2001,10 @@ class _DayMealEditSheetState extends State<_DayMealEditSheet> {
                 ),
                 Switch(
                   value: _prefsEnabled,
-                  onChanged: (v) => setState(() => _prefsEnabled = v),
+                  // ISSUE-011: read-only while Global Preferences is OFF.
+                  onChanged: widget.globalPreferencesEnabled
+                      ? (v) => setState(() => _prefsEnabled = v)
+                      : null,
                   activeThumbColor: Colors.white,
                   activeTrackColor: AppColors.primary,
                 ),

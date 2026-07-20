@@ -41,6 +41,7 @@ class AttendanceModel {
     this.preferences,
     this.source,
     this.userRole,
+    this.userAvatarUrl,
   });
 
   final String id;
@@ -65,6 +66,10 @@ class AttendanceModel {
   /// Live-Test-9 ISSUE-4.5 (additive): the member's role — admin rosters
   /// order Admin/Manager rows first. Null on older payloads.
   final String? userRole;
+
+  /// Live-Test-11 ISSUE-003 (additive): joined member avatar for admin
+  /// rosters / activity lists. Null on older payloads or own records.
+  final String? userAvatarUrl;
 
   /// True when this record belongs to an admin/manager-role member.
   bool get isAdminRole {
@@ -130,6 +135,7 @@ class AttendanceModel {
             : null,
         source: j['source']?.toString(),
         userRole: j['userRole']?.toString(),
+        userAvatarUrl: j['userAvatarUrl']?.toString(),
       );
 
   Map<String, dynamic> toJson() => {
@@ -151,6 +157,7 @@ class AttendanceModel {
         'preferences': preferences,
         'source': source,
         'userRole': userRole,
+        'userAvatarUrl': userAvatarUrl,
       };
 
   AttendanceModel copyWith({
@@ -183,6 +190,7 @@ class AttendanceModel {
         preferences: preferences ?? this.preferences,
         source: source,
         userRole: userRole,
+        userAvatarUrl: userAvatarUrl,
       );
 }
 

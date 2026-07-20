@@ -795,6 +795,8 @@ class _MealConfigScreenState extends State<MealConfigScreen> {
                 // Inherit global preference state — new meals default ON
                 // when the group's preference toggle is already enabled.
                 initialPreferencesEnabled: _provider.preferencesEnabled,
+                // ISSUE-011: Global OFF locks the per-meal toggle (read-only).
+                globalPreferencesEnabled: _provider.preferencesEnabled,
                 pricingEnabled: _provider.mealPricingEnabled,
                 // Live-Test-9 ISSUE-001: pop the SHEET'S OWN route, ONLY on
                 // success. The old handler captured the SCREEN's navigator and
@@ -903,6 +905,8 @@ class _MealConfigScreenState extends State<MealConfigScreen> {
               MealConfigForm(
                 initialMeal: meal,
                 isSaving: false, // the form owns its own submit lifecycle
+                // ISSUE-011: Global OFF locks the per-meal toggle (read-only).
+                globalPreferencesEnabled: _provider.preferencesEnabled,
                 pricingEnabled: _provider.mealPricingEnabled,
                 // Live-Test-9 ISSUE-001: pop the SHEET'S OWN route, ONLY on
                 // success — see _showAddMealSheet for the failure analysis.
@@ -1268,6 +1272,24 @@ class _MealTile extends StatelessWidget {
                             ),
                           ),
                         ),
+                      // ISSUE-007A: the meal's preference configuration is
+                      // VISIBLE on the card — groups mode shows the group
+                      // count/label, standalone mode the tag count. Violet
+                      // accent tint reads clearly in light AND dark theme.
+                      if (meal.preferenceGroups.isNotEmpty)
+                        _PrefChip(
+                          icon: Icons.account_tree_rounded,
+                          label: meal.preferenceGroups.length == 1
+                              ? meal.preferenceGroups.first.label
+                              : '${meal.preferenceGroups.length} pref groups',
+                        )
+                      else if (meal.hasPreferences &&
+                          meal.enabledPreferences.isNotEmpty)
+                        _PrefChip(
+                          icon: Icons.local_offer_rounded,
+                          label:
+                              '${meal.enabledPreferences.length} pref tags',
+                        ),
                     ],
                   ),
                 ],
@@ -1317,6 +1339,47 @@ class _MealTile extends StatelessWidget {
           ),
         ],
       ),
+      ),
+    );
+  }
+}
+
+/// ISSUE-007A: violet preference pill for the meal tile — high-contrast in
+/// BOTH themes so the configured preference groups/tags are always visible.
+class _PrefChip extends StatelessWidget {
+  const _PrefChip({required this.icon, required this.label});
+
+  final IconData icon;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3),
+      decoration: BoxDecoration(
+        color: AppColors.violet.withValues(alpha: 0.14),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: AppColors.violet.withValues(alpha: 0.35)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 11, color: AppColors.violet),
+          const SizedBox(width: 4),
+          ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 130),
+            child: Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w800,
+                color: AppColors.violet,
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }

@@ -11,6 +11,7 @@ import 'package:smart_meal_management/features/auth/providers/auth_provider.dart
 import 'package:smart_meal_management/shared/models/billing_summary.dart';
 import 'package:smart_meal_management/shared/models/group_model.dart';
 import 'package:smart_meal_management/shared/widgets/app_skeleton.dart';
+import 'package:smart_meal_management/shared/widgets/user_avatar.dart';
 
 /// Member Billing V2 — premium fintech-style billing dashboard (admin).
 class BillingScreen extends StatefulWidget {
@@ -62,6 +63,7 @@ class _BillingScreenState extends State<BillingScreen> {
           userId: m.userId,
           userName: m.userName,
           role: m.role,
+          avatarUrl: m.avatarUrl,
           groupId: _provider.groupId ?? '',
           organizationId: user.organizationId,
           groupName: _provider.selectedGroup?.name ?? '',
@@ -843,7 +845,13 @@ class _MemberCard extends StatelessWidget {
           ),
           child: Row(
             children: [
-              _groupAvatar(member.userName, size: 42),
+              // ISSUE-003: real member photo (cached thumbnail) with the same
+              // initials fallback the row had before.
+              UserAvatar(
+                name: member.userName,
+                avatarUrl: member.avatarUrl,
+                radius: 21,
+              ),
               const SizedBox(width: 12),
               Expanded(
                 child: Column(

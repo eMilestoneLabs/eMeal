@@ -93,6 +93,14 @@ class PreferenceGroupModel {
 
 /// One option inside a preference group (FR-PG-011).
 class PreferenceOptionModel {
+  /// ISSUE-008: reserved key of the SYSTEM "None" option — appended (last) by
+  /// the backend to every effective preference group. Means "attending, no
+  /// optional item": ₹0, no quantity, mutually exclusive with other picks.
+  static const String noneKey = '__none__';
+
+  /// True for the system "None" option (never admin-managed).
+  bool get isNone => key == noneKey;
+
   const PreferenceOptionModel({
     required this.key,
     required this.label,

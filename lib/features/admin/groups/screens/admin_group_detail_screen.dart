@@ -250,28 +250,29 @@ class _GroupAppBar extends StatelessWidget {
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
 
-    // Live-Test-11 ISSUE-006: long group names must show in FULL. Measure the
-    // name against the space actually available beside the rename pencil and
-    // the status chip; when one line can't fit, the name wraps to two lines
-    // and the header grows to match — responsive, never a "Midnapore…" cut.
+    // Live-Test-11 ISSUE-006: long group names must show in FULL. Measure how
+    // many lines the name actually needs in the space beside the rename
+    // pencil and the status chip, wrap to that many lines (up to 4 — beyond
+    // that is pathological input) and grow the header to match. Responsive,
+    // never a "Midnapore…" cut.
     const nameStyle = TextStyle(
       fontSize: 20,
       fontWeight: FontWeight.w800,
       color: AppColors.textPrimary,
+      height: 1.2,
     );
     final screenW = MediaQuery.of(context).size.width;
     // 40 horizontal padding + rename icon (~30 when shown) + chip ≈ 96.
     final nameMaxW =
-        screenW - 40 - (group.isActive ? 30 : 0) - 96;
+        (screenW - 40 - (group.isActive ? 30 : 0) - 96).clamp(80.0, 600.0);
     final painter = TextPainter(
       text: TextSpan(text: group.name, style: nameStyle),
-      maxLines: 1,
       textDirection: TextDirection.ltr,
-    )..layout();
-    final nameWraps = painter.width > nameMaxW;
+    )..layout(maxWidth: nameMaxW.toDouble());
+    final nameLines = painter.computeLineMetrics().length.clamp(1, 4);
 
     return SliverAppBar(
-      expandedHeight: nameWraps ? 188 : 160,
+      expandedHeight: 160 + (nameLines - 1) * 26.0,
       floating: false,
       pinned: true,
       forceElevated: forceElevated,
@@ -324,14 +325,18 @@ class _GroupAppBar extends StatelessWidget {
                 mainAxisAlignment: MainAxisAlignment.end,
                 children: [
                   Row(
+                    // ISSUE-006: with a multi-line name the pencil + status
+                    // chip anchor to the first line instead of stretching.
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Flexible(
                         child: Text(
                           group.name,
                           style: nameStyle,
-                          // ISSUE-006: wrap to a second line when needed —
+                          // ISSUE-006: wrap to as many lines as the measured
+                          // name needs (header height grows to match) —
                           // ellipsis only guards truly pathological names.
-                          maxLines: nameWraps ? 2 : 1,
+                          maxLines: nameLines,
                           overflow: TextOverflow.ellipsis,
                         ),
                       ),
@@ -1191,8 +1196,6 @@ class _SettingsTabState extends State<_SettingsTab> {
   bool _togglingMeals = false;
   bool _togglingWeeklyMenu = false;
   bool _togglingDayWise = false;
-  bool _togglingPrefs = false;
-  bool _updatingPrefTypes = false;
   bool _archiving = false;
   // GRP-018/019: restore + permanent-delete busy flags.
   bool _restoring = false;
@@ -1274,57 +1277,9 @@ class _SettingsTabState extends State<_SettingsTab> {
     );
   }
 
-  Future<void> _togglePreferences(bool newValue) async {
-    setState(() => _togglingPrefs = true);
-    final newConfig =
-        widget.group.mealConfig.copyWith(preferencesEnabled: newValue);
-    final ok = await widget.provider.updateGroup(
-      organizationId: widget.organizationId,
-      groupId: widget.group.id,
-      mealConfig: newConfig,
-    );
-    if (!mounted) return;
-    setState(() => _togglingPrefs = false);
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(ok
-            ? (newValue
-                ? 'Meal preferences enabled'
-                : 'Meal preferences disabled')
-            : 'Failed to update preference settings'),
-      ),
-    );
-  }
-
-  Future<void> _updateEnabledPreferences(
-      MealPreferenceOption option, bool selected) async {
-    final current =
-        List<MealPreferenceOption>.from(widget.group.mealConfig.enabledPreferences);
-    if (selected) {
-      if (!current.contains(option)) current.add(option);
-    } else {
-      current.remove(option);
-    }
-    setState(() => _updatingPrefTypes = true);
-    final newConfig =
-        widget.group.mealConfig.copyWith(enabledPreferences: current);
-    final ok = await widget.provider.updateGroup(
-      organizationId: widget.organizationId,
-      groupId: widget.group.id,
-      mealConfig: newConfig,
-    );
-    if (!mounted) return;
-    setState(() => _updatingPrefTypes = false);
-    if (!ok) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            widget.provider.error ?? 'Failed to update preference types',
-          ),
-        ),
-      );
-    }
-  }
+  // ISSUE-011: the per-group preference toggle + type-chip updaters were
+  // removed — Meal Preference configuration now lives ONLY in the Master
+  // Meal Template (single source of truth). Settings shows a pointer card.
 
   Future<void> _confirmArchive() async {
     final confirmed = await showDialog<bool>(
@@ -1615,103 +1570,29 @@ class _SettingsTabState extends State<_SettingsTab> {
             ),
           ),
           const SizedBox(height: 10),
-          // Meal preferences toggle
+          // ISSUE-011: Meal Preference configuration now lives ONLY in the
+          // Master Meal Template (single source of truth). The old per-group
+          // toggle + Active Preference Types chips are gone — this pointer
+          // card sends admins to the right place.
           Card(
             margin: EdgeInsets.zero,
-            child: SwitchListTile(
+            child: ListTile(
+              leading:
+                  const Icon(Icons.tune_rounded, color: AppColors.primary, size: 20),
               title: const Text('Meal Preferences',
                   style: TextStyle(fontWeight: FontWeight.w600)),
               subtitle: Text(
-                group.mealConfig.preferencesEnabled
-                    ? 'Members select Veg / Chicken / Fish etc. when marking attendance.'
-                    : 'Disabled — members mark attendance without preference selection.',
+                'Managed centrally in Meals → Master Meal Template → Meal '
+                'System. The global switch there governs every meal; each '
+                'meal can add its own tags or preference groups.',
                 style: TextStyle(
                     fontSize: 12, color: colorScheme.onSurfaceVariant),
               ),
-              value: group.mealConfig.preferencesEnabled,
-              onChanged: _togglingPrefs ? null : _togglePreferences,
-              secondary: _togglingPrefs
-                  ? const SizedBox(
-                      width: 20,
-                      height: 20,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Icon(Icons.tune_rounded,
-                      color: AppColors.primary, size: 20),
+              trailing:
+                  const Icon(Icons.chevron_right_rounded, size: 20),
+              onTap: () => context.go(RouteNames.adminMealConfig),
             ),
           ),
-          // Enabled preference types (shown only when preferences are enabled)
-          if (group.mealConfig.preferencesEnabled) ...[
-            const SizedBox(height: 10),
-            Card(
-              margin: EdgeInsets.zero,
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Text(
-                          'Active Preference Types',
-                          style: Theme.of(context)
-                              .textTheme
-                              .titleSmall
-                              ?.copyWith(fontWeight: FontWeight.w700),
-                        ),
-                        const Spacer(),
-                        if (_updatingPrefTypes)
-                          const SizedBox(
-                            width: 16,
-                            height: 16,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          ),
-                      ],
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      'Select which food types members can choose from.',
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: colorScheme.onSurfaceVariant),
-                    ),
-                    const SizedBox(height: 12),
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 8,
-                      children: MealPreferenceOption.values.map((option) {
-                        final isSelected = group.mealConfig.enabledPreferences
-                            .contains(option);
-                        return FilterChip(
-                          label: Text(_prefLabel(option)),
-                          avatar: Text(
-                            _prefEmoji(option),
-                            style: const TextStyle(fontSize: 14),
-                          ),
-                          selected: isSelected,
-                          onSelected: _updatingPrefTypes
-                              ? null
-                              : (val) =>
-                                  _updateEnabledPreferences(option, val),
-                          showCheckmark: false,
-                          selectedColor:
-                              colorScheme.primaryContainer,
-                          labelStyle: TextStyle(
-                            fontSize: 12,
-                            fontWeight: isSelected
-                                ? FontWeight.w600
-                                : FontWeight.w400,
-                            color: isSelected
-                                ? colorScheme.onPrimaryContainer
-                                : colorScheme.onSurface,
-                          ),
-                        );
-                      }).toList(),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ],
         ],
 
         const SizedBox(height: 16),
@@ -1769,23 +1650,6 @@ class _SettingsTabState extends State<_SettingsTab> {
     );
   }
 
-  String _prefLabel(MealPreferenceOption option) => switch (option) {
-        MealPreferenceOption.veg => 'Veg',
-        MealPreferenceOption.chicken => 'Chicken',
-        MealPreferenceOption.fish => 'Fish',
-        MealPreferenceOption.mutton => 'Mutton',
-        MealPreferenceOption.egg => 'Egg',
-        MealPreferenceOption.jain => 'Jain',
-      };
-
-  String _prefEmoji(MealPreferenceOption option) => switch (option) {
-        MealPreferenceOption.veg => '🥦',
-        MealPreferenceOption.chicken => '🍗',
-        MealPreferenceOption.fish => '🐟',
-        MealPreferenceOption.mutton => '🍖',
-        MealPreferenceOption.egg => '🥚',
-        MealPreferenceOption.jain => '🌿',
-      };
 }
 
 /// Premium group-specific "Join Requests" entry for the Settings tab — shows a

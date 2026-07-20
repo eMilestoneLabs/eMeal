@@ -45,6 +45,17 @@ class _NoticeBellState extends State<NoticeBell> {
         .listen((_) => _load());
   }
 
+  // ISSUE-001: refetch the unread badge when the active group switches —
+  // the bell is a long-lived header widget, so the prop can change in place.
+  @override
+  void didUpdateWidget(covariant NoticeBell old) {
+    super.didUpdateWidget(old);
+    if (old.groupId != widget.groupId ||
+        old.organizationId != widget.organizationId) {
+      _load();
+    }
+  }
+
   @override
   void dispose() {
     _rtSub?.cancel();

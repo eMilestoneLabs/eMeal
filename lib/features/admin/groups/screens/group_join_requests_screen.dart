@@ -7,6 +7,7 @@ import 'package:smart_meal_management/features/auth/providers/auth_provider.dart
 import 'package:smart_meal_management/shared/models/result.dart';
 import 'package:smart_meal_management/shared/models/user_model.dart';
 import 'package:smart_meal_management/shared/widgets/app_skeleton.dart';
+import 'package:smart_meal_management/shared/widgets/user_avatar.dart';
 
 /// MODULE_02 (MEM-006/007) — Admin "Join Requests" approvals screen.
 ///
@@ -327,25 +328,12 @@ class _GroupJoinRequestsScreenState extends State<GroupJoinRequestsScreen> {
         children: [
           Row(
             children: [
-              // Initials avatar badge.
-              Container(
-                width: 44,
-                height: 44,
-                alignment: Alignment.center,
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(colors: [
-                    AppColors.primary.withValues(alpha: 0.22),
-                    AppColors.primary.withValues(alpha: 0.12),
-                  ]),
-                  shape: BoxShape.circle,
-                ),
-                child: Text(
-                  _initials(name),
-                  style: AppTypography.titleSmall.copyWith(
-                    fontWeight: FontWeight.w800,
-                    color: AppColors.primary,
-                  ),
-                ),
+              // ISSUE-003: real requester photo (cached thumbnail) with the
+              // same initials fallback the badge had before.
+              UserAvatar(
+                name: name,
+                avatarUrl: it.user.avatarUrl,
+                radius: 22,
               ),
               const SizedBox(width: 12),
               Expanded(
@@ -427,20 +415,7 @@ class _GroupJoinRequestsScreenState extends State<GroupJoinRequestsScreen> {
     );
   }
 
-  String _initials(String name) {
-    final parts = name
-        .trim()
-        .split(RegExp(r'\s+'))
-        .where((s) => s.isNotEmpty)
-        .toList();
-    if (parts.isEmpty) return '?';
-    final a = parts.first.isNotEmpty ? parts.first[0] : '';
-    final b = parts.length > 1 && parts.last.isNotEmpty
-        ? parts.last[0]
-        : (parts.first.length > 1 ? parts.first[1] : '');
-    final s = (a + b).toUpperCase();
-    return s.isEmpty ? '?' : s;
-  }
+  // ISSUE-003: initials rendering now lives inside the shared [UserAvatar].
 
   Widget _info(String msg, Color color, {VoidCallback? onRetry}) {
     return Center(

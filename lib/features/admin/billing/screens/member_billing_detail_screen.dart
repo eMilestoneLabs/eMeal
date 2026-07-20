@@ -12,6 +12,7 @@ import 'package:smart_meal_management/shared/models/meal_model.dart';
 import 'package:smart_meal_management/shared/models/paginated_response.dart';
 import 'package:smart_meal_management/shared/models/result.dart';
 import 'package:smart_meal_management/shared/widgets/app_skeleton.dart';
+import 'package:smart_meal_management/shared/widgets/user_avatar.dart';
 
 /// Member Billing Detail (V2) — dedicated screen (not a bottom sheet).
 class MemberBillingDetailScreen extends StatefulWidget {
@@ -37,11 +38,15 @@ class MemberBillingDetailScreen extends StatefulWidget {
     this.openingBalance = 0,
     this.engineMealCharges,
     this.engineNetBill,
+    this.avatarUrl,
   });
 
   final String userId;
   final String userName;
   final String role;
+
+  /// ISSUE-003 (additive): member avatar shown in the header.
+  final String? avatarUrl;
   final String groupId;
   final String organizationId;
   final String groupName;
@@ -420,9 +425,26 @@ class _MemberBillingDetailScreenState extends State<MemberBillingDetailScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(widget.userName,
-              style: AppTypography.titleLarge
-                  .copyWith(color: Colors.white, fontWeight: FontWeight.w800)),
+          // ISSUE-003: member photo beside the name for a consistent identity.
+          Row(
+            children: [
+              UserAvatar(
+                name: widget.userName,
+                avatarUrl: widget.avatarUrl,
+                radius: 20,
+                backgroundColor: Colors.white.withValues(alpha: 0.22),
+                foregroundColor: Colors.white,
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(widget.userName,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: AppTypography.titleLarge.copyWith(
+                        color: Colors.white, fontWeight: FontWeight.w800)),
+              ),
+            ],
+          ),
           const SizedBox(height: 2),
           Text('${widget.role}  ·  ${widget.groupName}',
               style: AppTypography.bodySmall

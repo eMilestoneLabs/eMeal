@@ -30,6 +30,7 @@ class BillingMemberRow {
     int? netBill,
     this.email,
     this.phone,
+    this.avatarUrl,
     this.lastActivity,
   }) : netBill = netBill ?? totalBill;
 
@@ -73,6 +74,9 @@ class BillingMemberRow {
   final String? email;
   final String? phone;
 
+  /// Live-Test-11 ISSUE-003 (additive): member avatar for billing rows.
+  final String? avatarUrl;
+
   final DateTime? lastActivity;
 
   int get totalMeals => presentCount + skippedCount + absentCount;
@@ -97,6 +101,7 @@ class BillingMemberRow {
         netBill: j['netBill'] != null ? _asInt(j['netBill']) : null,
         email: j['email']?.toString(),
         phone: j['phone']?.toString(),
+        avatarUrl: j['avatarUrl']?.toString(),
         lastActivity: j['lastActivity'] != null
             ? DateTime.tryParse(j['lastActivity'].toString())?.toLocal()
             : null,
