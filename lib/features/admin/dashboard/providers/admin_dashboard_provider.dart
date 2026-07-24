@@ -14,6 +14,7 @@ import 'package:smart_meal_management/shared/models/meal_model.dart';
 import 'package:smart_meal_management/shared/models/paginated_response.dart';
 import 'package:smart_meal_management/shared/models/result.dart';
 import 'package:smart_meal_management/data/services/response_cache_service.dart';
+import 'package:smart_meal_management/data/services/selected_group_store.dart';
 import 'package:smart_meal_management/data/services/realtime_service.dart';
 import 'package:smart_meal_management/core/constants/realtime_events.dart';
 
@@ -179,7 +180,17 @@ class AdminDashboardProvider extends ChangeNotifier {
   /// admin actually opens on (single source of truth for the prefs key).
   static const String kDefaultGroupKey = 'admin_default_group_id';
 
+  // ISSUE-003 (Live-Test-12): persistence routes through the shared
+  // [SelectedGroupStore] so EVERY admin tab (Meals, Attendance, Billing,
+  // Exports) follows the same selected group — the store also keeps the
+  // legacy unscoped key in sync for CacheWarmer.
   Future<void> _persistDefaultGroup(String? groupId) async {
+    final org = _rtOrgId;
+    if (org != null && org.isNotEmpty) {
+      await SelectedGroupStore.instance.write(org, groupId);
+      return;
+    }
+    // No org context yet — legacy behaviour.
     final prefs = await SharedPreferences.getInstance();
     if (groupId == null) {
       await prefs.remove(kDefaultGroupKey);
@@ -189,6 +200,10 @@ class AdminDashboardProvider extends ChangeNotifier {
   }
 
   Future<String?> _loadDefaultGroup() async {
+    final org = _rtOrgId;
+    if (org != null && org.isNotEmpty) {
+      return SelectedGroupStore.instance.read(org);
+    }
     final prefs = await SharedPreferences.getInstance();
     return prefs.getString(kDefaultGroupKey);
   }
@@ -530,12 +545,17 @@ class AdminDashboardProvider extends ChangeNotifier {
   /// so the dashboard opens on a concrete group rather than a vague total.
   /// Call only when [_groups] is non-empty.
   Future<void> _restoreDefaultGroupSelection() async {
+    // ISSUE-003: the persisted selection is the single source of truth — a
+    // switch made on ANY admin tab (via SelectedGroupStore) wins over the
+    // stale selectedGroupId a cached dashboard payload may carry.
+    final saved = await _loadDefaultGroup();
+    if (saved != null && _groups.any((g) => g.id == saved)) {
+      _selectedGroupId = saved;
+      return;
+    }
     if (_selectedGroupId == null ||
         !_groups.any((g) => g.id == _selectedGroupId)) {
-      final saved = await _loadDefaultGroup();
-      _selectedGroupId = (saved != null && _groups.any((g) => g.id == saved))
-          ? saved
-          : _groups.first.id;
+      _selectedGroupId = _groups.first.id;
     }
   }
 

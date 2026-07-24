@@ -16,6 +16,7 @@ import 'package:smart_meal_management/shared/models/attendance_model.dart';
 import 'package:smart_meal_management/shared/models/group_model.dart';
 import 'package:smart_meal_management/shared/models/meal_attendance_summary.dart';
 import 'package:smart_meal_management/shared/models/meal_model.dart';
+import 'package:smart_meal_management/shared/models/preference_group_model.dart';
 import 'package:smart_meal_management/shared/widgets/app_section_title.dart';
 import 'package:smart_meal_management/shared/widgets/app_screen_states.dart';
 import 'package:smart_meal_management/features/auth/providers/auth_provider.dart';
@@ -619,6 +620,14 @@ class _MealSummaryCard extends StatelessWidget {
   /// per configured group (member + guest picks merged per option, split
   /// shown). STANDALONE mode: a single validated section. Preference disabled
   /// (no data): no section at all.
+  ///
+  /// ISSUE-006 calculation rules (UI unchanged — validation only):
+  ///  • The system NONE picks are HIDDEN from the visible rows but feed the
+  ///    internal validation (visible + NONE == expected for Single Pick).
+  ///  • Multiple Pick / Quantity groups display "X of Y" (total selections or
+  ///    portions of expected members) — totals legitimately exceed headcount,
+  ///    so they never raise a mismatch (per-record rules are enforced
+  ///    server-side at write time).
   List<Widget> _buildPreferenceSections(bool isDark) {
     final s = summary;
     if (s == null) return const [];
@@ -633,6 +642,17 @@ class _MealSummaryCard extends StatelessWidget {
         ...guestGroups.keys.where((g) => !memberGroups.containsKey(g)),
       ];
       for (var i = 0; i < labels.length; i++) {
+        // ISSUE-006: the group's configured rules govern which validation
+        // applies. Snapshot labels are immutable, so a label lookup against
+        // the live meal config is stable; a group renamed/removed since falls
+        // back to the strict single-pick rule (fail-safe).
+        PreferenceGroupModel? cfg;
+        for (final g in meal.preferenceGroups) {
+          if (g.label == labels[i]) {
+            cfg = g;
+            break;
+          }
+        }
         out.add(_PrefSection(
           title: labels[i],
           icon: Icons.tune_rounded,
@@ -648,6 +668,9 @@ class _MealSummaryCard extends StatelessWidget {
           memberPickCount: s.preferenceGroupRespondentCounts[labels[i]] ??
               s.preferenceGroupPickCounts[labels[i]],
           resolveDisplay: false,
+          multiPick: cfg != null && !cfg.isSingle,
+          quantityEnabled: cfg?.quantityEnabled ?? false,
+          requiredGroup: cfg?.required ?? true,
           isDark: isDark,
         ));
       }
@@ -870,6 +893,9 @@ class _PrefSection extends StatelessWidget {
     required this.resolveDisplay,
     required this.isDark,
     this.memberPickCount,
+    this.multiPick = false,
+    this.quantityEnabled = false,
+    this.requiredGroup = true,
   });
 
   final String title;
@@ -888,28 +914,83 @@ class _PrefSection extends StatelessWidget {
   /// True for standalone tags — labels resolve through
   /// [MealPreferenceOption.display] for emoji + proper casing.
   final bool resolveDisplay;
+
+  /// ISSUE-006 (CASE_4/6): Allow Multiple Picks is ON for this group — the
+  /// totals are SELECTIONS (or portions), not people, so equality with the
+  /// expected headcount is not a valid check. Displays "X of Y" instead; the
+  /// per-record pick rules are already enforced server-side at write time.
+  final bool multiPick;
+
+  /// ISSUE-006 (CASE_5/6): quantities are ON — the totals are PORTIONS the
+  /// kitchen prepares ("Chicken ×3 + ×2" shows 5, not 2).
+  final bool quantityEnabled;
+
+  /// ISSUE-006: an OPTIONAL group (required=false) may legitimately have
+  /// fewer respondents than the expected headcount — no mismatch is raised.
+  final bool requiredGroup;
+
   final bool isDark;
+
+  /// ISSUE-005/006: the system NONE keys — hidden from every visible row,
+  /// used internally so (visible + NONE == expected) validates Single Pick.
+  static bool _isNoneKey(String k) {
+    final v = k.trim().toLowerCase();
+    return v == 'none' || v == '__none__';
+  }
 
   @override
   Widget build(BuildContext context) {
+    // ISSUE-006: split the raw breakdowns into VISIBLE rows (real food items)
+    // and the hidden system NONE tallies. NONE rows always carry quantity 1
+    // per respondent, so their sum equals the number of NONE pickers.
+    final memberVisible = <String, int>{
+      for (final e in memberCounts.entries)
+        if (!_isNoneKey(e.key)) e.key: e.value,
+    };
+    final guestVisible = <String, int>{
+      for (final e in guestCounts.entries)
+        if (!_isNoneKey(e.key)) e.key: e.value,
+    };
+    final memberNone = memberCounts.entries
+        .where((e) => _isNoneKey(e.key))
+        .fold<int>(0, (a, e) => a + e.value);
+    final guestNone = guestCounts.entries
+        .where((e) => _isNoneKey(e.key))
+        .fold<int>(0, (a, e) => a + e.value);
+
     final options = <String>[
-      ...memberCounts.keys,
-      ...guestCounts.keys.where((k) => !memberCounts.containsKey(k)),
+      ...memberVisible.keys,
+      ...guestVisible.keys.where((k) => !memberVisible.containsKey(k)),
     ];
     final totals = <String, int>{
       for (final o in options)
-        o: (memberCounts[o] ?? 0) + (guestCounts[o] ?? 0),
+        o: (memberVisible[o] ?? 0) + (guestVisible[o] ?? 0),
     };
     options.sort((a, b) => totals[b]!.compareTo(totals[a]!));
+    // Visible total — real food items only (kitchen preparation numbers).
     final actual = totals.values.fold<int>(0, (a, b) => a + b);
     // ISSUE-016: with per-option quantities the display total is PLATES, not
     // people — validate headcount from pick rows (+ guest plates) when the
     // backend provides them; legacy payloads keep the plate-total check.
-    final guestActual = guestCounts.values.fold<int>(0, (a, b) => a + b);
-    final headcount =
-        memberPickCount != null ? memberPickCount! + guestActual : actual;
-    final ok = headcount == expectedTotal;
-    final hasGuestData = guestCounts.values.any((v) => v > 0);
+    // The respondent count from the backend ALREADY includes NONE pickers
+    // (their selection rows ride the same aggregate); the raw guest total
+    // (visible + NONE picks) is the guest headcount on single-pick groups.
+    final guestActual = guestVisible.values.fold<int>(0, (a, b) => a + b) +
+        guestNone;
+    final headcount = memberPickCount != null
+        ? memberPickCount! + guestActual
+        : actual + memberNone + guestNone;
+    // ISSUE-006 validation:
+    //  • Multiple Pick / Quantity (CASE_4/5/6): totals are selections or
+    //    portions — per-record rules are server-enforced, never a mismatch.
+    //  • Optional group: members may answer nothing — never a mismatch.
+    //  • Single Pick required (CASE_2/3): every expected head must have
+    //    answered (visible + hidden NONE == expected).
+    final ok = multiPick || !requiredGroup || headcount == expectedTotal;
+    // Multi-pick / quantity chips read "X of Y ✓" — X = selections/portions,
+    // Y = expected heads (they legitimately differ, CASE_4/6).
+    final showOfChip = multiPick || quantityEnabled;
+    final hasGuestData = guestVisible.values.any((v) => v > 0);
     final textColor =
         isDark ? AppColors.textPrimaryDark : AppColors.textPrimary;
 
@@ -952,7 +1033,16 @@ class _PrefSection extends StatelessWidget {
                           .withValues(alpha: 0.35)),
                 ),
                 child: Text(
-                  ok ? 'Total $actual ✓' : '⚠ $headcount of $expectedTotal',
+                  // ISSUE-006: Multiple Pick / Quantity chips read
+                  // "X of Y ✓" (X = selections/portions, Y = expected heads);
+                  // Single Pick keeps the validated "Total N ✓".
+                  showOfChip
+                      ? (ok
+                          ? '$actual of $expectedTotal ✓'
+                          : '⚠ $actual of $expectedTotal')
+                      : ok
+                          ? 'Total $actual ✓'
+                          : '⚠ $headcount of $expectedTotal',
                   style: AppTypography.labelSmall.copyWith(
                     fontWeight: FontWeight.w800,
                     color: ok ? AppColors.present : AppColors.absent,

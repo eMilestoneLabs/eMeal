@@ -30,8 +30,17 @@ class ResponseCacheService {
       _prefs ??= await SharedPreferences.getInstance();
 
   /// Returns the decoded JSON cached under [key], or null if absent/corrupt.
-  /// If [maxAge] is given and the entry is older than it, returns null so the
-  /// caller never shows badly-stale data (it falls back to a fresh fetch).
+  ///
+  /// ISSUE-002 (Live-Test-12, offline-first): an entry older than [maxAge] is
+  /// STILL served. Every caller is a stale-while-revalidate paint — a live
+  /// network fetch always follows and overwrites — so on a dead/slow
+  /// connection the last-known data (with its freshness timestamp via
+  /// [readTimestamp]) is strictly better than a blank "no data" screen. The
+  /// previous hard cutoff made every tab go empty offline once the cache
+  /// crossed 12h, even though the data was still on disk (prune keeps 7
+  /// days). [maxAge] is retained for call-site compatibility and as
+  /// documentation of the caller's freshness expectation; the startup
+  /// [prune] remains the real retention bound.
   Future<dynamic> read(String key, {Duration? maxAge}) async {
     try {
       final raw = (await _store).getString('$_prefix$key');
@@ -41,11 +50,6 @@ class ResponseCacheService {
       if (decoded is Map &&
           decoded.containsKey('__ts') &&
           decoded.containsKey('__v')) {
-        if (maxAge != null && decoded['__ts'] is int) {
-          final age = DateTime.now().millisecondsSinceEpoch -
-              (decoded['__ts'] as int);
-          if (age > maxAge.inMilliseconds) return null;
-        }
         return decoded['__v'];
       }
       return decoded;

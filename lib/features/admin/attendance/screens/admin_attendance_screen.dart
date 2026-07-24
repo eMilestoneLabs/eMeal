@@ -22,6 +22,7 @@ import 'package:smart_meal_management/shared/models/preference_group_model.dart'
 import 'package:smart_meal_management/shared/models/result.dart';
 import 'package:smart_meal_management/shared/widgets/preference_group_selector.dart';
 import 'package:smart_meal_management/data/services/response_cache_service.dart';
+import 'package:smart_meal_management/data/services/selected_group_store.dart';
 import 'package:smart_meal_management/shared/widgets/app_empty_state.dart';
 import 'package:smart_meal_management/features/auth/providers/auth_provider.dart';
 import 'package:smart_meal_management/shared/widgets/app_skeleton.dart';
@@ -90,7 +91,15 @@ class _AdminAttendanceScreenState extends State<AdminAttendanceScreen> {
     }
     final orgId = user.organizationId;
 
+    // ISSUE-003: the app-wide selected group (SelectedGroupStore — the same
+    // one Home/Meals/Billing follow) wins; the admin's own membership and
+    // the first group remain fallbacks for a fresh install.
+    final savedGroupId = await SelectedGroupStore.instance.read(orgId);
+
     String? resolveSelected(List<GroupModel> groups) {
+      if (savedGroupId != null && groups.any((g) => g.id == savedGroupId)) {
+        return savedGroupId;
+      }
       final userGroupId = auth.currentUser?.effectiveGroupIds.firstOrNull;
       final match = groups.any((g) => g.id == userGroupId);
       return match ? userGroupId : (groups.isNotEmpty ? groups.first.id : null);
@@ -185,6 +194,8 @@ class _AdminAttendanceScreenState extends State<AdminAttendanceScreen> {
     setState(() => _selectedGroupId = groupId);
     final orgId = AuthProviderScope.of(context).currentUser?.organizationId;
     if (orgId == null) return;
+    // ISSUE-003: an explicit switch here IS the app-wide selection now.
+    unawaited(SelectedGroupStore.instance.write(orgId, groupId));
     await _loadAttendance(orgId);
   }
 

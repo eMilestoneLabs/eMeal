@@ -145,10 +145,13 @@ class StudentGreetingCard extends StatelessWidget {
             const SizedBox(height: 4),
             Row(
               children: [
+                // ISSUE-003: white60 washed out against the light-lavender
+                // gradient stop in light mode — near-solid white + a heavier
+                // weight keeps the group name readable in BOTH themes.
                 const Icon(
                   Icons.group_outlined,
                   size: 13,
-                  color: Colors.white60,
+                  color: Colors.white,
                 ),
                 const SizedBox(width: 4),
                 Flexible(
@@ -156,7 +159,8 @@ class StudentGreetingCard extends StatelessWidget {
                     groupName!,
                     overflow: TextOverflow.ellipsis,
                     style: AppTypography.labelSmall.copyWith(
-                      color: Colors.white60,
+                      color: Colors.white.withValues(alpha: 0.95),
+                      fontWeight: FontWeight.w600,
                     ),
                   ),
                 ),

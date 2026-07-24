@@ -1030,16 +1030,22 @@ class _GroupCard extends StatelessWidget {
               // Live-Test-8 ISSUE-001: same "N of 5" counter language as the
               // Standalone card, with an explicit warning under the 2-option
               // floor (a 1-option "choice" is not a choice — server rejects).
-              _metaPill(
-                '${group.options.length} of $_kMaxGroupOptions options',
-                group.options.length < _kMinGroupOptions
-                    ? AppColors.warning
-                    : AppColors.info,
-                group.options.length < _kMinGroupOptions
-                    ? Icons.warning_amber_rounded
-                    : Icons.category_rounded,
-                isDark,
-              ),
+              // ISSUE-005: the system "None" option is virtual — it never
+              // counts toward the 2–5 admin-configurable option window.
+              Builder(builder: (context) {
+                final realCount =
+                    group.options.where((o) => !o.isNone).length;
+                return _metaPill(
+                  '$realCount of $_kMaxGroupOptions options',
+                  realCount < _kMinGroupOptions
+                      ? AppColors.warning
+                      : AppColors.info,
+                  realCount < _kMinGroupOptions
+                      ? Icons.warning_amber_rounded
+                      : Icons.category_rounded,
+                  isDark,
+                );
+              }),
               _metaPill(
                 group.isSingle ? 'Single pick' : 'Multiple picks',
                 accent,
@@ -1106,7 +1112,40 @@ class _GroupCard extends StatelessWidget {
 
   /// High-contrast option chip: veg/non-veg dot + label + optional +₹ pill +
   /// remove affordance. Readable in both themes (fixes the washed-out chips).
+  ///
+  /// ISSUE-005: the system "None" option renders as a LOCKED chip — lock icon
+  /// instead of the remove ✕, muted styling, and a tap explains it is
+  /// system-managed. It can never be edited, deleted, priced or reordered.
   Widget _optionChip(PreferenceOptionModel o, bool isDark) {
+    if (o.isNone) {
+      return Container(
+        padding:
+            const EdgeInsets.only(left: 10, right: 8, top: 4, bottom: 4),
+        decoration: BoxDecoration(
+          color: (isDark ? AppColors.borderDark : AppColors.border)
+              .withValues(alpha: 0.25),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+              color: isDark ? AppColors.borderDark : AppColors.border),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.block_rounded,
+                size: 12, color: AppColors.textTertiary),
+            const SizedBox(width: 5),
+            Text('None',
+                style: AppTypography.labelMedium.copyWith(
+                  fontWeight: FontWeight.w600,
+                  color: AppColors.textTertiary,
+                )),
+            const SizedBox(width: 5),
+            const Icon(Icons.lock_rounded,
+                size: 12, color: AppColors.textTertiary),
+          ],
+        ),
+      );
+    }
     final hasPrice = o.priceDelta > 0;
     final priceStr =
         '+₹${(o.priceDelta / 100).toStringAsFixed(o.priceDelta % 100 == 0 ? 0 : 2)}';

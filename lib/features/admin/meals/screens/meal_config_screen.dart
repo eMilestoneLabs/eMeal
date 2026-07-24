@@ -232,9 +232,7 @@ class _MealConfigScreenState extends State<MealConfigScreen> {
                         ? 'Members can view menus and mark meal attendance'
                         : 'Attendance-only mode — meal UI hidden from members',
                     value: _provider.mealsEnabled,
-                    onChanged: _provider.isSaving
-                        ? null
-                        : (v) => _provider.toggleMealSystem(
+                    onChanged: (v) => _provider.toggleMealSystem(
                               organizationId: _orgId,
                               groupId:
                                   _provider.selectedGroup!.id,
@@ -261,8 +259,7 @@ class _MealConfigScreenState extends State<MealConfigScreen> {
                               ? 'Members tag Veg/Chicken/Fish etc. before attendance'
                               : 'No preference selection — just mark present/absent',
                       value: _provider.preferencesEnabled,
-                      onChanged: (_provider.isSaving ||
-                              (!_provider.preferencesEnabled &&
+                      onChanged: ((!_provider.preferencesEnabled &&
                                   _provider.optOutAttendance))
                           ? null
                           : (v) => _provider.togglePreferences(
@@ -282,9 +279,7 @@ class _MealConfigScreenState extends State<MealConfigScreen> {
                           ? 'Meals carry a ₹ price — shown to members & used for billing'
                           : 'No pricing — members see meals without a price',
                       value: _provider.mealPricingEnabled,
-                      onChanged: _provider.isSaving
-                          ? null
-                          : (v) => _provider.toggleMealPricing(
+                      onChanged: (v) => _provider.toggleMealPricing(
                                 organizationId: _orgId,
                                 groupId: _provider.selectedGroup!.id,
                                 enabled: v,
@@ -310,9 +305,7 @@ class _MealConfigScreenState extends State<MealConfigScreen> {
                         value: _provider.selectedGroup?.mealConfig
                                 .billSkippedMeals ??
                             false,
-                        onChanged: _provider.isSaving
-                            ? null
-                            : (v) => _provider.toggleBillSkippedMeals(
+                        onChanged: (v) => _provider.toggleBillSkippedMeals(
                                   organizationId: _orgId,
                                   groupId: _provider.selectedGroup!.id,
                                   enabled: v,
@@ -335,9 +328,7 @@ class _MealConfigScreenState extends State<MealConfigScreen> {
                         value: _provider.selectedGroup?.mealConfig
                                 .billAbsentMeals ??
                             false,
-                        onChanged: _provider.isSaving
-                            ? null
-                            : (v) => _provider.toggleBillAbsentMeals(
+                        onChanged: (v) => _provider.toggleBillAbsentMeals(
                                   organizationId: _orgId,
                                   groupId: _provider.selectedGroup!.id,
                                   enabled: v,
@@ -366,8 +357,7 @@ class _MealConfigScreenState extends State<MealConfigScreen> {
                               : 'OFF (default): members mark themselves — no mark '
                                   'means not counted and not billed',
                       value: _provider.optOutAttendance,
-                      onChanged: (_provider.isSaving ||
-                              (!_provider.optOutAttendance &&
+                      onChanged: ((!_provider.optOutAttendance &&
                                   _provider.preferencesEnabled))
                           ? null
                           : (v) => _provider.setAttendanceDefault(
@@ -390,9 +380,7 @@ class _MealConfigScreenState extends State<MealConfigScreen> {
                               '"Guest settings" below for limits & pricing.'
                           : 'Members cannot add guests to their meals',
                       value: _provider.guestConfig.guestAttendanceEnabled,
-                      onChanged: _provider.isSaving
-                          ? null
-                          : (v) => _provider.updateGuestConfig(
+                      onChanged: (v) => _provider.updateGuestConfig(
                                 organizationId: _orgId,
                                 groupId: _provider.selectedGroup!.id,
                                 config: _provider.guestConfig
@@ -404,9 +392,7 @@ class _MealConfigScreenState extends State<MealConfigScreen> {
                       Align(
                         alignment: Alignment.centerLeft,
                         child: TextButton.icon(
-                          onPressed: _provider.isSaving
-                              ? null
-                              : _openGuestSettings,
+                          onPressed: _openGuestSettings,
                           icon: const Icon(Icons.tune_rounded, size: 16),
                           label: const Text('Guest settings'),
                         ),
@@ -427,9 +413,7 @@ class _MealConfigScreenState extends State<MealConfigScreen> {
                       value: _provider.selectedGroup?.mealConfig
                               .vacationRequiresApproval ??
                           false,
-                      onChanged: _provider.isSaving
-                          ? null
-                          : (v) => _provider.setVacationRequiresApproval(
+                      onChanged: (v) => _provider.setVacationRequiresApproval(
                                 organizationId: _orgId,
                                 groupId: _provider.selectedGroup!.id,
                                 enabled: v,
@@ -442,7 +426,9 @@ class _MealConfigScreenState extends State<MealConfigScreen> {
                       _BillingCycleTile(
                         day: _provider.selectedGroup?.mealConfig
                             .billingCycleStartDay,
-                        saving: _provider.isSaving,
+                        // ISSUE-004: patches are queued + optimistic — the
+                        // picker stays interactive during a save.
+                        saving: false,
                         onChanged: (d) => _provider.setBillingCycleStartDay(
                           organizationId: _orgId,
                           groupId: _provider.selectedGroup!.id,
@@ -570,9 +556,7 @@ class _MealConfigScreenState extends State<MealConfigScreen> {
                               children: [
                                 Switch(
                                   value: w.isActive,
-                                  onChanged: _provider.isSaving
-                                      ? null
-                                      : (v) => _provider.updateMeal(
+                                  onChanged: (v) => _provider.updateMeal(
                                             organizationId: _orgId,
                                             groupId: w.groupId,
                                             mealId: w.id,

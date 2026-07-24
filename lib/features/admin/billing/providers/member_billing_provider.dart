@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:smart_meal_management/data/repositories/attendance_repository.dart';
 import 'package:smart_meal_management/data/repositories/group_repository.dart';
 import 'package:smart_meal_management/data/services/response_cache_service.dart';
+import 'package:smart_meal_management/data/services/selected_group_store.dart';
 import 'package:smart_meal_management/shared/models/billing_series.dart';
 import 'package:smart_meal_management/shared/models/billing_summary.dart';
 import 'package:smart_meal_management/shared/models/group_model.dart';
@@ -124,7 +125,13 @@ class MemberBillingProvider extends ChangeNotifier {
         maxAge: const Duration(hours: 12));
     if (cachedGroups != null && cachedGroups.isNotEmpty) {
       groups = cachedGroups;
-      groupId = groups.first.id;
+      // ISSUE-003: follow the app-wide selected group (SelectedGroupStore),
+      // falling back to the first group only when none is stored/valid.
+      final savedId =
+          await SelectedGroupStore.instance.read(_organizationId);
+      groupId = groups
+          .firstWhere((g) => g.id == savedId, orElse: () => groups.first)
+          .id;
       loadingGroups = false;
       // Issue 3: a group is now selected and compute() will run — show the
       // loader, never the empty "No data for this range", until figures arrive.
@@ -145,7 +152,14 @@ class MemberBillingProvider extends ChangeNotifier {
     loadingGroups = false;
     if (res case Ok(:final value)) {
       groups = value.data;
-      groupId ??= groups.isNotEmpty ? groups.first.id : null;
+      if (groupId == null && groups.isNotEmpty) {
+        // ISSUE-003: cold path (no cached groups) — same store-first rule.
+        final savedId =
+            await SelectedGroupStore.instance.read(_organizationId);
+        groupId = groups
+            .firstWhere((g) => g.id == savedId, orElse: () => groups.first)
+            .id;
+      }
       ResponseCacheService.instance
           .writeList(_orgGroupsCacheKey, value.data, (g) => g.toJson());
     }
@@ -166,6 +180,8 @@ class MemberBillingProvider extends ChangeNotifier {
   void selectGroup(String? id) {
     if (id == null || id == groupId) return;
     groupId = id;
+    // ISSUE-003: an explicit switch here IS the app-wide selection now.
+    unawaited(SelectedGroupStore.instance.write(_organizationId, id));
     notifyListeners();
     compute();
   }

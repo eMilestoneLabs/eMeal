@@ -224,6 +224,12 @@ class StudentDashboardProvider extends ChangeNotifier {
   bool _isFetching = false;
   bool _menuPrefetched = false; // one-shot weekly-menu cache-warm per session
 
+  /// ISSUE-003 (Live-Test-12): the group the in-memory state belongs to. A
+  /// load() for a DIFFERENT group clears every per-group field first, so the
+  /// previous group's meals/attendance/summary are never painted for the new
+  /// one — the new group's own cache (or skeleton) shows instead.
+  String? _loadedGroupId;
+
   Future<void> load({
     required UserModel user,
     // SRS FR-MEMX-009 (Pass 10): when the active group turns out to be
@@ -256,6 +262,24 @@ class StudentDashboardProvider extends ChangeNotifier {
       notifyListeners();
       return;
     }
+    // ISSUE-003: a group SWITCH resets the per-group state BEFORE any paint —
+    // no data from the previous group may remain visible. The reset also
+    // re-arms the cache-first paint below (it is gated on empty meals), so
+    // the NEW group's cached dashboard shows instantly when available.
+    if (_loadedGroupId != null && _loadedGroupId != groupId) {
+      _todayMeals = [];
+      _todayAttendance = [];
+      _weekHistory = [];
+      _summary = null;
+      _streakDays = 0;
+      _groupName = '';
+      _functionalRole = '';
+      _lastUpdated = null;
+      _activeVacation = null;
+      notifyListeners();
+    }
+    _loadedGroupId = groupId;
+
     final userId = user.id;
     final today = DateTime.now();
     final thirtyDaysAgo = today.subtract(const Duration(days: 30));

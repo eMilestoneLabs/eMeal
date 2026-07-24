@@ -7,6 +7,7 @@ import 'package:smart_meal_management/core/errors/failure.dart';
 import 'package:smart_meal_management/data/repositories/auth_repository.dart';
 import 'package:smart_meal_management/data/services/realtime_service.dart';
 import 'package:smart_meal_management/data/services/response_cache_service.dart';
+import 'package:smart_meal_management/data/services/selected_group_store.dart';
 import 'package:smart_meal_management/features/auth/models/auth_session.dart';
 import 'package:smart_meal_management/features/auth/models/auth_state.dart';
 import 'package:smart_meal_management/features/auth/services/auth_storage_service.dart';
@@ -140,8 +141,11 @@ class AuthProvider extends ChangeNotifier {
         if (owner != null || clearWhenUnowned) {
           await ResponseCacheService.instance.clear();
           // Account-scoped prefs outside the SWR namespace — the admin's
-          // saved default group (AdminDashboardProvider.kDefaultGroupKey).
-          await prefs.remove('admin_default_group_id');
+          // saved selected group. ISSUE-003 (Live-Test-12): the shared
+          // SelectedGroupStore wipe covers the legacy key AND every
+          // org-scoped key plus its in-memory copies, so a new account can
+          // never inherit the previous account's group selection.
+          await SelectedGroupStore.instance.clearAll();
         }
         await prefs.setString(_kCacheOwnerKey, userId);
       }

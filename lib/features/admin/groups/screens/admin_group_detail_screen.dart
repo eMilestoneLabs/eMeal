@@ -262,9 +262,10 @@ class _GroupAppBar extends StatelessWidget {
       height: 1.2,
     );
     final screenW = MediaQuery.of(context).size.width;
-    // 40 horizontal padding + rename icon (~30 when shown) + chip ≈ 96.
-    final nameMaxW =
-        (screenW - 40 - (group.isActive ? 30 : 0) - 96).clamp(80.0, 600.0);
+    // ISSUE-007: the name owns the FULL header width (only the horizontal
+    // padding is reserved) — status, chips and the join code live on their
+    // own rows below and can never squeeze the title.
+    final nameMaxW = (screenW - 40).clamp(80.0, 600.0);
     final painter = TextPainter(
       text: TextSpan(text: group.name, style: nameStyle),
       textDirection: TextDirection.ltr,
@@ -272,7 +273,9 @@ class _GroupAppBar extends StatelessWidget {
     final nameLines = painter.computeLineMetrics().length.clamp(1, 4);
 
     return SliverAppBar(
-      expandedHeight: 160 + (nameLines - 1) * 26.0,
+      // ISSUE-007: base height covers name (1 line) + edit/status row + meta
+      // row; each extra measured name line grows the header dynamically.
+      expandedHeight: 186 + (nameLines - 1) * 26.0,
       floating: false,
       pinned: true,
       forceElevated: forceElevated,
@@ -324,33 +327,44 @@ class _GroupAppBar extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisAlignment: MainAxisAlignment.end,
                 children: [
+                  // ISSUE-007: the group name owns the full header width and
+                  // wraps to as many lines as the measurement above allows —
+                  // ellipsis only guards truly pathological names. Nothing
+                  // shares this row, so the title is never squeezed.
+                  Text(
+                    group.name,
+                    style: nameStyle,
+                    maxLines: nameLines,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  const SizedBox(height: 6),
                   Row(
-                    // ISSUE-006: with a multi-line name the pencil + status
-                    // chip anchor to the first line instead of stretching.
-                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Flexible(
-                        child: Text(
-                          group.name,
-                          style: nameStyle,
-                          // ISSUE-006: wrap to as many lines as the measured
-                          // name needs (header height grows to match) —
-                          // ellipsis only guards truly pathological names.
-                          maxLines: nameLines,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                      // GRP: rename the group (Name is editable per SRS GRP-009).
-                      // Shown for active groups; hidden while archived.
+                      // GRP: rename the group (Name is editable per SRS
+                      // GRP-009). Shown for active groups; hidden archived.
                       if (group.isActive)
-                        IconButton(
-                          tooltip: 'Rename group',
-                          visualDensity: VisualDensity.compact,
-                          padding: const EdgeInsets.symmetric(horizontal: 6),
-                          constraints: const BoxConstraints(),
-                          icon: const Icon(Icons.edit_rounded,
-                              size: 18, color: AppColors.textSecondary),
-                          onPressed: () => _rename(context),
+                        InkWell(
+                          onTap: () => _rename(context),
+                          borderRadius: BorderRadius.circular(8),
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 4, vertical: 2),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const Icon(Icons.edit_rounded,
+                                    size: 15, color: AppColors.textSecondary),
+                                const SizedBox(width: 4),
+                                Text(
+                                  'Edit name',
+                                  style: AppTypography.labelSmall.copyWith(
+                                    color: AppColors.textSecondary,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
                         ),
                       const Spacer(),
                       AppStatusChip.label(
@@ -363,21 +377,25 @@ class _GroupAppBar extends StatelessWidget {
                     ],
                   ),
                   const SizedBox(height: 8),
-                  Row(
+                  // ISSUE-007: meta chips flow in a Wrap — long member counts
+                  // or join codes overflow to the next line instead of
+                  // clipping on narrow screens.
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 6,
+                    crossAxisAlignment: WrapCrossAlignment.center,
                     children: [
                       AppStatusChip.label(
                         label: group.type.label,
                         color: AppColors.primary,
                         compact: true,
                       ),
-                      const SizedBox(width: 8),
                       AppStatusChip.label(
                         label: '${group.memberCount} members',
                         color: AppColors.secondary,
                         compact: true,
                       ),
                       if (group.joinCode != null) ...[
-                        const SizedBox(width: 8),
                         GestureDetector(
                           onTap: () {
                             Clipboard.setData(

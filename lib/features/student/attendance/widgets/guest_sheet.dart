@@ -928,7 +928,15 @@ class _DraftRow extends StatelessWidget {
             Wrap(
               spacing: 6,
               runSpacing: 6,
-              children: enabledPreferences.map((opt) {
+              // ISSUE-005: the system "None" tag is always offered last —
+              // "guest attends, no optional preference item" (₹0, satisfies
+              // a required preference).
+              children: [
+                ...enabledPreferences,
+                if (!enabledPreferences.any((p) =>
+                    p.trim().toLowerCase() == MealPreferenceOption.noneKey))
+                  MealPreferenceOption.noneKey,
+              ].map((opt) {
                 final selected = draft.mealPreference == opt;
                 final disp = MealPreferenceOption.display(opt);
                 return GestureDetector(
@@ -1124,7 +1132,15 @@ class _EditGuestDialogState extends State<_EditGuestDialog> {
                 Wrap(
                   spacing: 6,
                   runSpacing: 6,
-                  children: widget.enabledPreferences.map((opt) {
+                  // ISSUE-005: system "None" tag rides last in the edit
+                  // dialog too — same rule as the add flow.
+                  children: [
+                    ...widget.enabledPreferences,
+                    if (!widget.enabledPreferences.any((p) =>
+                        p.trim().toLowerCase() ==
+                        MealPreferenceOption.noneKey))
+                      MealPreferenceOption.noneKey,
+                  ].map((opt) {
                     final selected = _preference == opt;
                     final disp = MealPreferenceOption.display(opt);
                     // Premium high-contrast chip — explicit colors in BOTH

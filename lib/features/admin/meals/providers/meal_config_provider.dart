@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
@@ -12,6 +13,7 @@ import 'package:smart_meal_management/shared/models/meal_schedule_model.dart';
 import 'package:smart_meal_management/shared/models/result.dart';
 import 'package:smart_meal_management/data/services/image_cache_seeder.dart';
 import 'package:smart_meal_management/data/services/response_cache_service.dart';
+import 'package:smart_meal_management/data/services/selected_group_store.dart';
 
 /// Default preference tags used when enabling preferences globally.
 /// Mirrors the same constant in [MealConfigForm] to keep them in sync.
@@ -96,11 +98,18 @@ class MealConfigProvider extends ChangeNotifier {
         _groups = cachedGroups;
         _isLoading = false;
       }
-      // Auto-select the first cached group + paint its cached config/meals so
-      // the body never flashes "No groups yet" while groups exist. No network
-      // awaited here; the fetch below overwrites.
+      // Auto-select the app-wide selected group (ISSUE-003: the SAME group
+      // every admin tab follows — SelectedGroupStore), falling back to the
+      // first cached group, + paint its cached config/meals so the body never
+      // flashes "No groups yet" while groups exist. No network awaited here;
+      // the fetch below overwrites.
       if (_selectedGroup == null && _groups.isNotEmpty) {
-        final g = _groups.first;
+        final savedId =
+            await SelectedGroupStore.instance.read(organizationId);
+        final g = _groups.firstWhere(
+          (x) => x.id == savedId,
+          orElse: () => _groups.first,
+        );
         _selectedGroup = g;
         _mealsEnabled = g.mealConfig.mealsEnabled;
         _preferencesEnabled = g.mealConfig.preferencesEnabled;
@@ -124,9 +133,11 @@ class MealConfigProvider extends ChangeNotifier {
         _groups = value.data;
         ResponseCacheService.instance
             .writeList(cacheKey, value.data, (g) => g.toJson());
-        // Show the cache-selected group if it still exists, else the first;
-        // always refresh its config + meals from the network.
-        final selId = _selectedGroup?.id;
+        // Show the cache-selected group if it still exists, else the app-wide
+        // selected group (ISSUE-003), else the first; always refresh its
+        // config + meals from the network.
+        final selId = _selectedGroup?.id ??
+            await SelectedGroupStore.instance.read(organizationId);
         final List<GroupModel> matches = (selId == null)
             ? <GroupModel>[]
             : value.data.where((g) => g.id == selId).toList();
@@ -178,7 +189,15 @@ class MealConfigProvider extends ChangeNotifier {
       }
     }
     sel ??= _selectedGroup;
-    if (sel == null && _groups.isNotEmpty) sel = _groups.first;
+    // ISSUE-003: with no explicit/previous selection, follow the app-wide
+    // selected group before falling back to the first.
+    if (sel == null && _groups.isNotEmpty) {
+      final savedId = await SelectedGroupStore.instance.read(organizationId);
+      sel = _groups.firstWhere(
+        (g) => g.id == savedId,
+        orElse: () => _groups.first,
+      );
+    }
     if (sel != null) {
       _selectedGroup = sel;
       _mealsEnabled = sel.mealConfig.mealsEnabled;
@@ -233,6 +252,8 @@ class MealConfigProvider extends ChangeNotifier {
     _mealsEnabled = group.mealConfig.mealsEnabled;
     _preferencesEnabled = group.mealConfig.preferencesEnabled;
     _mealPricingEnabled = group.mealConfig.mealPricingEnabled;
+    // ISSUE-003: an explicit switch here IS the app-wide selection now.
+    unawaited(SelectedGroupStore.instance.write(organizationId, group.id));
     notifyListeners();
     await _loadMeals(
       organizationId: organizationId,
@@ -428,6 +449,27 @@ class MealConfigProvider extends ChangeNotifier {
   }) async {
     _isSaving = true;
     _error = null;
+
+    // ISSUE-004: a pure Enable/Disable flip paints OPTIMISTICALLY — the
+    // switch moves on the tap itself and rolls back only on failure. Config
+    // edits carrying other fields keep the confirmed round-trip behaviour.
+    List<MealModel>? prevMeals;
+    final isPureToggle = isActive != null &&
+        name == null &&
+        description == null &&
+        menuItems == null &&
+        availablePreferences == null &&
+        attendanceWindow == null &&
+        imageBytes == null &&
+        price == null;
+    if (isPureToggle) {
+      final idx = _meals.indexWhere((m) => m.id == mealId);
+      if (idx != -1) {
+        prevMeals = _meals;
+        _meals = List.of(_meals)
+          ..[idx] = _meals[idx].copyWith(isActive: isActive);
+      }
+    }
     notifyListeners();
 
     // Compress + validate images if provided.
@@ -472,6 +514,9 @@ class MealConfigProvider extends ChangeNotifier {
         notifyListeners();
         return true;
       case Err(:final failure):
+        // ISSUE-004: roll the optimistic Enable/Disable flip back — the UI
+        // must never claim an unsaved state.
+        if (prevMeals != null) _meals = prevMeals;
         _error = failure.message;
         _isSaving = false;
         notifyListeners();
@@ -511,6 +556,15 @@ class MealConfigProvider extends ChangeNotifier {
   /// on failure the exact previous state is restored and the error surfaced.
   /// This is what turns the old "tap → nothing → tap again" round-trip lag
   /// into a single smooth flip.
+  /// ISSUE-004 (Live-Test-12): patches are SERIALIZED through this chain so
+  /// rapid consecutive toggle taps never race each other on the wire, while
+  /// the UI stays fully interactive (switches are no longer disabled during a
+  /// save). Each tap composes onto the latest optimistic state; because every
+  /// patch carries the FULL mealConfig, the LAST request fully determines the
+  /// server state — an earlier failure is self-healed by the next patch.
+  Future<void> _patchQueue = Future.value();
+  int _patchSeq = 0;
+
   Future<bool> _patchMealConfigOptimistic({
     required String organizationId,
     required String groupId,
@@ -531,34 +585,51 @@ class MealConfigProvider extends ChangeNotifier {
     _isSaving = true;
     notifyListeners();
 
-    final result = await _groupRepo.updateGroup(
-      organizationId: organizationId,
-      groupId: groupId,
-      mealConfig: updatedConfig,
-    );
+    // ISSUE-004: ride the serialized queue; only the NEWEST patch applies
+    // server truth / reverts, so an in-flight response can never clobber a
+    // later optimistic flip.
+    final mySeq = ++_patchSeq;
+    final completer = Completer<bool>();
+    _patchQueue = _patchQueue.then((_) async {
+      final result = await _groupRepo.updateGroup(
+        organizationId: organizationId,
+        groupId: groupId,
+        mealConfig: updatedConfig,
+      );
 
-    switch (result) {
-      case Ok(:final value):
-        // Server truth wins (it may cascade flags, e.g. ATT-007 exclusivity).
-        _selectedGroup = value;
-        _mealsEnabled = value.mealConfig.mealsEnabled;
-        _preferencesEnabled = value.mealConfig.preferencesEnabled;
-        _mealPricingEnabled = value.mealConfig.mealPricingEnabled;
-        onSaved?.call(value);
-        _isSaving = false;
-        notifyListeners();
-        return true;
-      case Err(:final failure):
-        // Revert — the UI must never claim an unsaved state.
-        _selectedGroup = prevGroup;
-        _mealsEnabled = prevMealsEnabled;
-        _preferencesEnabled = prevPrefs;
-        _mealPricingEnabled = prevPricing;
-        _error = failure.message;
-        _isSaving = false;
-        notifyListeners();
-        return false;
-    }
+      final isNewest = mySeq == _patchSeq;
+      switch (result) {
+        case Ok(:final value):
+          if (isNewest) {
+            // Server truth wins (it may cascade flags — ATT-007 exclusivity).
+            _selectedGroup = value;
+            _mealsEnabled = value.mealConfig.mealsEnabled;
+            _preferencesEnabled = value.mealConfig.preferencesEnabled;
+            _mealPricingEnabled = value.mealConfig.mealPricingEnabled;
+            _isSaving = false;
+          }
+          onSaved?.call(value);
+          notifyListeners();
+          completer.complete(true);
+        case Err(:final failure):
+          if (isNewest) {
+            // Revert — the UI must never claim an unsaved state. (A stale
+            // failure needs no revert: the newer queued patch re-sends the
+            // full config and resolves the truth.)
+            _selectedGroup = prevGroup;
+            _mealsEnabled = prevMealsEnabled;
+            _preferencesEnabled = prevPrefs;
+            _mealPricingEnabled = prevPricing;
+            _error = failure.message;
+            _isSaving = false;
+            notifyListeners();
+          }
+          completer.complete(false);
+      }
+    }).catchError((_) {
+      if (!completer.isCompleted) completer.complete(false);
+    });
+    return completer.future;
   }
 
   Future<bool> toggleMealSystem({

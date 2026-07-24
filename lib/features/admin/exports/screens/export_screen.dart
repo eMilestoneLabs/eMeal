@@ -8,6 +8,7 @@ import 'package:smart_meal_management/data/repositories/meal_repository.dart';
 import 'package:smart_meal_management/data/services/billing_service.dart';
 import 'package:smart_meal_management/data/services/export_service.dart';
 import 'package:smart_meal_management/data/services/response_cache_service.dart';
+import 'package:smart_meal_management/data/services/selected_group_store.dart';
 import 'package:smart_meal_management/features/admin/exports/providers/export_provider.dart';
 import 'package:smart_meal_management/features/admin/exports/screens/data_archives_screen.dart';
 import 'package:smart_meal_management/features/admin/exports/screens/export_preview_screen.dart';
@@ -81,7 +82,14 @@ class _ExportScreenState extends State<ExportScreen> {
     }
     final orgId = user.organizationId;
 
+    // ISSUE-003: the app-wide selected group (SelectedGroupStore) wins; the
+    // admin's own membership / first group remain fallbacks.
+    final savedGroupId = await SelectedGroupStore.instance.read(orgId);
+
     String? resolveSelected(List<GroupModel> groups) {
+      if (savedGroupId != null && groups.any((g) => g.id == savedGroupId)) {
+        return savedGroupId;
+      }
       final uid = auth.currentUser?.effectiveGroupIds.firstOrNull;
       final match = groups.any((g) => g.id == uid);
       return match ? uid : (groups.isNotEmpty ? groups.first.id : null);
@@ -368,7 +376,16 @@ class _ExportScreenState extends State<ExportScreen> {
               Text('Group', style: AppTypography.titleSmall),
               const SizedBox(height: AppConstants.space12),
               _ExportGroupDropdown(groups: _groups, selectedGroupId: _selectedGroupId,
-                  onChanged: (id) => setState(() => _selectedGroupId = id)),
+                  onChanged: (id) {
+                    setState(() => _selectedGroupId = id);
+                    // ISSUE-003: explicit switch = app-wide selection.
+                    final orgId = AuthProviderScope.of(context)
+                        .currentUser
+                        ?.organizationId;
+                    if (orgId != null && id != null) {
+                      SelectedGroupStore.instance.write(orgId, id);
+                    }
+                  }),
               const SizedBox(height: AppConstants.space24),
             ],
             Text('Export Format', style: AppTypography.titleSmall),
