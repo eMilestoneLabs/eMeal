@@ -34,6 +34,7 @@ class MealAttendanceSummary {
     this.preferenceGroupPickCounts = const {},
     this.preferenceGroupRespondentCounts = const {},
     this.guestPreferenceGroupRespondentCounts = const {},
+    this.preferenceGroupIdByLabel = const {},
     this.guestPendingApproval = 0,
     this.guestCancelled = 0,
     this.guestNoShow = 0,
@@ -113,6 +114,12 @@ class MealAttendanceSummary {
   /// Multiple-Pick groups validate against a headcount, not a plate count.
   final Map<String, int> guestPreferenceGroupRespondentCounts;
 
+  /// ISSUE-006: snapshot group label → stable preference-group id.
+  /// Lets the dashboard resolve a RENAMED group's config (multi-pick /
+  /// quantity / required) — historical rows keep the OLD label snapshot, which
+  /// no longer matches the live config by name.
+  final Map<String, String> preferenceGroupIdByLabel;
+
   /// Live-Test-10 Kitchen Summary (additive): administrative guest-request
   /// statuses. Only [guestCount] (approved bookings) feeds kitchen, billing
   /// and attendance totals — these are dashboard visibility rows. All default
@@ -191,6 +198,11 @@ class MealAttendanceSummary {
           _breakdown(j['preferenceGroupRespondentCounts']),
       guestPreferenceGroupRespondentCounts:
           _breakdown(j['guestPreferenceGroupRespondentCounts']),
+      preferenceGroupIdByLabel: {
+        for (final en in ((j['preferenceGroupIdByLabel'] as Map?) ?? const {})
+            .entries)
+          en.key.toString(): en.value.toString(),
+      },
       guestPendingApproval: _asInt(j['guestPendingApproval']),
       guestCancelled: _asInt(j['guestCancelled']),
       guestNoShow: _asInt(j['guestNoShow']),

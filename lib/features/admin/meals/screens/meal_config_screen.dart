@@ -470,12 +470,8 @@ class _MealConfigScreenState extends State<MealConfigScreen> {
                           ),
                           onDelete: () =>
                               _confirmDelete(context, meal),
-                          onToggle: (enabled) => _provider.updateMeal(
-                            organizationId: _orgId,
-                            groupId: meal.groupId,
-                            mealId: meal.id,
-                            isActive: enabled,
-                          ),
+                          onToggle: (enabled) =>
+                              _toggleMeal(meal, enabled),
                         ),
                       )),
                   ] else ...[
@@ -928,6 +924,37 @@ class _MealConfigScreenState extends State<MealConfigScreen> {
     );
   }
 
+  /// Enable/disable a meal and SURFACE the outcome.
+  ///
+  /// The toggle used to fire `updateMeal(...)` and discard its result, so every
+  /// server rejection was invisible: exceeding the meal cap (400) or re-enabling
+  /// a meal whose name is already taken by an active one (409) simply made the
+  /// switch flip back on the next reload, with no explanation. That reads as
+  /// "it disabled itself silently". The server rules were always right — only
+  /// the reporting was missing.
+  Future<void> _toggleMeal(MealModel meal, bool enabled) async {
+    final ok = await _provider.updateMeal(
+      organizationId: _orgId,
+      groupId: meal.groupId,
+      mealId: meal.id,
+      isActive: enabled,
+    );
+    if (!mounted || ok) return;
+    final reason = _provider.error?.trim();
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        backgroundColor: AppColors.error,
+        behavior: SnackBarBehavior.floating,
+        duration: const Duration(seconds: 4),
+        content: Text(
+          reason != null && reason.isNotEmpty
+              ? reason
+              : 'Could not ${enabled ? 'enable' : 'disable'} "${meal.name}".',
+        ),
+      ),
+    );
+  }
+
   Future<void> _confirmDelete(
       BuildContext context, MealModel meal) async {
     final messenger = ScaffoldMessenger.of(context);
@@ -959,15 +986,28 @@ class _MealConfigScreenState extends State<MealConfigScreen> {
       ),
     );
     if (confirmed == true) {
-      await _provider.deleteMeal(
+      // The result used to be discarded and "<name> deleted" shown
+      // UNCONDITIONALLY — so a REJECTED delete still reported success while the
+      // meal stayed in the list ("it says deleted but it's still there").
+      // Report what actually happened.
+      final ok = await _provider.deleteMeal(
         organizationId: _orgId,
         groupId: meal.groupId,
         mealId: meal.id,
       );
       if (mounted) {
+        final reason = _provider.error?.trim();
         messenger.showSnackBar(
           SnackBar(
-            content: Text('${meal.name} deleted'),
+            backgroundColor: ok ? null : AppColors.error,
+            duration: Duration(seconds: ok ? 2 : 4),
+            content: Text(
+              ok
+                  ? '${meal.name} deleted'
+                  : (reason != null && reason.isNotEmpty
+                      ? reason
+                      : 'Could not delete "${meal.name}".'),
+            ),
             behavior: SnackBarBehavior.floating,
           ),
         );

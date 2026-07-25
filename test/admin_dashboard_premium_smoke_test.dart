@@ -76,7 +76,7 @@ const _breakfastSummary = MealAttendanceSummary(
   expectedParticipants: 3,
   preferenceGroupBreakdown: {
     'Option 2': {'Boil Egg': 1, 'Milk': 1},
-    'Option 3': {'Pareta': 1, 'Ruti': 1},
+    'Option 3': {'Pareta': 3, 'Ruti': 3},
   },
   vacationCount: 1,
   pendingCount: 1,
@@ -84,8 +84,12 @@ const _breakfastSummary = MealAttendanceSummary(
     'Option 2': {'Milk': 2},
   },
   // Kitchen Summary (Live-Test-10): 2 approved + 2 awaiting + 1 cancelled +
-  // 1 no-show. Option 2 totals 4 (= present 2 + guests 2) → green ✓;
-  // Option 3 totals 2 ≠ 4 → exercises the red Data Mismatch banner.
+  // 1 no-show. Option 2 totals 4 (= present 2 + guests 2) → green ✓.
+  // ISSUE-006 (Live-Test-13): the mismatch rule changed — an UNDER-count is
+  // now absorbed as the hidden system NONE ("Historical NULL / legacy
+  // attendance"), so only an OVER-count still reds. Option 3 totals 6 > 4,
+  // i.e. a selection exists for somebody who is not attending — the one
+  // genuine integrity fault the banner must still catch.
   guestPendingApproval: 2,
   guestCancelled: 1,
   guestNoShow: 1,

@@ -646,12 +646,19 @@ class _MealSummaryCard extends StatelessWidget {
         // applies. Snapshot labels are immutable, so a label lookup against
         // the live meal config is stable; a group renamed/removed since falls
         // back to the strict single-pick rule (fail-safe).
+        // ISSUE-006: resolve the group's config by its STABLE ID first — a
+        // renamed group leaves historical rows carrying the OLD label
+        // snapshot, so a name match fails and the section silently fell back
+        // to single-pick defaults (losing the "N of M" multi-pick chip).
+        // Label match stays as the fallback for payloads without the map.
         PreferenceGroupModel? cfg;
+        final gid = s.preferenceGroupIdByLabel[labels[i]];
         for (final g in meal.preferenceGroups) {
-          if (g.label == labels[i]) {
+          if (gid != null && g.id == gid) {
             cfg = g;
             break;
           }
+          if (cfg == null && g.label == labels[i]) cfg = g;
         }
         out.add(_PrefSection(
           title: labels[i],
@@ -973,36 +980,30 @@ class _PrefSection extends StatelessWidget {
         o: (memberVisible[o] ?? 0) + (guestVisible[o] ?? 0),
     };
     options.sort((a, b) => totals[b]!.compareTo(totals[a]!));
-    // Visible total — real food items only (kitchen preparation numbers).
     final actual = totals.values.fold<int>(0, (a, b) => a + b);
-    // ISSUE-016: with per-option quantities the display total is PLATES, not
-    // people — validate headcount from pick rows (+ guest plates) when the
-    // backend provides them; legacy payloads keep the plate-total check.
-    // The respondent count from the backend ALREADY includes NONE pickers
-    // (their selection rows ride the same aggregate); the raw guest total
-    // (visible + NONE picks) is the guest headcount on single-pick groups.
-    // ISSUE-002 (Live-Test-13): guest HEADCOUNT for this group.
-    //
-    // guestVisible/guestNone sum QUANTITY (portions the kitchen prepares), so
-    // a guest ordering "Chicken ×3" used to count as THREE people here — the
-    // headcount then exceeded the expected number of people and raised a
-    // permanent red mismatch on every Quantity-enabled group. When the backend
-    // supplies distinct guest respondents, use that; older cached payloads
-    // fall back to the legacy plate total (unchanged behaviour).
+    // Guests: DISTINCT respondents when the server supplies them; the legacy
+    // plate total only as a fallback for older cached payloads (a guest at
+    // quantity x3 must count as ONE person, not three).
     final guestActual = guestPickCount ??
         (guestVisible.values.fold<int>(0, (a, b) => a + b) + guestNone);
+    // GROUP mode adds guest heads to the member respondent count.
+    // STANDALONE: [actual] ALREADY merges member AND guest visible counts, so
+    // only the two NONE tallies are added — adding guestActual here would
+    // count every guest with a visible pick TWICE.
     final headcount = memberPickCount != null
         ? memberPickCount! + guestActual
-        : actual + memberNone + guestActual;
-    // ISSUE-006 validation:
-    //  • Multiple Pick / Quantity (CASE_4/5/6): totals are selections or
-    //    portions — per-record rules are server-enforced, never a mismatch.
-    //  • Optional group: members may answer nothing — never a mismatch.
-    //  • Single Pick required (CASE_2/3): every expected head must have
-    //    answered (visible + hidden NONE == expected).
-    final ok = multiPick || !requiredGroup || headcount == expectedTotal;
-    // Multi-pick / quantity chips read "X of Y ✓" — X = selections/portions,
-    // Y = expected heads (they legitimately differ, CASE_4/6).
+        : actual + memberNone + guestNone;
+    // CASE_2 / CASE_3 validation is EXACT: visible + NONE == expected.
+    // A Present record with NO selection for this group (legacy row, or one
+    // marked before the group was bound) is the group-mode equivalent of a
+    // NULL flat preference — the locked rule counts every "no preference"
+    // case as the hidden system NONE, so it is COUNTED rather than the
+    // comparison being loosened. Over-count still fails: more respondents
+    // than attending means a selection exists for a non-attendee.
+    final hiddenNone =
+        headcount < expectedTotal ? expectedTotal - headcount : 0;
+    final accountedFor = headcount + hiddenNone;
+    final ok = multiPick || !requiredGroup || accountedFor == expectedTotal;
     final showOfChip = multiPick || quantityEnabled;
     final hasGuestData = guestVisible.values.any((v) => v > 0);
     final textColor =
@@ -1129,9 +1130,9 @@ class _PrefSection extends StatelessWidget {
                 // ISSUE-004: the check compares people who ANSWERED (1 member
                 // = 1, regardless of picks/quantities) against Present +
                 // approved guests — plate totals may legitimately be larger.
-                '⚠ Dashboard Data Mismatch — expected $expectedTotal '
-                'answered, found $headcount. Preferences are mandatory; '
-                'investigate this meal\'s records.',
+                '⚠ Dashboard Data Mismatch — $headcount answered but only '
+                '$expectedTotal attending. A selection exists for someone who '
+                'is not Present; investigate this meal\'s records.',
                 style: AppTypography.labelSmall.copyWith(
                   color: AppColors.absent,
                   fontWeight: FontWeight.w700,

@@ -221,14 +221,51 @@ class BillingService {
       }
     }
 
+    // ISSUE-001 (Live-Test-13): the loop above walks the ACTIVE meal catalogue
+    // and looks records up by meal id, so a REAL record whose master meal was
+    // later disabled or deleted is never looked up and never emitted — the line
+    // silently vanished from billing, exports and the student bill while the
+    // row still existed in the database (verified in prod: archived meals still
+    // held their attendance rows). Because each day's shown total is summed
+    // from these rows, the total stayed self-consistent, which is why it looked
+    // like "entry gone but bill unchanged".
+    //
+    // Historical billing is permanent, so those records are restored here from
+    // the record's OWN immutable snapshot (name + price captured at mark time).
+    // Only REAL records are recovered — a virtual auto-skip is never
+    // synthesised for an archived meal, since a meal that no longer runs must
+    // not invent new charges.
+    final activeIds = {for (final m in activeMeals) m.id};
+    for (final r in records) {
+      if (activeIds.contains(r.mealId)) continue;
+      final d = DateTime(r.date.year, r.date.month, r.date.day);
+      if (d.isBefore(fromD) || d.isAfter(toD)) continue;
+      rows.add(BillingRow(
+        userId: r.userId,
+        userName: displayMemberName(r.userName),
+        mealId: r.mealId,
+        mealName: r.mealName ?? '—',
+        status: r.status,
+        preference: BillingRow.selectionDisplay(r),
+        price: r.price,
+        date: d,
+        markedAt: r.markedAt,
+        autoSkipped: false,
+        billAbsent: r.billAbsent,
+      ));
+    }
+
     // Stable ordering: member, then date, then meal order.
+    // Archived meals are absent from [order]; they sort last within their day
+    // (fallback index) instead of being interleaved by a stale position.
     final order = {for (var i = 0; i < activeMeals.length; i++) activeMeals[i].id: i};
     rows.sort((a, b) {
       final n = a.userName.toLowerCase().compareTo(b.userName.toLowerCase());
       if (n != 0) return n;
       final dt = a.date.compareTo(b.date);
       if (dt != 0) return dt;
-      return (order[a.mealId] ?? 0).compareTo(order[b.mealId] ?? 0);
+      return (order[a.mealId] ?? activeMeals.length)
+          .compareTo(order[b.mealId] ?? activeMeals.length);
     });
     return rows;
   }
