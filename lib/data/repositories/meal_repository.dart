@@ -34,11 +34,20 @@ class MealRepository implements IMealRepository {
   Future<Result<List<MealModel>>> getGroupMeals({
     required String organizationId,
     required String groupId,
+    bool includeDisabled = false,
   }) async {
     // GET /meals — org scope comes from the JWT, never the client.
+    // ISSUE-001: `includeDisabled` is honoured server-side for ADMINS only
+    // (meals.service: `isAdmin && !!query.includeDisabled`), so a member
+    // sending it still receives active meals only — no tenant/role bypass.
     final result = await DioApiService.instance.get<Map<String, dynamic>>(
       '/meals',
-      queryParameters: {'groupId': groupId, 'page': '1', 'limit': '100'},
+      queryParameters: {
+        'groupId': groupId,
+        'page': '1',
+        'limit': '100',
+        if (includeDisabled) 'includeDisabled': 'true',
+      },
     );
     return switch (result) {
       Err(:final failure) => Err(failure),

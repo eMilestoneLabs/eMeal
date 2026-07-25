@@ -7,10 +7,18 @@ import 'package:smart_meal_management/shared/models/result.dart';
 
 /// Abstract contract for meal configuration and schedule operations.
 abstract interface class IMealRepository {
-  /// Fetch all active meals configured for [groupId].
+  /// Fetch the meals configured for [groupId].
+  ///
+  /// [includeDisabled] (ISSUE-001, Live-Test-13) asks the server for DISABLED
+  /// meals as well. The Master Meal Template needs them — its card already
+  /// renders an "Off" state with an **Enable** button, but without this flag
+  /// the server only ever returns active meals, so disabling a meal removed it
+  /// from the list and made it impossible to turn back on. Defaults to false
+  /// so every other caller (planner, pickers) keeps its active-only list.
   Future<Result<List<MealModel>>> getGroupMeals({
     required String organizationId,
     required String groupId,
+    bool includeDisabled,
   });
 
   /// Fetch meals active for today (used by student dashboard).

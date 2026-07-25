@@ -501,7 +501,7 @@ class _MealScheduleScreenState extends State<MealScheduleScreen>
                           return _DayPlanView(
                             key: ValueKey(day),
                             day: day,
-                            allMeals: _provider.meals,
+                            allMeals: _provider.activeMeals,
                             schedule: _provider.weekSchedule,
                             readOnly: _previewMode,
                             onToggle: _previewMode
@@ -1971,6 +1971,29 @@ class _DayMealEditSheetState extends State<_DayMealEditSheet> {
                   ),
                 ],
               ),
+              // ISSUE-001 (spec): when the Global Meal Preference master gate
+              // is OFF the per-day toggle above is locked read-only — say WHY,
+              // otherwise the admin just sees a dead switch with no explanation.
+              if (!widget.globalPreferencesEnabled) ...[
+                const SizedBox(height: 6),
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Icon(Icons.lock_outline_rounded,
+                        size: 13, color: AppColors.warning),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text(
+                        'Please enable Global Meal Preference from Master Template.',
+                        style: AppTypography.labelSmall.copyWith(
+                          color: AppColors.warning,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
               const SizedBox(height: 8),
               _MultiPrefGroupsCard(
                 groups: widget.templatePreferenceGroups,

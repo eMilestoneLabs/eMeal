@@ -1,4 +1,28 @@
+import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+
+/// One app-wide group-selection change: which org it belongs to and the group
+/// that is now selected (null = selection cleared, e.g. account switch).
+///
+/// Carrying the org makes every listener tenant-safe by construction: a
+/// listener bound to org A simply ignores a change published for org B, so a
+/// stale notifier can never point a screen at another organisation's group.
+@immutable
+class SelectedGroupChange {
+  const SelectedGroupChange(this.organizationId, this.groupId);
+
+  final String organizationId;
+  final String? groupId;
+
+  @override
+  bool operator ==(Object other) =>
+      other is SelectedGroupChange &&
+      other.organizationId == organizationId &&
+      other.groupId == groupId;
+
+  @override
+  int get hashCode => Object.hash(organizationId, groupId);
+}
 
 /// ISSUE-003 (Live-Test-12): ONE source of truth for the admin's selected
 /// group across every tab — Home dashboard, Meals (Master Meal Template /
@@ -32,6 +56,27 @@ class SelectedGroupStore {
   /// that already awaited [read] once this session.
   final Map<String, String?> _memory = {};
 
+  /// ISSUE-003 (Live-Test-13): the selection is now BROADCAST, not just
+  /// persisted. Before this, every tab read the store on init and wrote it on
+  /// switch, but nothing told the OTHER tabs — so switching the group on the
+  /// Weekly Menu (or while marking attendance) left Home/Billing/Attendance
+  /// showing the previous group until they happened to rebuild. Every
+  /// group-scoped provider/screen now listens here and reloads for the new
+  /// group the instant it changes, from wherever the switch was made.
+  ///
+  /// Fires ONLY on an actual value change (see [write]), so listeners never
+  /// see redundant events and the existing SWR/cache-first paint work is not
+  /// repeated — no extra network calls, no rebuild storms.
+  final ValueNotifier<SelectedGroupChange?> selection =
+      ValueNotifier<SelectedGroupChange?>(null);
+
+  /// Publish a change to every listener. Private: the value is only ever
+  /// broadcast as a side effect of [write]/[clearAll], so the notifier can
+  /// never disagree with what is persisted.
+  void _broadcast(String organizationId, String? groupId) {
+    selection.value = SelectedGroupChange(organizationId, groupId);
+  }
+
   /// Last-known selection for [organizationId] without touching disk
   /// (null when never read/written this session).
   String? peek(String organizationId) => _memory[organizationId];
@@ -58,6 +103,10 @@ class SelectedGroupStore {
   /// Called from the auth cache-ownership adoption alongside the SWR clear.
   Future<void> clearAll() async {
     _memory.clear();
+    // ISSUE-003: drop the broadcast value too — a listener that outlives the
+    // sign-out must never re-apply the previous account's group. Reset to null
+    // (rather than a change event) so no listener treats it as a selection.
+    selection.value = null;
     try {
       final prefs = await SharedPreferences.getInstance();
       for (final k in prefs
@@ -72,7 +121,13 @@ class SelectedGroupStore {
   /// Persist an explicit group selection (null clears it). Fire-and-forget
   /// safe — failures never surface to the UI.
   Future<void> write(String organizationId, String? groupId) async {
+    // ISSUE-003: broadcast BEFORE the (slow, best-effort) disk write and only
+    // when the value actually changed — listeners react in the same frame as
+    // the tap, and a re-select of the already-current group stays a no-op.
+    final changed =
+        !_memory.containsKey(organizationId) || _memory[organizationId] != groupId;
     _memory[organizationId] = groupId;
+    if (changed) _broadcast(organizationId, groupId);
     try {
       final prefs = await SharedPreferences.getInstance();
       if (groupId == null) {

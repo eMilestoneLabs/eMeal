@@ -23,6 +23,7 @@ import 'package:smart_meal_management/shared/models/result.dart';
 import 'package:smart_meal_management/shared/widgets/preference_group_selector.dart';
 import 'package:smart_meal_management/data/services/response_cache_service.dart';
 import 'package:smart_meal_management/data/services/selected_group_store.dart';
+import 'package:smart_meal_management/data/services/selected_group_subscription.dart';
 import 'package:smart_meal_management/shared/widgets/app_empty_state.dart';
 import 'package:smart_meal_management/features/auth/providers/auth_provider.dart';
 import 'package:smart_meal_management/shared/widgets/app_skeleton.dart';
@@ -90,6 +91,8 @@ class _AdminAttendanceScreenState extends State<AdminAttendanceScreen> {
       return;
     }
     final orgId = user.organizationId;
+    // ISSUE-003: follow app-wide group switches made on any other tab.
+    _bindGroupSelection(orgId);
 
     // ISSUE-003: the app-wide selected group (SelectedGroupStore — the same
     // one Home/Meals/Billing follow) wins; the admin's own membership and
@@ -292,8 +295,37 @@ class _AdminAttendanceScreenState extends State<AdminAttendanceScreen> {
     await _loadAttendance(user.organizationId);
   }
 
+  // ── ISSUE-003 app-wide group selection ─────────────────────────────────────
+
+  SelectedGroupSubscription? _groupSelSub;
+
+  /// Org the subscription is bound to — an ORG switch must rebind.
+  String? _groupSelOrgId;
+
+  /// Follow group switches made on ANY other tab (Home / Meals / Weekly Menu /
+  /// Billing / Exports) so the attendance sheet always belongs to the group
+  /// the rest of the app is showing. This screen's own [_onGroupChanged] echo
+  /// is suppressed by the isCurrent guard.
+  void _bindGroupSelection(String organizationId) {
+    if (_groupSelSub != null && _groupSelOrgId == organizationId) return;
+    _groupSelSub?.cancel();
+    _groupSelOrgId = organizationId;
+    _groupSelSub = SelectedGroupSubscription.bind(
+      organizationId: organizationId,
+      isCurrent: (id) => _selectedGroupId == id,
+      onChanged: (id) {
+        if (!mounted) return;
+        // Ignore a group not in this admin's list (stale/foreign id).
+        if (_groups.isNotEmpty && !_groups.any((g) => g.id == id)) return;
+        setState(() => _selectedGroupId = id);
+        unawaited(_loadAttendance(organizationId));
+      },
+    );
+  }
+
   @override
   void dispose() {
+    _groupSelSub?.cancel();
     _provider.removeListener(_rebuild);
     _provider.dispose();
     super.dispose();
@@ -1229,8 +1261,8 @@ class _MySelfMealCard extends StatelessWidget {
               // ISSUE-008: the system "None" choice is always offered last.
               children: [
                 ...meal.enabledPreferences,
-                if (!meal.enabledPreferences.any((p) =>
-                    p.trim().toLowerCase() == MealPreferenceOption.noneKey))
+                if (!meal.enabledPreferences
+                    .any(MealPreferenceOption.isSystemNone))
                   MealPreferenceOption.noneKey,
               ].map((opt) {
                 final isSelected = selectedPref == opt;

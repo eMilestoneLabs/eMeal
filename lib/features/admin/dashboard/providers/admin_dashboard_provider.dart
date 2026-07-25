@@ -15,6 +15,7 @@ import 'package:smart_meal_management/shared/models/paginated_response.dart';
 import 'package:smart_meal_management/shared/models/result.dart';
 import 'package:smart_meal_management/data/services/response_cache_service.dart';
 import 'package:smart_meal_management/data/services/selected_group_store.dart';
+import 'package:smart_meal_management/data/services/selected_group_subscription.dart';
 import 'package:smart_meal_management/data/services/realtime_service.dart';
 import 'package:smart_meal_management/core/constants/realtime_events.dart';
 
@@ -229,6 +230,8 @@ class AdminDashboardProvider extends ChangeNotifier {
     _rtOrgId = organizationId;
     _rtName = name;
     _rtOrgName = organizationName;
+    // ISSUE-003: follow app-wide group switches made on any other admin tab.
+    _bindGroupSelection(organizationId);
     notifyListeners();
 
     // Cache-first (stale-while-revalidate): paint last-known KPIs + recent
@@ -612,6 +615,39 @@ class AdminDashboardProvider extends ChangeNotifier {
 
   // ── B10 realtime binding ───────────────────────────────────────────────────
 
+  // ── ISSUE-003 app-wide group selection ─────────────────────────────────────
+
+  SelectedGroupSubscription? _groupSelSub;
+
+  /// Org the subscription above is bound to — an ORG switch must rebind, or
+  /// the listener would keep filtering for the previous organisation and
+  /// silently stop following group switches.
+  String? _groupSelOrgId;
+
+  /// Follow group switches made on ANY other tab (Meals / Weekly Menu /
+  /// Attendance / Billing / Exports). Bound once per org from [load]; the
+  /// echo of this provider's OWN [selectGroup] write is suppressed by the
+  /// isCurrent guard, so switching here never double-reloads.
+  void _bindGroupSelection(String organizationId) {
+    if (_groupSelSub != null && _groupSelOrgId == organizationId) return;
+    _groupSelSub?.cancel();
+    _groupSelOrgId = organizationId;
+    _groupSelSub = SelectedGroupSubscription.bind(
+      organizationId: organizationId,
+      isCurrent: (id) => _selectedGroupId == id,
+      onChanged: (id) {
+        // Only adopt a group this admin actually has — a stale/foreign id is
+        // ignored rather than blanking the dashboard.
+        if (_groups.isNotEmpty && !_groups.any((g) => g.id == id)) return;
+        _selectedGroupId = id;
+        notifyListeners();
+        // Refresh the group-scoped stats for the new context. Reuses the
+        // existing coalesced reload — no new network path, no cache bypass.
+        _scheduleRealtimeRefresh();
+      },
+    );
+  }
+
   /// Connects, joins every loaded group room (admins bypass membership
   /// server-side), and subscribes to live events. Idempotent; no-op in mock.
   void _bindRealtime() {
@@ -646,6 +682,7 @@ class AdminDashboardProvider extends ChangeNotifier {
   void dispose() {
     _rtDebounce?.cancel();
     _rtSub?.cancel();
+    _groupSelSub?.cancel();
     for (final g in _rtJoinedGroups) {
       RealtimeService.instance.leaveGroup(g);
     }

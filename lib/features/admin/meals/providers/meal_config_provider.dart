@@ -14,6 +14,7 @@ import 'package:smart_meal_management/shared/models/result.dart';
 import 'package:smart_meal_management/data/services/image_cache_seeder.dart';
 import 'package:smart_meal_management/data/services/response_cache_service.dart';
 import 'package:smart_meal_management/data/services/selected_group_store.dart';
+import 'package:smart_meal_management/data/services/selected_group_subscription.dart';
 
 /// Default preference tags used when enabling preferences globally.
 /// Mirrors the same constant in [MealConfigForm] to keep them in sync.
@@ -56,12 +57,83 @@ class MealConfigProvider extends ChangeNotifier {
   // Additive: per-group meal pricing toggle.
   bool _mealPricingEnabled = false;
 
+  // ── ISSUE-003 app-wide group selection ─────────────────────────────────────
+
+  SelectedGroupSubscription? _groupSelSub;
+
+  /// Org the subscription is bound to — an ORG switch must rebind.
+  String? _groupSelOrgId;
+
+  /// Follow group switches made on ANY other tab (Home / Attendance / Billing /
+  /// Exports) so the Master Meal Template and the Weekly / Day-Wise planner
+  /// always show the SAME group as the rest of the app. Bound once per org;
+  /// the echo of this provider's own [selectGroup] is suppressed by isCurrent.
+  void _bindGroupSelection(String organizationId) {
+    if (_groupSelSub != null && _groupSelOrgId == organizationId) return;
+    _groupSelSub?.cancel();
+    _groupSelOrgId = organizationId;
+    _groupSelSub = SelectedGroupSubscription.bind(
+      organizationId: organizationId,
+      isCurrent: (id) => _selectedGroup?.id == id,
+      onChanged: (id) {
+        // Adopt only a group present in this admin's list — a stale/foreign id
+        // is ignored, exactly like the read-time validation on load.
+        GroupModel? match;
+        for (final g in _groups) {
+          if (g.id == id) {
+            match = g;
+            break;
+          }
+        }
+        if (match == null) return;
+        // Repaint the new group's header/toggles in the SAME frame as the
+        // switch (no stale group name), then refresh its meals. Deliberately
+        // does not re-write the store — the value is already this id.
+        _selectedGroup = match;
+        _mealsEnabled = match.mealConfig.mealsEnabled;
+        _preferencesEnabled = match.mealConfig.preferencesEnabled;
+        _mealPricingEnabled = match.mealConfig.mealPricingEnabled;
+        notifyListeners();
+        unawaited(
+          _loadMeals(organizationId: organizationId, groupId: match.id),
+        );
+      },
+    );
+  }
+
+  @override
+  void dispose() {
+    _groupSelSub?.cancel();
+    super.dispose();
+  }
+
   // ── Getters ───────────────────────────────────────────────────────────────
 
   bool get isLoading => _isLoading;
   bool get isSaving => _isSaving;
   String? get error => _error;
   List<MealModel> get meals => _meals;
+
+  /// ISSUE-001 (Live-Test-13): the SCHEDULABLE meals — active only.
+  ///
+  /// [meals] now also carries DISABLED meals so the Master Meal Template can
+  /// re-enable them; a disabled meal must never be offered by the planner.
+  ///
+  /// Memoized on the identity of [_meals] so the filtered list is built ONCE
+  /// per data change instead of on every widget build. The planner previously
+  /// passed [meals] straight through with zero allocation, and filtering in
+  /// `build()` would have re-allocated on every rebuild (and once per day tab)
+  /// — this keeps the render path allocation-free, exactly as before.
+  List<MealModel>? _activeMealsCache;
+  List<MealModel>? _activeMealsSource;
+  List<MealModel> get activeMeals {
+    if (!identical(_activeMealsSource, _meals)) {
+      _activeMealsSource = _meals;
+      _activeMealsCache =
+          _meals.where((m) => m.isActive).toList(growable: false);
+    }
+    return _activeMealsCache!;
+  }
   List<GroupModel> get groups => _groups;
   GroupModel? get selectedGroup => _selectedGroup;
   MealScheduleModel? get weekSchedule => _weekSchedule;
@@ -82,6 +154,8 @@ class MealConfigProvider extends ChangeNotifier {
   // ── Load ──────────────────────────────────────────────────────────────────
 
   Future<void> loadGroups({required String organizationId}) async {
+    // ISSUE-003: follow app-wide group switches made on any other tab.
+    _bindGroupSelection(organizationId);
     if (_isLoading) return;
     // Cache-first: paint last-known groups instantly, then refresh. Uses the
     // SHARED org-groups key (same endpoint + model as Groups/Attendance/
@@ -306,6 +380,13 @@ class MealConfigProvider extends ChangeNotifier {
     final result = await _mealRepo.getGroupMeals(
       organizationId: organizationId,
       groupId: groupId,
+      // ISSUE-001 (Live-Test-13): the Master Meal Template MUST see disabled
+      // meals — its card already renders them dimmed with an "Enable" button,
+      // and the active-meal cap counter already excludes them. Without this a
+      // disabled meal vanished from the list, so it could never be turned back
+      // on (indistinguishable from a delete). Consumers that must not offer a
+      // disabled meal (planner grid, auto-populate) filter on isActive.
+      includeDisabled: true,
     );
 
     switch (result) {

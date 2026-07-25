@@ -667,6 +667,8 @@ class _MealSummaryCard extends StatelessWidget {
           // pre-fix payloads.
           memberPickCount: s.preferenceGroupRespondentCounts[labels[i]] ??
               s.preferenceGroupPickCounts[labels[i]],
+          // ISSUE-002: distinct guest respondents — never the portion total.
+          guestPickCount: s.guestPreferenceGroupRespondentCounts[labels[i]],
           resolveDisplay: false,
           multiPick: cfg != null && !cfg.isSingle,
           quantityEnabled: cfg?.quantityEnabled ?? false,
@@ -893,6 +895,7 @@ class _PrefSection extends StatelessWidget {
     required this.resolveDisplay,
     required this.isDark,
     this.memberPickCount,
+    this.guestPickCount,
     this.multiPick = false,
     this.quantityEnabled = false,
     this.requiredGroup = true,
@@ -910,6 +913,10 @@ class _PrefSection extends StatelessWidget {
   /// 1), else pick rows. When present, validation uses this + guest plates
   /// instead of the pick/quantity-inflated display totals.
   final int? memberPickCount;
+
+  /// ISSUE-002: distinct GUEST respondents for this group — the guest twin of
+  /// [memberPickCount]. Null on legacy payloads, where the plate total is used.
+  final int? guestPickCount;
 
   /// True for standalone tags — labels resolve through
   /// [MealPreferenceOption.display] for emoji + proper casing.
@@ -933,10 +940,9 @@ class _PrefSection extends StatelessWidget {
 
   /// ISSUE-005/006: the system NONE keys — hidden from every visible row,
   /// used internally so (visible + NONE == expected) validates Single Pick.
-  static bool _isNoneKey(String k) {
-    final v = k.trim().toLowerCase();
-    return v == 'none' || v == '__none__';
-  }
+  /// Delegates to the app-wide single source of truth so the dashboard's
+  /// hidden-NONE accounting can never drift from what the pickers offer.
+  static bool _isNoneKey(String k) => MealPreferenceOption.isSystemNone(k);
 
   @override
   Widget build(BuildContext context) {
@@ -975,11 +981,19 @@ class _PrefSection extends StatelessWidget {
     // The respondent count from the backend ALREADY includes NONE pickers
     // (their selection rows ride the same aggregate); the raw guest total
     // (visible + NONE picks) is the guest headcount on single-pick groups.
-    final guestActual = guestVisible.values.fold<int>(0, (a, b) => a + b) +
-        guestNone;
+    // ISSUE-002 (Live-Test-13): guest HEADCOUNT for this group.
+    //
+    // guestVisible/guestNone sum QUANTITY (portions the kitchen prepares), so
+    // a guest ordering "Chicken ×3" used to count as THREE people here — the
+    // headcount then exceeded the expected number of people and raised a
+    // permanent red mismatch on every Quantity-enabled group. When the backend
+    // supplies distinct guest respondents, use that; older cached payloads
+    // fall back to the legacy plate total (unchanged behaviour).
+    final guestActual = guestPickCount ??
+        (guestVisible.values.fold<int>(0, (a, b) => a + b) + guestNone);
     final headcount = memberPickCount != null
         ? memberPickCount! + guestActual
-        : actual + memberNone + guestNone;
+        : actual + memberNone + guestActual;
     // ISSUE-006 validation:
     //  • Multiple Pick / Quantity (CASE_4/5/6): totals are selections or
     //    portions — per-record rules are server-enforced, never a mismatch.

@@ -9,6 +9,7 @@ import 'package:smart_meal_management/data/services/billing_service.dart';
 import 'package:smart_meal_management/data/services/export_service.dart';
 import 'package:smart_meal_management/data/services/response_cache_service.dart';
 import 'package:smart_meal_management/data/services/selected_group_store.dart';
+import 'package:smart_meal_management/data/services/selected_group_subscription.dart';
 import 'package:smart_meal_management/features/admin/exports/providers/export_provider.dart';
 import 'package:smart_meal_management/features/admin/exports/screens/data_archives_screen.dart';
 import 'package:smart_meal_management/features/admin/exports/screens/export_preview_screen.dart';
@@ -63,8 +64,34 @@ class _ExportScreenState extends State<ExportScreen> {
 
   void _rebuild() { if (mounted) setState(() {}); }
 
+  // ── ISSUE-003 app-wide group selection ─────────────────────────────────────
+
+  SelectedGroupSubscription? _groupSelSub;
+
+  /// Org the subscription is bound to — an ORG switch must rebind.
+  String? _groupSelOrgId;
+
+  /// Follow group switches made on ANY other tab so an export always targets
+  /// the group the rest of the app is showing. Selection-only: no export is
+  /// ever started by a switch.
+  void _bindGroupSelection(String organizationId) {
+    if (_groupSelSub != null && _groupSelOrgId == organizationId) return;
+    _groupSelSub?.cancel();
+    _groupSelOrgId = organizationId;
+    _groupSelSub = SelectedGroupSubscription.bind(
+      organizationId: organizationId,
+      isCurrent: (id) => _selectedGroupId == id,
+      onChanged: (id) {
+        if (!mounted) return;
+        if (_groups.isNotEmpty && !_groups.any((g) => g.id == id)) return;
+        setState(() => _selectedGroupId = id);
+      },
+    );
+  }
+
   @override
   void dispose() {
+    _groupSelSub?.cancel();
     _provider.removeListener(_rebuild);
     _provider.dispose();
     _exporting.dispose();
@@ -81,6 +108,8 @@ class _ExportScreenState extends State<ExportScreen> {
       return;
     }
     final orgId = user.organizationId;
+    // ISSUE-003: follow app-wide group switches made on any other tab.
+    _bindGroupSelection(orgId);
 
     // ISSUE-003: the app-wide selected group (SelectedGroupStore) wins; the
     // admin's own membership / first group remain fallbacks.

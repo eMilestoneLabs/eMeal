@@ -334,8 +334,7 @@ class _AttendanceActionCardState extends State<AttendanceActionCard> {
               options: [
                 ...widget.enabledPreferences,
                 if (!widget.enabledPreferences
-                    .any((p) => p.trim().toLowerCase() ==
-                        MealPreferenceOption.noneKey))
+                    .any(MealPreferenceOption.isSystemNone))
                   MealPreferenceOption.noneKey,
               ],
               selected: _selectedPreference,

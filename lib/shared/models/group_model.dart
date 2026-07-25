@@ -125,17 +125,38 @@ enum MealPreferenceOption {
   /// last on standalone preference pickers ("attending, no preference item").
   static const String noneKey = 'none';
 
+  /// ISSUE-005 (Live-Test-13): the group-mode storage key for the same system
+  /// option. Standalone stores 'none', Preference Groups store '__none__' —
+  /// both are the SAME system value and are deliberately NOT migrated (the key
+  /// is already persisted across attendance, guests, corrections, billing,
+  /// reports, exports and offline caches; rewriting it buys nothing the user
+  /// can see and risks all of them).
+  static const String noneGroupKey = '__none__';
+
+  /// SINGLE SOURCE OF TRUTH for "is this the system NONE?".
+  ///
+  /// Every validator, counter and picker must call this instead of comparing
+  /// raw strings — scattered `== 'none'` checks are how one entry point (the
+  /// Today's Meals tab) ended up without the option at all. Case- and
+  /// whitespace-tolerant; mirrors the backend's `isSystemNonePreference()`.
+  static bool isSystemNone(String? key) {
+    if (key == null) return false;
+    final v = key.trim().toLowerCase();
+    return v == noneKey || v == noneGroupKey;
+  }
+
   /// Display (emoji, label) for ANY preference key — standard or custom.
   /// Emoji is auto-assigned when the (case-insensitive) name matches a known
   /// standard tag; unknown custom tags get an empty emoji (name only).
   static ({String emoji, String label}) display(String key) {
     final t = key.trim();
     // ISSUE-008: both the flat 'none' key and the group-mode '__none__'
-    // snapshot key render as the same clean "None" label everywhere.
-    final lower = t.toLowerCase();
-    if (lower == noneKey || lower == '__none__') {
+    // snapshot key render as the same clean "None" label everywhere — the
+    // internal key is never shown to the user.
+    if (isSystemNone(t)) {
       return (emoji: '🚫', label: 'None');
     }
+    final lower = t.toLowerCase();
     final emoji = standardEmoji[lower] ?? '';
     final label = t.isEmpty ? t : t[0].toUpperCase() + t.substring(1);
     return (emoji: emoji, label: label);

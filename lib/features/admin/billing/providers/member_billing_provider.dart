@@ -5,6 +5,7 @@ import 'package:smart_meal_management/data/repositories/attendance_repository.da
 import 'package:smart_meal_management/data/repositories/group_repository.dart';
 import 'package:smart_meal_management/data/services/response_cache_service.dart';
 import 'package:smart_meal_management/data/services/selected_group_store.dart';
+import 'package:smart_meal_management/data/services/selected_group_subscription.dart';
 import 'package:smart_meal_management/shared/models/billing_series.dart';
 import 'package:smart_meal_management/shared/models/billing_summary.dart';
 import 'package:smart_meal_management/shared/models/group_model.dart';
@@ -112,6 +113,8 @@ class MemberBillingProvider extends ChangeNotifier {
 
   Future<void> init(UserModel user) async {
     _organizationId = user.organizationId;
+    // ISSUE-003: follow app-wide group switches made on any other admin tab.
+    _bindGroupSelection();
 
     // Cache-first for the GROUP SELECTOR only: paint the dropdown instantly from
     // the shared org-groups cache (the same key admin Groups/Meals populate — so
@@ -184,6 +187,43 @@ class MemberBillingProvider extends ChangeNotifier {
     unawaited(SelectedGroupStore.instance.write(_organizationId, id));
     notifyListeners();
     compute();
+  }
+
+  // ── ISSUE-003 app-wide group selection ─────────────────────────────────────
+
+  SelectedGroupSubscription? _groupSelSub;
+
+  /// Org the subscription is bound to — an ORG switch must rebind.
+  String? _groupSelOrgId;
+
+  /// Follow group switches made on ANY other tab so billing figures always
+  /// belong to the group the rest of the app is showing. Bound once per org;
+  /// this provider's own [selectGroup] echo is suppressed by isCurrent.
+  void _bindGroupSelection() {
+    if (_groupSelSub != null && _groupSelOrgId == _organizationId) return;
+    _groupSelSub?.cancel();
+    _groupSelOrgId = _organizationId;
+    _groupSelSub = SelectedGroupSubscription.bind(
+      organizationId: _organizationId,
+      isCurrent: (id) => groupId == id,
+      onChanged: (id) {
+        // Ignore a group this admin does not have (stale/foreign id) once the
+        // list is known — before that, trust the store and let compute() run.
+        if (groups.isNotEmpty && !groups.any((g) => g.id == id)) return;
+        groupId = id;
+        // Financial figures are never served stale: show the loader and
+        // re-fetch live for the new group (compute() is always a live call).
+        loading = true;
+        notifyListeners();
+        unawaited(compute());
+      },
+    );
+  }
+
+  @override
+  void dispose() {
+    _groupSelSub?.cancel();
+    super.dispose();
   }
 
   void setPeriod(BillingPeriod p) {

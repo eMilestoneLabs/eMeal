@@ -11,6 +11,8 @@ import 'package:smart_meal_management/data/repositories/meal_repository.dart';
 import 'package:smart_meal_management/features/auth/providers/auth_provider.dart';
 import 'package:smart_meal_management/shared/models/attendance_model.dart';
 import 'package:smart_meal_management/shared/models/group_model.dart';
+import 'package:smart_meal_management/data/services/selected_group_store.dart';
+import 'package:smart_meal_management/data/services/selected_group_subscription.dart';
 import 'package:smart_meal_management/shared/models/meal_model.dart';
 import 'package:smart_meal_management/shared/models/preference_group_model.dart';
 import 'package:smart_meal_management/shared/models/result.dart';
@@ -65,6 +67,44 @@ class _StaffAttendanceScreenState extends State<StaffAttendanceScreen> {
   String _orgId = '';
   String _userId = '';
 
+  // ── ISSUE-003 app-wide group selection ─────────────────────────────────────
+
+  SelectedGroupSubscription? _groupSelSub;
+
+  /// Org the subscription is bound to — an ORG switch must rebind.
+  String? _groupSelOrgId;
+
+  /// The app-wide selected group when it exists in [list]; first group is only
+  /// a fallback for a fresh install / stale-or-foreign stored id.
+  String? _resolveSelected(List<GroupModel> list) {
+    final saved = SelectedGroupStore.instance.peek(_orgId);
+    if (saved != null && list.any((g) => g.id == saved)) return saved;
+    return list.isNotEmpty ? list.first.id : null;
+  }
+
+  /// Follow group switches made on ANY other tab.
+  void _bindGroupSelection(String organizationId) {
+    if (_groupSelSub != null && _groupSelOrgId == organizationId) return;
+    _groupSelSub?.cancel();
+    _groupSelOrgId = organizationId;
+    _groupSelSub = SelectedGroupSubscription.bind(
+      organizationId: organizationId,
+      isCurrent: (id) => _groupId == id,
+      onChanged: (id) {
+        if (!mounted) return;
+        if (_groups.isNotEmpty && !_groups.any((g) => g.id == id)) return;
+        setState(() => _groupId = id);
+        unawaited(_load());
+      },
+    );
+  }
+
+  @override
+  void dispose() {
+    _groupSelSub?.cancel();
+    super.dispose();
+  }
+
   @override
   void initState() {
     super.initState();
@@ -82,6 +122,11 @@ class _StaffAttendanceScreenState extends State<StaffAttendanceScreen> {
     }
     _orgId = user.organizationId;
     _userId = user.id;
+    // ISSUE-003: prime the store so _resolveSelected's sync peek sees the
+    // persisted selection, and follow switches made on any other tab.
+    await SelectedGroupStore.instance.read(_orgId);
+    if (!mounted) return;
+    _bindGroupSelection(_orgId);
 
     // Cache-first: paint the group selector from the shared org-groups cache
     // and start today's data immediately — the network refresh below runs in
@@ -95,7 +140,10 @@ class _StaffAttendanceScreenState extends State<StaffAttendanceScreen> {
     if (cached != null) {
       setState(() {
         _groups = cached;
-        _groupId = cached.isNotEmpty ? cached.first.id : null;
+        // ISSUE-003: the app-wide selected group wins; first group is only a
+        // fallback. Defaulting to the first group made this tab silently
+        // disagree with Home/Meals/Billing (the exact TYPE-1 symptom).
+        _groupId = _resolveSelected(cached);
         _loadingGroups = false;
       });
       if (_groupId != null) unawaited(_load());
@@ -107,7 +155,7 @@ class _StaffAttendanceScreenState extends State<StaffAttendanceScreen> {
     switch (res) {
       case Ok(:final value):
         _groups = value.data;
-        _groupId ??= _groups.isNotEmpty ? _groups.first.id : null;
+        _groupId ??= _resolveSelected(_groups);
       case Err(:final failure):
         if (_groups.isEmpty) _error = failure.message;
     }
@@ -320,6 +368,8 @@ class _StaffAttendanceScreenState extends State<StaffAttendanceScreen> {
           onChanged: (v) {
             if (v == null || v == _groupId) return;
             setState(() => _groupId = v);
+            // ISSUE-003: an explicit switch here IS the app-wide selection.
+            unawaited(SelectedGroupStore.instance.write(_orgId, v));
             _load();
           },
         ),

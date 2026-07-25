@@ -25,6 +25,14 @@ class StudentMealProvider extends ChangeNotifier {
   String _organizationId = '';
   String _groupId = '';
 
+  /// ISSUE-003: the group the in-memory [_schedule] belongs to.
+  ///
+  /// Without this a group SWITCH satisfied the "already have a schedule"
+  /// early-return in [load] and the Weekly Menu kept showing the PREVIOUS
+  /// group's published menu — a cross-group leak, and the exact symptom of
+  /// "switching group in Weekly Menu doesn't update". Null until first load.
+  String? _loadedGroupId;
+
   // ── Public getters ─────────────────────────────────────────────────────────
 
   MealScheduleModel? get schedule => _schedule;
@@ -56,14 +64,33 @@ class StudentMealProvider extends ChangeNotifier {
     required String groupId,
     bool forceRefresh = false,
   }) async {
-    if (_isLoading) return;
+    // ISSUE-003: a group SWITCH invalidates everything held in memory and must
+    // bypass BOTH guards below — an in-flight fetch for the previous group no
+    // longer blocks the new one (its late response is discarded by the
+    // stale-response guard), and an existing schedule no longer short-circuits
+    // the reload. The previous group's menu is dropped BEFORE any paint so it
+    // can never be shown under the new group's name.
+    final groupChanged = _loadedGroupId != null && _loadedGroupId != groupId;
+    if (groupChanged) {
+      _schedule = null;
+      _error = null;
+      notifyListeners();
+    }
+
+    if (_isLoading && !groupChanged) return;
     // Issue 3: an empty placeholder schedule (id '') means "nothing published
     // yet" — it never satisfies this early-return, so the menu keeps
     // refreshing (silently, painted from cache) until the admin publishes.
-    if (!forceRefresh && _schedule != null && _schedule!.id.isNotEmpty) return;
+    if (!forceRefresh &&
+        !groupChanged &&
+        _schedule != null &&
+        _schedule!.id.isNotEmpty) {
+      return;
+    }
 
     _organizationId = organizationId;
     _groupId = groupId;
+    _loadedGroupId = groupId;
 
     // Cache-first (stale-while-revalidate): paint the last-known schedule
     // instantly from local storage, then refresh from the network below.
@@ -92,6 +119,13 @@ class StudentMealProvider extends ChangeNotifier {
       organizationId: organizationId,
       groupId: groupId,
     );
+
+    // ISSUE-003 stale-response guard: while this request was in flight the
+    // user may have switched groups again. Applying a response for a group
+    // that is no longer selected would re-introduce the cross-group leak, so
+    // it is discarded — the newer request owns the state (its own cache write
+    // below already happened for the group it belongs to).
+    if (_loadedGroupId != groupId) return;
 
     switch (result) {
       case Ok(:final value):

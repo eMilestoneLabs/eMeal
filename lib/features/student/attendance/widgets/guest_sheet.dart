@@ -933,8 +933,7 @@ class _DraftRow extends StatelessWidget {
               // a required preference).
               children: [
                 ...enabledPreferences,
-                if (!enabledPreferences.any((p) =>
-                    p.trim().toLowerCase() == MealPreferenceOption.noneKey))
+                if (!enabledPreferences.any(MealPreferenceOption.isSystemNone))
                   MealPreferenceOption.noneKey,
               ].map((opt) {
                 final selected = draft.mealPreference == opt;
@@ -1136,9 +1135,8 @@ class _EditGuestDialogState extends State<_EditGuestDialog> {
                   // dialog too — same rule as the add flow.
                   children: [
                     ...widget.enabledPreferences,
-                    if (!widget.enabledPreferences.any((p) =>
-                        p.trim().toLowerCase() ==
-                        MealPreferenceOption.noneKey))
+                    if (!widget.enabledPreferences
+                        .any(MealPreferenceOption.isSystemNone))
                       MealPreferenceOption.noneKey,
                   ].map((opt) {
                     final selected = _preference == opt;

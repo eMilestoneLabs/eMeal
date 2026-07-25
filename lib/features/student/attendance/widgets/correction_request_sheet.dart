@@ -183,8 +183,7 @@ class _CorrectionRequestSheetState extends State<_CorrectionRequestSheet> {
     final prefs = [
       ..._meal.enabledPreferences,
       if (_meal.enabledPreferences.isNotEmpty &&
-          !_meal.enabledPreferences.any((p) =>
-              p.trim().toLowerCase() == MealPreferenceOption.noneKey))
+          !_meal.enabledPreferences.any(MealPreferenceOption.isSystemNone))
         MealPreferenceOption.noneKey,
     ];
 

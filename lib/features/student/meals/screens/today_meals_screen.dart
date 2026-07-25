@@ -844,13 +844,33 @@ class _AttendActions extends StatelessWidget {
   final bool preferencesEnabled;
   final List<String> enabledPreferences;
 
+  /// ISSUE-005 (Live-Test-13): the options actually offered — the admin's tags
+  /// plus the SYSTEM "None" option, always LAST.
+  ///
+  /// This screen used to render [enabledPreferences] verbatim while the
+  /// Present gate below required a pick, so a member who wanted "attending,
+  /// but no optional item" had no way to say so and was HARD-BLOCKED from
+  /// marking Present here (the Attendance tab and the correction sheet both
+  /// offered None — only this entry point did not). None is system-generated:
+  /// never admin-created, never counted against the admin's tag cap, and the
+  /// duplicate check keeps it single if a legacy row already carries it.
+  List<String> get _optionsWithNone => <String>[
+        ...enabledPreferences,
+        if (!enabledPreferences.any(MealPreferenceOption.isSystemNone))
+          MealPreferenceOption.noneKey,
+      ];
+
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final showPrefs =
         preferencesEnabled && enabledPreferences.isNotEmpty;
+    final options = _optionsWithNone;
     // Spec gating: Present stays disabled until a preference is picked when
     // preferences are required; Skip / Absent remain enabled regardless.
+    // Selecting None IS a valid pick ("Present, no optional item"), so it
+    // satisfies this gate — which is exactly why no NULL-preference Present
+    // record can be produced from this screen.
     final canMarkPresent =
         canMark && !presentLocked && (!showPrefs || preference != null);
 
@@ -884,7 +904,7 @@ class _AttendActions extends StatelessWidget {
             Wrap(
               spacing: AppConstants.space8,
               runSpacing: AppConstants.space6,
-              children: enabledPreferences.map((pref) {
+              children: options.map((pref) {
                 final isSelected = preference == pref;
                 final disp = MealPreferenceOption.display(pref);
                 return GestureDetector(

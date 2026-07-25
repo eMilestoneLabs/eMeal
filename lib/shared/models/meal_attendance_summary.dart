@@ -33,6 +33,7 @@ class MealAttendanceSummary {
     this.guestPreferenceGroupBreakdown = const {},
     this.preferenceGroupPickCounts = const {},
     this.preferenceGroupRespondentCounts = const {},
+    this.guestPreferenceGroupRespondentCounts = const {},
     this.guestPendingApproval = 0,
     this.guestCancelled = 0,
     this.guestNoShow = 0,
@@ -105,6 +106,12 @@ class MealAttendanceSummary {
   /// (1 member = 1, however many options/plates they picked). Empty on cached
   /// pre-fix payloads (validation falls back to pick rows, then plate totals).
   final Map<String, int> preferenceGroupRespondentCounts;
+
+  /// ISSUE-002 (Live-Test-13): { groupLabel: distinct GUEST respondents }.
+  /// The guest mirror of [preferenceGroupRespondentCounts]. Kept separate from
+  /// [guestPreferenceGroupBreakdown] (which sums PORTIONS) so Quantity and
+  /// Multiple-Pick groups validate against a headcount, not a plate count.
+  final Map<String, int> guestPreferenceGroupRespondentCounts;
 
   /// Live-Test-10 Kitchen Summary (additive): administrative guest-request
   /// statuses. Only [guestCount] (approved bookings) feeds kitchen, billing
@@ -182,6 +189,8 @@ class MealAttendanceSummary {
       preferenceGroupPickCounts: _breakdown(j['preferenceGroupPickCounts']),
       preferenceGroupRespondentCounts:
           _breakdown(j['preferenceGroupRespondentCounts']),
+      guestPreferenceGroupRespondentCounts:
+          _breakdown(j['guestPreferenceGroupRespondentCounts']),
       guestPendingApproval: _asInt(j['guestPendingApproval']),
       guestCancelled: _asInt(j['guestCancelled']),
       guestNoShow: _asInt(j['guestNoShow']),
@@ -218,6 +227,8 @@ class MealAttendanceSummary {
         'guestPreferenceGroupBreakdown': guestPreferenceGroupBreakdown,
         'preferenceGroupPickCounts': preferenceGroupPickCounts,
         'preferenceGroupRespondentCounts': preferenceGroupRespondentCounts,
+        'guestPreferenceGroupRespondentCounts':
+            guestPreferenceGroupRespondentCounts,
         'guestPendingApproval': guestPendingApproval,
         'guestCancelled': guestCancelled,
         'guestNoShow': guestNoShow,
