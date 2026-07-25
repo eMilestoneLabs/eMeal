@@ -292,6 +292,13 @@ class AdminGroupProvider extends ChangeNotifier {
     final result = await _mealRepo.getGroupMeals(
       organizationId: organizationId,
       groupId: groupId,
+      // Guidebook §2 (shared cache key): Meal Config writes the SUPERSET
+      // (active + disabled, so its cards can re-enable a disabled meal) into
+      // meal_config_meals:{org}:{group}. Fetching active-only here would
+      // OVERWRITE that shared key with a narrower list — disabled meals would
+      // vanish from the Master Meal Template on its next cache-first paint.
+      // Both writers must agree on payload; consumers filter for display.
+      includeDisabled: true,
     );
 
     switch (result) {

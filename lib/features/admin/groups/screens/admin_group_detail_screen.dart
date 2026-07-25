@@ -880,7 +880,14 @@ class _MealsTab extends StatelessWidget {
   Widget build(BuildContext context) {
     final config = group.mealConfig;
     final colorScheme = Theme.of(context).colorScheme;
-    final meals = provider.selectedGroupMeals;
+    // Guidebook §2: the shared meal cache now carries the SUPERSET (active +
+    // disabled) so the Master Meal Template can re-enable a disabled meal.
+    // This read-only summary tab shows ACTIVE meals only — its previous
+    // behaviour, preserved by filtering at the display site rather than
+    // narrowing the shared cache.
+    final meals = provider.selectedGroupMeals
+        .where((m) => m.isActive)
+        .toList(growable: false);
 
     return ListView(
       padding: const EdgeInsets.all(16),
