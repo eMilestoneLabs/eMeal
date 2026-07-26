@@ -294,12 +294,96 @@ class _PasswordFieldState extends State<PasswordField> {
       textInputAction: widget.textInputAction,
       enabled: widget.enabled,
       autofocus: widget.autofocus,
-      suffixIcon: GestureDetector(
-        onTap: () => setState(() => _obscure = !_obscure),
-        child: Icon(
-          _obscure ? Icons.visibility_off_rounded : Icons.visibility_rounded,
-          size: 20,
-          color: Theme.of(context).colorScheme.onSurfaceVariant,
+      suffixIcon: PasswordVisibilityButton(
+        obscured: _obscure,
+        enabled: widget.enabled,
+        onToggle: () => setState(() => _obscure = !_obscure),
+      ),
+    );
+  }
+}
+
+// ── PasswordVisibilityButton ───────────────────────────────────────────────────
+
+/// Live-Test-14 ISSUE-002(i): the industry-standard show/hide-password control,
+/// as ONE shared widget so every password field in the app looks and behaves
+/// identically (login, both signups, event-admin signup, reset, delete-account).
+///
+/// It replaced a bare `GestureDetector(child: Icon(...))`, which had three real
+/// problems: the tap target was the glyph only (~20 px — below the 44 px
+/// accessibility floor and genuinely hard to hit), there was no press feedback
+/// or tooltip, and the flat icon read as decoration rather than a button. This
+/// is a proper 40 px circular ink-splash button with a tinted primary surface
+/// while revealed, a cross-faded + subtly scaled icon swap, and semantics so
+/// screen readers announce it.
+class PasswordVisibilityButton extends StatelessWidget {
+  const PasswordVisibilityButton({
+    super.key,
+    required this.obscured,
+    required this.onToggle,
+    this.enabled = true,
+  });
+
+  /// True while the password is masked (the eye offers "show").
+  final bool obscured;
+  final VoidCallback onToggle;
+  final bool enabled;
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    // Revealed state is visually "active" — a tinted primary chip — so the user
+    // can always tell at a glance whether their password is on screen.
+    final iconColor = !enabled
+        ? colorScheme.onSurfaceVariant.withValues(alpha: 0.38)
+        : obscured
+            ? colorScheme.onSurfaceVariant
+            : colorScheme.primary;
+
+    return Padding(
+      padding: const EdgeInsets.only(right: 6),
+      // Tooltip already publishes its message as the semantics label and InkWell
+      // already marks itself as a button, so no extra Semantics wrapper — one
+      // would make a screen reader announce the control twice.
+      child: Tooltip(
+        message: obscured ? 'Show password' : 'Hide password',
+        child: Material(
+          color: obscured || !enabled
+              ? Colors.transparent
+              : colorScheme.primary.withValues(alpha: 0.10),
+          shape: const CircleBorder(),
+          clipBehavior: Clip.antiAlias,
+          child: InkWell(
+            onTap: enabled ? onToggle : null,
+            customBorder: const CircleBorder(),
+            child: SizedBox(
+              width: 40,
+              height: 40,
+              child: Center(
+                child: AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 180),
+                  transitionBuilder: (child, animation) => FadeTransition(
+                    opacity: animation,
+                    child: ScaleTransition(
+                      scale: Tween<double>(begin: 0.80, end: 1)
+                          .animate(animation),
+                      child: child,
+                    ),
+                  ),
+                  child: Icon(
+                    obscured
+                        ? Icons.visibility_off_rounded
+                        : Icons.visibility_rounded,
+                    // Keyed so AnimatedSwitcher treats the swap as a new
+                    // child (same widget type, different glyph).
+                    key: ValueKey<bool>(obscured),
+                    size: 20,
+                    color: iconColor,
+                  ),
+                ),
+              ),
+            ),
+          ),
         ),
       ),
     );

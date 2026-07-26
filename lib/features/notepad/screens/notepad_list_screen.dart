@@ -281,7 +281,16 @@ class _NotepadListScreenState extends State<NotepadListScreen> {
   /// the full list; no new state machinery needed.
   void _filterByTag(String tag) {
     setState(() => _searching = true);
-    _searchController.text = tag;
+    // Live-Test-14 ISSUE-003: assigning `.text` alone leaves the caret at
+    // offset 0, so the very first keystroke or backspace edited the FRONT of the
+    // tag — the search box looked stuck on the tag. Set value + selection
+    // together so the field behaves exactly as if the user had typed it.
+    // (The controller listener installed in initState still drives
+    // provider.setQuery, so the list filters on this assignment.)
+    _searchController.value = TextEditingValue(
+      text: tag,
+      selection: TextSelection.collapsed(offset: tag.length),
+    );
   }
 
   // ── Build ────────────────────────────────────────────────────────────────────

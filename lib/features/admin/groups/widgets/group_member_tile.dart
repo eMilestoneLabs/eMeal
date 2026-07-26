@@ -206,11 +206,18 @@ class GroupMemberTile extends StatelessWidget {
           ),
 
           // ── Action menu ────────────────────────────────────────────────
+          // ISSUE-002(iv) follow-up: the guard now counts only the actions this
+          // menu can actually RENDER. It used to include [onPromote], which was
+          // safe while "Make Admin" was an item — with that item gone, a caller
+          // supplying onPromote alone would open a PopupMenuButton whose
+          // itemBuilder returns an empty list (a debug assertion, and an empty
+          // sheet in release). No current call site can hit that (onRemove is
+          // always non-null for a non-self member), but the guard should not
+          // depend on that coincidence.
           if (!isCurrentUser &&
-              (onPromote != null ||
-                  onRemove != null ||
-                  onBlock != null ||
-                  onUnblock != null))
+              ((!isBlocked && onBlock != null) ||
+                  (isBlocked && onUnblock != null) ||
+                  onRemove != null))
             PopupMenuButton<_MemberAction>(
               icon: Icon(
                 Icons.more_vert_rounded,
@@ -218,11 +225,14 @@ class GroupMemberTile extends StatelessWidget {
                 color: colorScheme.onSurfaceVariant,
               ),
               itemBuilder: (_) => [
-                if (onPromote != null && !isAdmin && !isBlocked)
-                  const PopupMenuItem(
-                    value: _MemberAction.promote,
-                    child: Text('Make Admin'),
-                  ),
+                // Live-Test-14 ISSUE-002(iv) (user-confirmed rule): the "Make
+                // Admin" action is REMOVED — promoting a member to admin from
+                // this menu is not a workflow the product offers. The
+                // [onPromote] callback and _MemberAction.promote branch are
+                // intentionally KEPT (additive-only discipline: the promote API
+                // and its call sites stay intact and unbroken), but no UI can
+                // reach them, so no admin can be created here. Re-adding the
+                // entry is a one-line change if the rule is ever reversed.
                 if (!isBlocked && onBlock != null)
                   PopupMenuItem(
                     value: _MemberAction.block,

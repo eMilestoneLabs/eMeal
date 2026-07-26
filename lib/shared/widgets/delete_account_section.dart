@@ -5,6 +5,7 @@ import 'package:smart_meal_management/core/constants/app_constants.dart';
 import 'package:smart_meal_management/core/theme/app_colors.dart';
 import 'package:smart_meal_management/core/theme/app_typography.dart';
 import 'package:smart_meal_management/features/auth/providers/auth_provider.dart';
+import 'package:smart_meal_management/features/auth/widgets/auth_input_field.dart';
 
 // ── DeleteAccountSection ───────────────────────────────────────────────────────
 
@@ -234,14 +235,11 @@ class _DeleteAccountDialogState extends State<_DeleteAccountDialog> {
                 labelText: 'Current password',
                 helperText: 'Leave blank if you sign in with OTP only',
                 helperMaxLines: 2,
-                suffixIcon: IconButton(
-                  icon: Icon(
-                    _obscure
-                        ? Icons.visibility_off_outlined
-                        : Icons.visibility_outlined,
-                    size: 20,
-                  ),
-                  onPressed: () => setState(() => _obscure = !_obscure),
+                // ISSUE-002(i): shared premium reveal control.
+                suffixIcon: PasswordVisibilityButton(
+                  obscured: _obscure,
+                  enabled: !_deleting,
+                  onToggle: () => setState(() => _obscure = !_obscure),
                 ),
               ),
             ),

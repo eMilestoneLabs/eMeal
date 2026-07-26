@@ -123,6 +123,17 @@ class Note {
 
   /// A note with no meaningful content — used to hide empty drafts and to pick
   /// a preview label. Tags/reminder alone do not make a note "non-empty".
+  ///
+  /// Live-Test-14 note (deliberately NOT changed): because `isEmpty` has two
+  /// destructive consumers — `NotepadProvider.visibleNotes` hides such a note,
+  /// and `NoteEditorScreen.dispose` deletes it as an abandoned draft — a note
+  /// whose ONLY content is a tag or a reminder is discarded when the editor
+  /// closes. That is a consequence of the rule stated above, which the original
+  /// author chose on purpose (a bare tag is not "content"), and changing it
+  /// would let blank tagged cards accumulate in the list. It is therefore left
+  /// exactly as it was; raise it as its own product decision if the discard is
+  /// unwanted. The Live-Test-14 tag fix is in [NoteCard] (hit-testing) and
+  /// `NotepadListScreen._filterByTag` (caret placement) — neither touches this.
   bool get isEmpty {
     if (title.trim().isNotEmpty) return false;
     if (isChecklist) {

@@ -809,13 +809,22 @@ class _LoginFormFields extends StatelessWidget {
             onSubmitted: onIdentifierSubmitted,
           ),
           const SizedBox(height: 14),
-          AuthInputField(
+          // Live-Test-14 ISSUE-002(i): the login password field was the ONE
+          // password input in the app hard-wired to `obscureText: true` with no
+          // reveal control — every signup/reset screen already used
+          // [PasswordField]. Switching to the shared widget gives login the same
+          // premium show/hide eye button (and keeps all six fields consistent).
+          PasswordField(
             label: 'Password',
             controller: passwordCtrl,
             focusNode: passwordFocus,
-            obscureText: true,
             textInputAction: TextInputAction.done,
             errorText: passwordError,
+            // NOTE: deliberately NOT disabled while `isLoading`. The eye button
+            // was the only requested change here, and the identifier field above
+            // stays enabled during submit — disabling only this one would grey
+            // out half the form and close the keyboard mid-request. Behaviour is
+            // therefore identical to before apart from the reveal control.
             onChanged: onPasswordChanged,
             onSubmitted: onPasswordSubmitted,
           ),

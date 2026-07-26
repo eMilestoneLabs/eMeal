@@ -191,7 +191,21 @@ class BillingService {
               preference: BillingRow.selectionDisplay(rec),
               // Per-day price snapshot overrides master; fall back to the
               // day-effective price for legacy records marked before pricing.
-              price: rec.price ?? effectiveMeal.price,
+              //
+              // Live-Test-14 ISSUE-004 (server-engine parity): a SKIPPED record
+              // is the one status whose null price is MEANINGFUL, not legacy.
+              // The close-time sweep now records a system Skip in every group so
+              // non-responders leave Pending, and it snapshots a price ONLY when
+              // the group's Bill-Skip policy was ON at close — a null price is
+              // the deliberate "this Skip is not billable" marker. Applying the
+              // master-price fallback to it would bill the member here for
+              // something the backend engine bills at ₹0 (it evaluates
+              // `price ?? 0`), re-opening exactly the client/server divergence
+              // that Live-Test-6 ISSUE-4 closed. So skipped rows carry their own
+              // snapshot verbatim; present/absent keep the legacy fallback.
+              price: rec.status == AttendanceStatus.skipped
+                  ? rec.price
+                  : (rec.price ?? effectiveMeal.price),
               date: d,
               markedAt: marked,
               autoSkipped: false,
@@ -322,8 +336,10 @@ class BillingService {
             if (r.billAbsent == true) bill += r.price ?? 0;
           case AttendanceStatus.skipped:
             skipped++;
-            // Real skipped records always bill (policy was ON when they were
-            // written); virtual placeholders (autoSkipped) never bill.
+            // Real skipped records bill their OWN snapshot; a null snapshot is a
+            // non-billable system Skip (ISSUE-004) and contributes ₹0 — the same
+            // `price ?? 0` the backend engine applies. Virtual placeholders
+            // (autoSkipped) never bill.
             if (!r.autoSkipped) bill += r.price ?? 0;
           default:
             break;

@@ -23,6 +23,7 @@ import 'package:smart_meal_management/data/services/response_cache_service.dart'
 import 'package:smart_meal_management/shared/models/user_model.dart';
 import 'package:smart_meal_management/data/services/realtime_service.dart';
 import 'package:smart_meal_management/core/constants/realtime_events.dart';
+import 'package:smart_meal_management/shared/utils/attendance_window.dart';
 
 /// Student dashboard state manager.
 ///
@@ -713,38 +714,19 @@ class StudentDashboardProvider extends ChangeNotifier {
     return DateTime(y, m, d);
   }
 
-  /// Server org-clock "now" (minutes since org midnight), advanced by elapsed
-  /// device time since fetch. Null → caller falls back to the phone clock.
-  int? _orgNowMinutes(MealModel meal) {
-    final base = meal.orgClockMinutes;
-    final at = _mealsFetchedAt;
-    if (base == null || at == null) return null;
-    final elapsed = DateTime.now().difference(at).inMinutes;
-    // Monotonicity guard: clock jumped backwards or payload is ancient
-    // (screen resumed after >12h) — fall back rather than extrapolate.
-    if (elapsed < 0 || elapsed > 12 * 60) return null;
-    return (base + elapsed) % (24 * 60);
-  }
+  // Live-Test-14 ISSUE-001: the org-clock/window arithmetic that used to live
+  // here now lives in the shared [AttendanceWindow] util, so the admin's "Mark
+  // My Attendance" screen gates on the EXACT same rules — one implementation,
+  // not two that can drift. Formulas, grace handling and the monotonicity
+  // guards are unchanged; [isWindowOpen]/[isWindowPast] below just delegate.
 
   static int _minutesOf(TimeOfDay t) => t.hour * 60 + t.minute;
 
   /// True while the server accepts a mark for [meal]: open ≤ now < close+grace
   /// (grace marks are accepted server-side — FR-TIME-005). The all-day
   /// 00:00–23:59 window (client shape of "no window") is always open.
-  bool isWindowOpen(MealModel meal) {
-    final w = meal.attendanceWindow;
-    if (w.openTime == '00:00' && w.closeTime == '23:59') return true;
-    final openMinutes = _minutesOf(_parseTime(w.openTime));
-    final closeMinutes = _minutesOf(_parseTime(w.closeTime));
-    final orgNow = _orgNowMinutes(meal);
-    if (orgNow != null) {
-      final grace = meal.graceMinutes ?? 0;
-      return orgNow >= openMinutes && orgNow < closeMinutes + grace;
-    }
-    // Legacy fallback (cached payloads / pre-fix servers): phone clock.
-    final nowMinutes = _minutesOf(TimeOfDay.now());
-    return nowMinutes >= openMinutes && nowMinutes <= closeMinutes;
-  }
+  bool isWindowOpen(MealModel meal) =>
+      AttendanceWindow.isOpen(meal, fetchedAt: _mealsFetchedAt);
 
   /// Open minutes for vacation-boundary math. The all-day 00:00–23:59 shape is
   /// the client rendering of "no window" — treated as windowless (null), the
@@ -811,18 +793,8 @@ class StudentDashboardProvider extends ChangeNotifier {
     );
   }
 
-  bool isWindowPast(MealModel meal) {
-    final w = meal.attendanceWindow;
-    if (w.openTime == '00:00' && w.closeTime == '23:59') return false;
-    final closeMinutes = _minutesOf(_parseTime(w.closeTime));
-    final orgNow = _orgNowMinutes(meal);
-    if (orgNow != null) {
-      final grace = meal.graceMinutes ?? 0;
-      return orgNow >= closeMinutes + grace;
-    }
-    final nowMinutes = _minutesOf(TimeOfDay.now());
-    return nowMinutes > closeMinutes;
-  }
+  bool isWindowPast(MealModel meal) =>
+      AttendanceWindow.isPast(meal, fetchedAt: _mealsFetchedAt);
 
   AttendanceStatus? statusForMeal(String mealId) =>
       recordForMeal(mealId)?.status;

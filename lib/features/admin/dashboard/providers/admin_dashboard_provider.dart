@@ -52,7 +52,12 @@ class AdminDashboardProvider extends ChangeNotifier {
   int _absentToday = 0;
   int _todayTotal = 0;
   String _adminName = 'Admin';
-  String _orgName = 'Your Organisation';
+  /// ISSUE-002(vi): the placeholder shown only until a real organisation name
+  /// is known. Named so the "is it still unresolved?" test cannot drift from the
+  /// default via a typo in one of its several comparison sites.
+  static const String kOrgNamePlaceholder = 'Your Organisation';
+
+  String _orgName = kOrgNamePlaceholder;
 
   // ── Per-group counts (Issue #5) ─────────────────────────────────────────────
   // Keyed by groupId so the dashboard can show stats for one selected group.
@@ -294,6 +299,14 @@ class AdminDashboardProvider extends ChangeNotifier {
           _restoreIntMap(_totalByGroup, cached['totalByGroup']);
           final sg = cached['selectedGroupId'];
           if (sg is String) _selectedGroupId = sg;
+          // ISSUE-002(vi): restore the real organisation name on the cold paint.
+          final cachedOrg = cached['orgName'];
+          if (cachedOrg is String &&
+              cachedOrg.trim().isNotEmpty &&
+              cachedOrg != kOrgNamePlaceholder) {
+            _orgName = cachedOrg;
+            _rtOrgName = cachedOrg;
+          }
           paintedFromCache = true;
         } catch (_) {/* ignore corrupt cache */}
       }
@@ -332,9 +345,14 @@ class AdminDashboardProvider extends ChangeNotifier {
     switch (groupsResult) {
       case Ok(:final value):
         _groups = value.data;
-        // Derive org display name from loaded groups when no explicit name
-        // was passed (PHASE_B6: replace with real org name from API response).
-        if (organizationName == 'Your Organisation' && _groups.isNotEmpty) {
+        // Derive org display name from loaded groups only while it is still
+        // UNRESOLVED. ISSUE-002(vi): this legacy wave runs when the overview
+        // aggregate failed, and it used to key off the incoming parameter — so a
+        // real organisation name already painted from the SWR cache was
+        // overwritten by a GROUP name the moment the aggregate hiccuped (header
+        // visibly flipped "ABC Hostel" → "Midnapore Namaste Mess"). Reading the
+        // current value keeps a resolved name resolved.
+        if (_orgName == kOrgNamePlaceholder && _groups.isNotEmpty) {
           _orgName = _groups.length == 1
               ? _groups.first.name
               : '${_groups.length} Groups';
@@ -497,7 +515,28 @@ class AdminDashboardProvider extends ChangeNotifier {
           // All parses succeeded — commit atomically (mirrors legacy guards:
           // meals/summaries/activity only apply when groups exist).
           _groups = groups;
-          if (organizationName == 'Your Organisation' && _groups.isNotEmpty) {
+          // Live-Test-14 ISSUE-002(vi): the dashboard header showed the literal
+          // placeholder "Your Organisation" because NO caller ever passed a real
+          // name and no endpoint returned one — the group-name substitution
+          // below was the only escape hatch, and it displayed a GROUP (or "N
+          // Groups") where the user expects the ORGANISATION they named at
+          // signup. GET /dashboard/admin/overview now returns
+          // `organization: { id, name }`, which is authoritative and wins.
+          // Defensive read: a hard `as String?` cast would THROW on an
+          // unexpected type, and this whole block is wrapped in a catch that
+          // falls back to the 3-wave legacy path — so a malformed name field
+          // would silently cost a round-trip. Type-test instead of casting.
+          final orgJson = value['organization'];
+          final rawOrgName = orgJson is Map ? orgJson['name'] : null;
+          final serverOrgName = rawOrgName is String ? rawOrgName.trim() : '';
+          if (serverOrgName.isNotEmpty) {
+            _orgName = serverOrgName;
+            _rtOrgName = serverOrgName;
+          } else if (_orgName == kOrgNamePlaceholder && _groups.isNotEmpty) {
+            // Older backend without the additive key — unchanged fallback.
+            // Gated on the CURRENT value, not the incoming parameter: a real
+            // name already restored from the SWR cache must not be replaced by a
+            // group name just because this call was passed no explicit name.
             _orgName = _groups.length == 1
                 ? _groups.first.name
                 : '${_groups.length} Groups';
@@ -579,6 +618,10 @@ class AdminDashboardProvider extends ChangeNotifier {
       // cards paint last-known values on the next cache-first paint.
       'mealSummaries':
           _mealSummaries.values.map((s) => s.toJson()).toList(),
+      // ISSUE-002(vi): persist the resolved organisation name so the instant
+      // cache-first paint greets with the real org instead of flashing the
+      // placeholder until the network answers.
+      'orgName': _orgName,
     });
   }
 

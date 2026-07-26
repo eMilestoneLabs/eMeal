@@ -1378,6 +1378,9 @@ class _MealConfigFormState extends State<MealConfigForm> {
   /// Live-Test-8 ISSUE-002: Groups-mode body — the active groups at a glance
   /// with a direct path into the premium Groups builder.
   Widget _buildGroupsSummary(ColorScheme colorScheme) {
+    // ISSUE-002(ii): chip colours are theme-resolved, so the brightness is read
+    // here rather than assumed.
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return InkWell(
       onTap: _openGroupsBuilder,
       borderRadius: BorderRadius.circular(12),
@@ -1396,19 +1399,35 @@ class _MealConfigFormState extends State<MealConfigForm> {
             Wrap(
               spacing: 6,
               runSpacing: 6,
+              // Live-Test-14 ISSUE-002(ii): these group chips were unreadable
+              // in BOTH themes. The Chip carried no `labelStyle` colour, so the
+              // text fell back to the theme's default onSurface — sitting on an
+              // 8%-primary chip inside a 6%-primary container that is almost
+              // exactly the same luminance in light mode, and far too dark in
+              // dark mode. Every colour is now stated explicitly and
+              // theme-resolved, matching the premium chips used elsewhere.
               children: _activeGroupNames
                   .map((n) => Chip(
-                        label: Text(n,
-                            style: const TextStyle(
-                                fontSize: 11, fontWeight: FontWeight.w600)),
+                        label: Text(n),
+                        labelStyle: TextStyle(
+                          fontSize: 11.5,
+                          fontWeight: FontWeight.w700,
+                          letterSpacing: 0.1,
+                          color: isDark
+                              ? AppColors.primaryLight
+                              : AppColors.primaryDark,
+                        ),
+                        labelPadding:
+                            const EdgeInsets.symmetric(horizontal: 2),
                         visualDensity: VisualDensity.compact,
                         materialTapTargetSize:
                             MaterialTapTargetSize.shrinkWrap,
                         side: BorderSide(
-                            color:
-                                AppColors.primary.withValues(alpha: 0.35)),
-                        backgroundColor:
-                            AppColors.primary.withValues(alpha: 0.08),
+                            color: AppColors.primary
+                                .withValues(alpha: isDark ? 0.55 : 0.40)),
+                        backgroundColor: isDark
+                            ? AppColors.primary.withValues(alpha: 0.26)
+                            : AppColors.primaryContainer,
                       ))
                   .toList(),
             ),
@@ -1481,7 +1500,7 @@ class _PrefModeCard extends StatelessWidget {
           child: AnimatedContainer(
             duration: const Duration(milliseconds: 220),
             curve: Curves.easeOutCubic,
-            padding: const EdgeInsets.all(12),
+            padding: const EdgeInsets.all(13),
             decoration: BoxDecoration(
               gradient: selected
                   ? LinearGradient(
@@ -1498,13 +1517,23 @@ class _PrefModeCard extends StatelessWidget {
                             ],
                     )
                   : null,
-              color: selected ? null : colorScheme.surfaceContainerLowest,
+              // ISSUE-002(ii): an UNSELECTED card used surfaceContainerLowest,
+              // which sits within a hair of the parent surface in dark mode — the
+              // card read as a flat patch with no edge. Both themes now get an
+              // explicit fill plus a stronger border so the two modes are always
+              // legible as separate, equally-weighted cards.
+              color: selected
+                  ? null
+                  : (isDark
+                      ? Colors.white.withValues(alpha: 0.045)
+                      : colorScheme.surfaceContainerLowest),
               borderRadius: BorderRadius.circular(14),
               border: Border.all(
                 color: selected
                     ? accent
-                    : colorScheme.outlineVariant.withValues(alpha: 0.5),
-                width: selected ? 1.6 : 1,
+                    : colorScheme.outlineVariant
+                        .withValues(alpha: isDark ? 0.85 : 0.7),
+                width: selected ? 1.6 : 1.2,
               ),
               boxShadow: selected
                   ? [
@@ -1565,7 +1594,8 @@ class _PrefModeCard extends StatelessWidget {
                 Text(
                   title,
                   style: TextStyle(
-                    fontSize: 12.5,
+                    // ISSUE-002(ii): premium typography — title up 12.5→13.5.
+                    fontSize: 13.5,
                     fontWeight: FontWeight.w800,
                     letterSpacing: 0.1,
                     color: selected
@@ -1575,15 +1605,21 @@ class _PrefModeCard extends StatelessWidget {
                         : colorScheme.onSurface,
                   ),
                 ),
-                const SizedBox(height: 2),
+                const SizedBox(height: 3),
                 Text(
                   subtitle,
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
-                    fontSize: 10,
-                    height: 1.25,
-                    color: colorScheme.onSurfaceVariant,
+                    // ISSUE-002(ii): 10pt at default onSurfaceVariant was the
+                    // least readable text on the sheet. Larger, slightly bolder
+                    // and given real contrast in both themes.
+                    fontSize: 11,
+                    height: 1.3,
+                    fontWeight: FontWeight.w500,
+                    color: isDark
+                        ? AppColors.textSecondaryDark
+                        : AppColors.textSecondary,
                   ),
                 ),
               ],

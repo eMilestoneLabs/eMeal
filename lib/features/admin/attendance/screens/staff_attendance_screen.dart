@@ -16,8 +16,13 @@ import 'package:smart_meal_management/data/services/selected_group_subscription.
 import 'package:smart_meal_management/shared/models/meal_model.dart';
 import 'package:smart_meal_management/shared/models/preference_group_model.dart';
 import 'package:smart_meal_management/shared/models/result.dart';
+import 'package:smart_meal_management/shared/utils/attendance_window.dart';
 import 'package:smart_meal_management/shared/widgets/app_skeleton.dart';
 import 'package:smart_meal_management/shared/widgets/preference_group_selector.dart';
+// Live-Test-14 ISSUE-001: the admin reuses the MEMBER sheets verbatim — one
+// correction flow and one guest flow for the whole product, no admin-only fork.
+import 'package:smart_meal_management/features/student/attendance/widgets/correction_request_sheet.dart';
+import 'package:smart_meal_management/features/student/attendance/widgets/guest_sheet.dart';
 
 /// Issue 5 — Staff (admin / manager) self-attendance.
 ///
@@ -63,6 +68,21 @@ class _StaffAttendanceScreenState extends State<StaffAttendanceScreen> {
   String? _groupId;
   List<MealModel> _meals = [];
   List<AttendanceModel> _records = [];
+
+  /// ISSUE-001: when [_meals] arrived, so the shared window gate can advance the
+  /// SERVER's org clock by elapsed device time instead of trusting the phone's
+  /// wall clock (a wrong timezone must never open or close a window).
+  DateTime? _mealsFetchedAt;
+
+  /// The selected group's row — carries `mealConfig` (guest policy, pricing,
+  /// preferences), so the guest action needs NO extra request: it rides the
+  /// `admin_groups:{org}` list this screen already loads.
+  GroupModel? get _selectedGroup {
+    for (final g in _groups) {
+      if (g.id == _groupId) return g;
+    }
+    return null;
+  }
 
   String _orgId = '';
   String _userId = '';
@@ -205,18 +225,24 @@ class _StaffAttendanceScreenState extends State<StaffAttendanceScreen> {
     setState(() {
       _meals = meals;
       _records = records;
+      // ISSUE-001: only a LIVE payload carries orgClockMinutes; stamping it here
+      // is what makes the window gate server-authoritative.
+      _mealsFetchedAt = DateTime.now();
       _loading = false;
     });
   }
 
-  AttendanceStatus? _statusFor(String mealId) {
+  AttendanceStatus? _statusFor(String mealId) => _recordFor(mealId)?.status;
+
+  /// Today's own record for [mealId], or null when nothing has been marked.
+  AttendanceModel? _recordFor(String mealId) {
     final now = DateTime.now();
     for (final r in _records) {
       if (r.mealId == mealId &&
           r.date.year == now.year &&
           r.date.month == now.month &&
           r.date.day == now.day) {
-        return r.status;
+        return r;
       }
     }
     return null;
@@ -291,6 +317,72 @@ class _StaffAttendanceScreenState extends State<StaffAttendanceScreen> {
           SnackBar(content: Text(failure.message)),
         );
     }
+  }
+
+  /// ISSUE-001: the meal's ORG business date (never the phone's calendar) —
+  /// the same date the backend keyed today's attendance under.
+  String _orgDateStr(MealModel meal) {
+    final s = meal.orgDate;
+    if (s != null && s.length >= 10) return s.substring(0, 10);
+    final now = DateTime.now();
+    return '${now.year.toString().padLeft(4, '0')}-'
+        '${now.month.toString().padLeft(2, '0')}-'
+        '${now.day.toString().padLeft(2, '0')}';
+  }
+
+  /// ISSUE-001 — same-day CORRECTION for the admin's own record.
+  ///
+  /// Reuses the member correction sheet unchanged. The difference is entirely
+  /// server-side and deliberate: `CorrectionsService.createRequest` detects that
+  /// the requester holds an admin role and applies the change IMMEDIATELY
+  /// ("admin no need to any approval"), so the sheet comes back already
+  /// approved. Every other rule still binds — same calendar day only, window
+  /// must have closed, full preference validation, no claim while on vacation.
+  Future<void> _openCorrectionSheet(MealModel meal) async {
+    final created = await showCorrectionRequestSheet(
+      context,
+      meals: _meals,
+      initialMeal: meal,
+    );
+    if (!mounted || created == null) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        behavior: SnackBarBehavior.floating,
+        content: Text(created.isApproved
+            ? 'Applied — your record has been corrected.'
+            : 'Request sent — awaiting review.'),
+      ),
+    );
+    // An applied correction changed today's record — repaint from the server.
+    if (created.isApproved) await _load();
+  }
+
+  /// ISSUE-001 — the admin's OWN hosted guests, at parity with members.
+  ///
+  /// The admin is the host here, not an admin acting on someone's behalf, so the
+  /// member sheet is used as-is (`asAdmin: false`). The backend already treats
+  /// an admin booking guests for themselves as self-approved (Live-Test-11
+  /// ISSUE-003 `adminSelf`), which is exactly the "no approval needed" rule.
+  Future<void> _openGuestSheet(MealModel meal) async {
+    final config = _selectedGroup?.mealConfig ?? const GroupMealConfig();
+    final record = _recordFor(meal.id);
+    final enabledPrefs = meal.enabledPreferences.isNotEmpty
+        ? meal.enabledPreferences
+        : config.enabledPreferences.map((e) => e.name).toList();
+    final changed = await showGuestSheet(
+      context,
+      mealId: meal.id,
+      mealName: meal.name,
+      dateStr: _orgDateStr(meal),
+      config: config.guestConfig,
+      pricingEnabled: config.mealPricingEnabled,
+      enabledPreferences: enabledPrefs,
+      preferenceGroups: meal.preferenceGroups,
+      mealPrice: record?.price ?? meal.price,
+      currentUserId: _userId,
+    );
+    // Guests change the host's counters and billing — refresh silently.
+    if (changed == true && mounted) await _load();
   }
 
   String _label(AttendanceStatus s) {
@@ -415,8 +507,28 @@ class _StaffAttendanceScreenState extends State<StaffAttendanceScreen> {
         meal.preferencesEnabled &&
         meal.enabledPreferences.isNotEmpty;
     final selectedPref = _selectedPref[meal.id];
-    final canPresent =
+    final prefsSatisfied =
         hasGroups ? groupsComplete : (!prefsOn || selectedPref != null);
+
+    // ── ISSUE-001: window gating (shared gate, identical to the member card) ──
+    //
+    // Present/Absent used to render ENABLED at all times. After close the tap
+    // reached the server, which correctly refused with "cannot mark attendance,
+    // window from xx to xx" — an always-failing button. The buttons now follow
+    // the real window state, and once it has closed the same-day CORRECTION
+    // action below is the only (and correct) route, exactly as for members.
+    final windowOpen =
+        AttendanceWindow.isOpen(meal, fetchedAt: _mealsFetchedAt);
+    final windowPast =
+        AttendanceWindow.isPast(meal, fetchedAt: _mealsFetchedAt);
+    final canMark = windowOpen && !busy;
+    final canPresent = prefsSatisfied && canMark;
+
+    final config = _selectedGroup?.mealConfig ?? const GroupMealConfig();
+    // Guest hosting mirrors the member rule: guest-enabled Meal-Mode group, and
+    // the host must actually be Present for the meal they are bringing guests to.
+    final canHostGuests =
+        config.guestsEnabled && status == AttendanceStatus.present;
 
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
@@ -445,13 +557,55 @@ class _StaffAttendanceScreenState extends State<StaffAttendanceScreen> {
             ],
           ),
           const SizedBox(height: 4),
-          Text(
-            'Window  ${TimeFormat.window12(open, close)}',
-            style: AppTypography.bodySmall.copyWith(
-              color: isDark
-                  ? AppColors.textSecondaryDark
-                  : AppColors.textSecondary,
-            ),
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  'Window  ${TimeFormat.window12(open, close)}',
+                  style: AppTypography.bodySmall.copyWith(
+                    color: isDark
+                        ? AppColors.textSecondaryDark
+                        : AppColors.textSecondary,
+                  ),
+                ),
+              ),
+              // ISSUE-001: say WHY the buttons are disabled, instead of letting
+              // the admin discover it by tapping and getting an error.
+              if (!windowOpen)
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 8, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: (windowPast ? AppColors.textTertiary : AppColors.info)
+                        .withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        windowPast
+                            ? Icons.lock_clock_rounded
+                            : Icons.schedule_rounded,
+                        size: 12,
+                        color: windowPast
+                            ? AppColors.textSecondary
+                            : AppColors.info,
+                      ),
+                      const SizedBox(width: 4),
+                      Text(
+                        windowPast ? 'Closed' : 'Not open yet',
+                        style: AppTypography.labelSmall.copyWith(
+                          fontWeight: FontWeight.w700,
+                          color: windowPast
+                              ? AppColors.textSecondary
+                              : AppColors.info,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+            ],
           ),
           // ── Preference groups (FR-PG parity with the member card) ─────────
           if (hasGroups) ...[
@@ -536,7 +690,7 @@ class _StaffAttendanceScreenState extends State<StaffAttendanceScreen> {
                 AppColors.present,
                 status == AttendanceStatus.present,
                 loading: busy && _busyStatus == AttendanceStatus.present,
-                enabled: canPresent && !busy,
+                enabled: canPresent,
                 onTap: () => _mark(meal, AttendanceStatus.present,
                     preference: prefsOn ? selectedPref : null,
                     // FR-PG-031: Present sends the selection set; Absent
@@ -553,12 +707,105 @@ class _StaffAttendanceScreenState extends State<StaffAttendanceScreen> {
                 AppColors.absent,
                 status == AttendanceStatus.absent,
                 loading: busy && _busyStatus == AttendanceStatus.absent,
-                enabled: !busy,
+                enabled: canMark,
                 onTap: () => _mark(meal, AttendanceStatus.absent),
               ),
             ],
           ),
+          // ── ISSUE-001: same-day correction + hosted guests ──────────────────
+          // These are the two member capabilities the admin's own screen was
+          // missing entirely. Correction appears exactly when it becomes the
+          // only way to change the record (window closed, still today); Guests
+          // appears under the same rule members get.
+          if (windowPast || canHostGuests) ...[
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                if (windowPast)
+                  Expanded(
+                    child: _secondaryAction(
+                      icon: Icons.edit_calendar_rounded,
+                      label: 'Correction',
+                      color: AppColors.primary,
+                      enabled: !busy,
+                      onTap: () => _openCorrectionSheet(meal),
+                    ),
+                  ),
+                if (windowPast && canHostGuests) const SizedBox(width: 8),
+                if (canHostGuests)
+                  Expanded(
+                    child: _secondaryAction(
+                      icon: Icons.group_add_rounded,
+                      label: 'Guests',
+                      color: AppColors.secondary,
+                      enabled: !busy,
+                      onTap: () => _openGuestSheet(meal),
+                    ),
+                  ),
+              ],
+            ),
+            if (windowPast)
+              Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: Text(
+                  'The window has closed. Corrections are allowed for today '
+                  'only and, as an admin, yours apply immediately — no '
+                  'approval needed.',
+                  style: AppTypography.labelSmall.copyWith(
+                    height: 1.4,
+                    color: isDark
+                        ? AppColors.textSecondaryDark
+                        : AppColors.textSecondary,
+                  ),
+                ),
+              ),
+          ],
         ],
+      ),
+    );
+  }
+
+  /// ISSUE-001: outlined companion to [_actionButton] — Correction / Guests are
+  /// secondary next to the primary Present / Absent pair, so they read as
+  /// available without competing for attention.
+  Widget _secondaryAction({
+    required IconData icon,
+    required String label,
+    required Color color,
+    required bool enabled,
+    required VoidCallback onTap,
+  }) {
+    return Material(
+      color: color.withValues(alpha: enabled ? 0.08 : 0.04),
+      borderRadius: BorderRadius.circular(12),
+      child: InkWell(
+        onTap: enabled ? onTap : null,
+        borderRadius: BorderRadius.circular(12),
+        child: Container(
+          height: 42,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: color.withValues(alpha: enabled ? 0.35 : 0.15),
+            ),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon,
+                  size: 16, color: color.withValues(alpha: enabled ? 1 : 0.4)),
+              const SizedBox(width: 6),
+              Text(
+                label,
+                style: AppTypography.labelMedium.copyWith(
+                  fontWeight: FontWeight.w700,
+                  color: color.withValues(alpha: enabled ? 1 : 0.4),
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }

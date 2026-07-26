@@ -306,12 +306,34 @@ class NoteCard extends StatelessWidget {
       spacing: 6,
       runSpacing: 4,
       children: [
+        // Live-Test-14 ISSUE-003: tapping a #tag did nothing.
+        //
+        // Root cause: the GestureDetector kept its DEFAULT
+        // `HitTestBehavior.deferToChild` while its child was a `Container` whose
+        // only paint is a `decoration`. A RenderDecoratedBox is a proxy box — it
+        // never reports a hit for itself — so the chip's padding was entirely
+        // transparent to hit-testing and only the glyph run could be hit. Every
+        // near-miss tap therefore fell through to the note card's own InkWell
+        // underneath and opened the note instead of filtering.
+        //
+        // Fix = `behavior: HitTestBehavior.opaque`: the whole chip rectangle
+        // becomes hit-testable, and because this detector sits DEEPER in the
+        // hit-test path than the card's InkWell it is added to the gesture arena
+        // first and wins. Vertical padding 2 → 5 gives the row a usable height.
+        //
+        // Deliberately NOT Material + InkWell + Tooltip: this card is
+        // documented as cheap so a list of hundreds scrolls smoothly, and those
+        // three would add an ink-features layer, a gesture-owning InkResponse
+        // and (worst) a Tooltip AnimationController *per chip, per card*. The
+        // opaque flag fixes the same defect with ZERO extra render objects and
+        // no new disposable resources — the original design had no splash
+        // either, so no affordance is lost.
         ...shown.map(
-          // ISSUE-022: tags are functional — tap filters the list by the tag.
           (t) => GestureDetector(
+            behavior: HitTestBehavior.opaque,
             onTap: onTagTap == null ? null : () => onTagTap!(t),
             child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
               decoration: BoxDecoration(
                 color:
                     AppColors.primary.withValues(alpha: isDark ? 0.20 : 0.10),

@@ -1594,30 +1594,13 @@ class _SettingsTabState extends State<_SettingsTab> {
                       color: AppColors.primary, size: 20),
             ),
           ),
-          const SizedBox(height: 10),
-          // ISSUE-011: Meal Preference configuration now lives ONLY in the
-          // Master Meal Template (single source of truth). The old per-group
-          // toggle + Active Preference Types chips are gone — this pointer
-          // card sends admins to the right place.
-          Card(
-            margin: EdgeInsets.zero,
-            child: ListTile(
-              leading:
-                  const Icon(Icons.tune_rounded, color: AppColors.primary, size: 20),
-              title: const Text('Meal Preferences',
-                  style: TextStyle(fontWeight: FontWeight.w600)),
-              subtitle: Text(
-                'Managed centrally in Meals → Master Meal Template → Meal '
-                'System. The global switch there governs every meal; each '
-                'meal can add its own tags or preference groups.',
-                style: TextStyle(
-                    fontSize: 12, color: colorScheme.onSurfaceVariant),
-              ),
-              trailing:
-                  const Icon(Icons.chevron_right_rounded, size: 20),
-              onTap: () => context.go(RouteNames.adminMealConfig),
-            ),
-          ),
+          // Live-Test-14 ISSUE-002(v) (user-confirmed rule): the "Meal
+          // Preferences" pointer card is REMOVED from Group Settings. ISSUE-011
+          // had already moved the CONFIGURATION to the Master Meal Template;
+          // this card was only a signpost, and its presence still read as
+          // "preferences are a group setting". Meal Preferences now appear in
+          // exactly ONE place — Meals → Master Meal Template → Meal System.
+          // Nothing functional was attached to it: it merely navigated.
         ],
 
         const SizedBox(height: 16),

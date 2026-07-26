@@ -8,6 +8,7 @@ import 'package:smart_meal_management/core/theme/app_colors.dart';
 import 'package:smart_meal_management/core/theme/app_typography.dart';
 import 'package:smart_meal_management/features/auth/providers/auth_provider.dart';
 import 'package:smart_meal_management/features/auth/utils/auth_validators.dart';
+import 'package:smart_meal_management/features/auth/widgets/auth_input_field.dart';
 import 'package:smart_meal_management/features/auth/widgets/password_strength_indicator.dart';
 import 'package:smart_meal_management/app/router/route_extras.dart';
 
@@ -154,7 +155,6 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final colorScheme = Theme.of(context).colorScheme;
 
     if (_success) {
       return _SuccessView(isDark: isDark, roleContext: widget.roleContext);
@@ -321,15 +321,10 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
                     hint: 'Min. 8 characters',
                     icon: Icons.lock_outline_rounded,
                   ).copyWith(
-                    suffixIcon: IconButton(
-                      icon: Icon(
-                        _obscurePassword
-                            ? Icons.visibility_off_rounded
-                            : Icons.visibility_rounded,
-                        size: 18,
-                        color: colorScheme.onSurfaceVariant,
-                      ),
-                      onPressed: () =>
+                    // ISSUE-002(i): shared premium reveal control.
+                    suffixIcon: PasswordVisibilityButton(
+                      obscured: _obscurePassword,
+                      onToggle: () =>
                           setState(() => _obscurePassword = !_obscurePassword),
                     ),
                   ),
@@ -357,15 +352,10 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
                     hint: 'Re-enter new password',
                     icon: Icons.lock_outline_rounded,
                   ).copyWith(
-                    suffixIcon: IconButton(
-                      icon: Icon(
-                        _obscureConfirm
-                            ? Icons.visibility_off_rounded
-                            : Icons.visibility_rounded,
-                        size: 18,
-                        color: colorScheme.onSurfaceVariant,
-                      ),
-                      onPressed: () =>
+                    // ISSUE-002(i): shared premium reveal control.
+                    suffixIcon: PasswordVisibilityButton(
+                      obscured: _obscureConfirm,
+                      onToggle: () =>
                           setState(() => _obscureConfirm = !_obscureConfirm),
                     ),
                   ),

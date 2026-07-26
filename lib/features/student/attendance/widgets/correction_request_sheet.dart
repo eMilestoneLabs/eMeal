@@ -256,11 +256,45 @@ class _CorrectionRequestSheetState extends State<_CorrectionRequestSheet> {
                   ),
                 ),
                 const SizedBox(width: 12),
-                Chip(
-                  avatar: const Icon(Icons.event_rounded, size: 16),
-                  label: Text(
-                    'Today · ${_date.day.toString().padLeft(2, '0')}/${_date.month.toString().padLeft(2, '0')}',
-                    style: AppTypography.labelSmall,
+                // Live-Test-14 ISSUE-002(iii): the date read as invisible.
+                // A bare Chip inherited the theme's default surface AND
+                // AppTypography.labelSmall's muted tertiary colour, so
+                // "Today · 19/07" was low-contrast grey-on-grey next to a
+                // filled dropdown. It is now an explicit primary-tinted pill
+                // with stated foreground colours in both themes, so the date
+                // the correction applies to is unmistakable.
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 12, vertical: 9),
+                  decoration: BoxDecoration(
+                    color: isDark
+                        ? AppColors.primary.withValues(alpha: 0.24)
+                        : AppColors.primaryContainer,
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(
+                      color: AppColors.primary
+                          .withValues(alpha: isDark ? 0.55 : 0.35),
+                    ),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.event_rounded,
+                          size: 15,
+                          color: isDark
+                              ? AppColors.primaryLight
+                              : AppColors.primaryDark),
+                      const SizedBox(width: 6),
+                      Text(
+                        'Today · ${_date.day.toString().padLeft(2, '0')}/${_date.month.toString().padLeft(2, '0')}',
+                        style: AppTypography.labelSmall.copyWith(
+                          fontWeight: FontWeight.w700,
+                          color: isDark
+                              ? AppColors.primaryLight
+                              : AppColors.primaryDark,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               ],
