@@ -11,19 +11,11 @@ class AdminGreetingCard extends StatelessWidget {
     super.key,
     required this.adminName,
     required this.orgName,
-    this.groupCount = 0,
     this.roleLabel,
   });
 
   final String adminName;
   final String orgName;
-
-  /// Number of groups in the organisation. Rendered next to [orgName] as
-  /// "· 5 groups". This count used to be written INTO the org name slot as a
-  /// substitute ("5 Groups" instead of the organisation), so the header could
-  /// show one or the other but never both. It is now its own element, so the
-  /// footer reads "🏢 Acme Mess · 5 groups". 0 hides it.
-  final int groupCount;
 
   /// #8: per-group functional role label for the selected group
   /// (e.g. "Hostel Admin"). null -> shows the generic "Admin" badge.
@@ -138,13 +130,7 @@ class AdminGreetingCard extends StatelessWidget {
                 const SizedBox(width: 6),
                 Expanded(
                   child: Text(
-                    // Organisation AND group count — "Midnapore Namaste Mess · 5
-                    // groups". Previously the count REPLACED the org name here,
-                    // so only one could ever show; both are preserved now.
-                    groupCount > 0
-                        ? '$orgName · $groupCount '
-                            '${groupCount == 1 ? 'group' : 'groups'}'
-                        : orgName,
+                    orgName,
                     style: const TextStyle(
                       fontSize: 12,
                       fontWeight: FontWeight.w500,

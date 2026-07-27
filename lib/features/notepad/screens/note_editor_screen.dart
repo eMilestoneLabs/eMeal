@@ -38,6 +38,13 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
   late final TextEditingController _bodyController;
   final TextEditingController _tagController = TextEditingController();
 
+  /// Live-Test-14 ISSUE-1: the tag field used to commit ONLY on the keyboard's
+  /// "done" action. Typing a tag and then tapping the body, pressing back, or
+  /// dismissing the keyboard silently discarded it — so tags looked like they
+  /// "never save", and with no tag there can be no folder. Committing on focus
+  /// loss too makes the field behave the way every other chip input does.
+  final FocusNode _tagFocus = FocusNode();
+
   // One controller per checklist row, cached by item id across rebuilds.
   final Map<String, TextEditingController> _itemControllers = {};
   String? _pendingFocusItemId;
@@ -56,6 +63,22 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
     _bodyController = TextEditingController(text: note?.body ?? '');
     _titleController.addListener(_onTitleChanged);
     _bodyController.addListener(_onBodyChanged);
+    // Commit a half-typed tag when the field loses focus (see [_tagFocus]).
+    _tagFocus.addListener(_onTagFocusChanged);
+  }
+
+  void _onTagFocusChanged() {
+    if (!_tagFocus.hasFocus) _commitTag();
+  }
+
+  /// Saves whatever is in the tag field, if anything. Safe to call repeatedly —
+  /// `addTag` trims/normalises and the controller is cleared, so a second call
+  /// with an empty field is a no-op.
+  void _commitTag() {
+    final raw = _tagController.text.trim();
+    if (raw.isEmpty) return;
+    _provider.addTag(widget.noteId, raw);
+    _tagController.clear();
   }
 
   void _onTitleChanged() =>
@@ -66,18 +89,28 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
 
   @override
   void dispose() {
+    _tagFocus.removeListener(_onTagFocusChanged);
     // Either discard an empty draft or persist the final keystroke — never both.
     // delete() cancels the pending debounced save, so there is no late write to
     // race the removal.
     final note = _provider.noteById(widget.noteId);
     if (note != null && note.isEmpty) {
+      // Deliberately do NOT commit a pending tag here. `Note.isEmpty` ignores
+      // tags, so a draft with only a tag is still an empty draft and is
+      // discarded — and committing first would issue `_repo.put` while
+      // `_repo.remove` is already in flight for the same note, which can
+      // resurrect the deleted draft depending on which write lands last.
       _provider.delete(widget.noteId);
     } else {
+      // The note survives, so a tag typed but never submitted must not be lost
+      // when the screen closes. Commit BEFORE the flush so it is persisted.
+      _commitTag();
       _provider.flush(widget.noteId);
     }
     _titleController.dispose();
     _bodyController.dispose();
     _tagController.dispose();
+    _tagFocus.dispose();
     for (final c in _itemControllers.values) {
       c.dispose();
     }
@@ -819,11 +852,11 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
               width: 140,
               child: TextField(
                 controller: _tagController,
+                focusNode: _tagFocus,
                 textInputAction: TextInputAction.done,
-                onSubmitted: (v) {
-                  _provider.addTag(note.id, v);
-                  _tagController.clear();
-                },
+                // Commit on Done AND on focus loss (see [_tagFocus]); the field
+                // stays focused after Done so several tags can be added in a row.
+                onSubmitted: (_) => _commitTag(),
                 style: AppTypography.bodyMedium.copyWith(
                   color:
                       isDark

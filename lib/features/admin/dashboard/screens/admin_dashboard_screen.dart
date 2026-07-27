@@ -170,10 +170,15 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                 // ── Greeting card ────────────────────────────────────────────
                 AdminGreetingCard(
                   adminName: _provider.adminName,
-                  orgName: _provider.orgName,
-                  // Group count preserved as its own element beside the org
-                  // name (it used to be substituted INTO the org name slot).
-                  groupCount: _provider.groupCount,
+                  // ISSUE-3B: this line shows the CURRENTLY SELECTED GROUP, so
+                  // it changes with the dropdown and always matches it. It used
+                  // to hold `_groups.first.name` — the FIRST group, never the
+                  // selected one — which is why the header stayed on the
+                  // previous group after a switch while the role chip beside it
+                  // updated correctly. Reading `selectedGroup` binds both to the
+                  // same source. With no group selected ("All groups") the
+                  // organisation name is the correct wider context.
+                  orgName: _provider.selectedGroup?.name ?? _provider.orgName,
                   // #8: show the selected/default group's functional role.
                   roleLabel: _provider.selectedGroup?.functionalRole?.label,
                 ),
