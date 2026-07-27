@@ -9,6 +9,7 @@ import 'package:smart_meal_management/data/repositories/group_repository.dart';
 import 'package:smart_meal_management/data/repositories/attendance_repository.dart';
 import 'package:smart_meal_management/data/repositories/meal_repository.dart';
 import 'package:smart_meal_management/shared/models/meal_model.dart';
+import 'package:smart_meal_management/shared/utils/attendance_window.dart';
 import 'package:smart_meal_management/features/admin/attendance/providers/admin_attendance_provider.dart';
 import 'package:smart_meal_management/features/admin/attendance/screens/correction_requests_screen.dart';
 import 'package:smart_meal_management/features/admin/attendance/screens/vacation_requests_screen.dart';
@@ -952,37 +953,18 @@ class _MyAttendanceSheetState extends State<_MyAttendanceSheet> {
     });
   }
 
-  /// ISSUE-010: canonical window state for [meal] — the SAME org-clock math
-  /// the student surfaces use (server org-clock advanced by device-elapsed
-  /// time; phone-clock fallback). 'open' includes the grace period.
-  String _windowStateOf(MealModel meal) {
-    final w = meal.attendanceWindow;
-    if (w.openTime == '00:00' && w.closeTime == '23:59') return 'open';
-    int minutesOf(String t) {
-      final p = t.split(':');
-      if (p.length < 2) return 0;
-      return (int.tryParse(p[0]) ?? 0) * 60 + (int.tryParse(p[1]) ?? 0);
-    }
-
-    final open = minutesOf(w.openTime);
-    final close = minutesOf(w.closeTime);
-    int now;
-    final base = meal.orgClockMinutes;
-    final at = _fetchedAt;
-    if (base != null && at != null) {
-      final elapsed = DateTime.now().difference(at).inMinutes;
-      now = (elapsed >= 0 && elapsed <= 12 * 60)
-          ? (base + elapsed) % (24 * 60)
-          : TimeOfDay.now().hour * 60 + TimeOfDay.now().minute;
-    } else {
-      final t = TimeOfDay.now();
-      now = t.hour * 60 + t.minute;
-    }
-    final grace = meal.graceMinutes ?? 0;
-    if (now < open) return 'upcoming';
-    if (now < close + grace) return 'open';
-    return 'closed';
-  }
+  /// ISSUE-010: canonical window state for [meal].
+  ///
+  /// Live-Test-14 ISSUE-2: this used to be a SECOND hand-rolled copy of the
+  /// window arithmetic. It never consulted the server's `windowState`, and it
+  /// short-circuited the all-day 00:00–23:59 shape to 'open' unconditionally —
+  /// so a meal carrying that shape stayed actionable forever while every other
+  /// meal disabled correctly, and the tap was refused 423 by the server. It now
+  /// delegates to the ONE shared gate (duplicated business logic is prohibited);
+  /// `AttendanceWindow.stateOf` returns the same 'upcoming'/'open'/'closed'
+  /// vocabulary this screen already switches on.
+  String _windowStateOf(MealModel meal) =>
+      AttendanceWindow.stateOf(meal, fetchedAt: _fetchedAt);
 
   Future<void> _mark(MealModel meal, AttendanceStatus status,
       {String? preference,

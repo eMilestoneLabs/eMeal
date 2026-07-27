@@ -171,6 +171,9 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                 AdminGreetingCard(
                   adminName: _provider.adminName,
                   orgName: _provider.orgName,
+                  // Group count preserved as its own element beside the org
+                  // name (it used to be substituted INTO the org name slot).
+                  groupCount: _provider.groupCount,
                   // #8: show the selected/default group's functional role.
                   roleLabel: _provider.selectedGroup?.functionalRole?.label,
                 ),

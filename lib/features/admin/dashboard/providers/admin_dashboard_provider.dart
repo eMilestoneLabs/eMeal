@@ -230,11 +230,25 @@ class AdminDashboardProvider extends ChangeNotifier {
     _isLoading = true;
     _error = null;
     _adminName = name;
-    _orgName = organizationName;
     _rtAdminId = adminId;
     _rtOrgId = organizationId;
     _rtName = name;
-    _rtOrgName = organizationName;
+    // ISSUE-3A: `organizationName` DEFAULTS to the placeholder, and the caller
+    // cannot supply a real one — the user payload carries only organizationId.
+    // Assigning it unconditionally wiped an already-resolved organisation name,
+    // and `notifyListeners()` below painted that wipe at once: the header fell
+    // back to "Your Organisation" on every load, every pull-to-refresh, every
+    // refresh-button tap and every error retry.
+    //
+    // The guard lives HERE, not at the call sites: `refresh()` forwards to this
+    // method with the same placeholder default, so fixing callers one by one
+    // left the wipe alive on the refresh path. One gate closes it for every
+    // caller, present and future. Only a REAL name may overwrite.
+    if (organizationName.trim().isNotEmpty &&
+        organizationName != kOrgNamePlaceholder) {
+      _orgName = organizationName;
+      _rtOrgName = organizationName;
+    }
     // ISSUE-003: follow app-wide group switches made on any other admin tab.
     _bindGroupSelection(organizationId);
     notifyListeners();
@@ -300,7 +314,15 @@ class AdminDashboardProvider extends ChangeNotifier {
           final sg = cached['selectedGroupId'];
           if (sg is String) _selectedGroupId = sg;
           // ISSUE-002(vi): restore the real organisation name on the cold paint.
-          final cachedOrg = cached['orgName'];
+          //
+          // Read from a VERSIONED key. Builds before this fix wrote the
+          // group-name / "N Groups" substitution into the old `orgName` key, so
+          // an upgrading device still holds a GROUP name there. Restoring that
+          // would resurrect the exact defect this batch fixes — a group name in
+          // the Organisation field — on the first cold paint after upgrade.
+          // Only values written by a build that never substitutes are trusted;
+          // the stale key is ignored and disappears on the next cache write.
+          final cachedOrg = cached['orgNameV2'];
           if (cachedOrg is String &&
               cachedOrg.trim().isNotEmpty &&
               cachedOrg != kOrgNamePlaceholder) {
@@ -345,18 +367,10 @@ class AdminDashboardProvider extends ChangeNotifier {
     switch (groupsResult) {
       case Ok(:final value):
         _groups = value.data;
-        // Derive org display name from loaded groups only while it is still
-        // UNRESOLVED. ISSUE-002(vi): this legacy wave runs when the overview
-        // aggregate failed, and it used to key off the incoming parameter — so a
-        // real organisation name already painted from the SWR cache was
-        // overwritten by a GROUP name the moment the aggregate hiccuped (header
-        // visibly flipped "ABC Hostel" → "Midnapore Namaste Mess"). Reading the
-        // current value keeps a resolved name resolved.
-        if (_orgName == kOrgNamePlaceholder && _groups.isNotEmpty) {
-          _orgName = _groups.length == 1
-              ? _groups.first.name
-              : '${_groups.length} Groups';
-        }
+        // No org-name resolution here: this legacy 3-wave fallback runs only
+        // when the overview aggregate failed, and no endpoint on it carries the
+        // organisation name. Whatever is already resolved (SWR cache, or an
+        // earlier overview) is left untouched rather than replaced.
       case Err(:final failure):
         _error = failure.message;
         _isLoading = false;
@@ -532,15 +546,13 @@ class AdminDashboardProvider extends ChangeNotifier {
           if (serverOrgName.isNotEmpty) {
             _orgName = serverOrgName;
             _rtOrgName = serverOrgName;
-          } else if (_orgName == kOrgNamePlaceholder && _groups.isNotEmpty) {
-            // Older backend without the additive key — unchanged fallback.
-            // Gated on the CURRENT value, not the incoming parameter: a real
-            // name already restored from the SWR cache must not be replaced by a
-            // group name just because this call was passed no explicit name.
-            _orgName = _groups.length == 1
-                ? _groups.first.name
-                : '${_groups.length} Groups';
           }
+          // The former `else` branch substituted a GROUP NAME (or "N Groups")
+          // into this ORGANISATION field. It read `_groups.first` — never the
+          // SELECTED group — so a group switch could not update it, which is
+          // the "top section still shows the previous group" report. Removed:
+          // the group COUNT it carried is preserved by [AdminGreetingCard],
+          // which renders it beside the org name instead of in place of it.
           if (_groups.isEmpty) return true;
           _todayMeals = meals;
           _mealSummaries
@@ -621,7 +633,12 @@ class AdminDashboardProvider extends ChangeNotifier {
       // ISSUE-002(vi): persist the resolved organisation name so the instant
       // cache-first paint greets with the real org instead of flashing the
       // placeholder until the network answers.
-      'orgName': _orgName,
+      //
+      // Versioned key (see the restore side): the legacy `orgName` key could
+      // hold a GROUP name written by an older build, so this build neither
+      // reads nor writes it. Only a value that is genuinely the organisation
+      // — never a group substitution — is stored here.
+      'orgNameV2': _orgName,
     });
   }
 

@@ -33,6 +33,11 @@ class NotepadProvider extends ChangeNotifier {
   NoteLayout _layout = NoteLayout.grid;
   String _query = '';
 
+  /// Live-Test-14 ISSUE-1 (tags-as-folders): the tag currently being browsed.
+  /// null = no tag narrowing. This is an ADDITIONAL narrowing layered on top of
+  /// the existing filter/sort/search pipeline — none of those change meaning.
+  String? _activeTag;
+
   // Multi-select state.
   final Set<String> _selectedIds = {};
   bool _selectionMode = false;
@@ -126,6 +131,15 @@ class NotepadProvider extends ChangeNotifier {
               if (!n.archived) return false;
               break;
           }
+          // Tag "folder" narrowing (ISSUE-1). Case-insensitive so #Work and
+          // #work are the same folder, matching how tagCounts groups them.
+          final at = _activeTag;
+          if (at != null) {
+            final want = at.toLowerCase();
+            if (!n.tags.any((t) => t.trim().toLowerCase() == want)) {
+              return false;
+            }
+          }
           // Search over title, body, checklist rows, and tags.
           if (q.isNotEmpty) {
             final match =
@@ -188,6 +202,52 @@ class NotepadProvider extends ChangeNotifier {
     }
   }
 
+  /// The tag being browsed, or null. Drives the "folder open" header.
+  String? get activeTag => _activeTag;
+
+  /// tag → number of notes carrying it, over the notes a folder view shows
+  /// (non-archived, non-empty). Case-insensitive grouping, first-seen spelling
+  /// wins so the user sees the tag exactly as they typed it.
+  Map<String, int> get tagCounts {
+    final byKey = <String, MapEntry<String, int>>{};
+    for (final n in _notes.values) {
+      if (n.archived || n.isEmpty) continue;
+      for (final t in n.tags) {
+        final label = t.trim();
+        if (label.isEmpty) continue;
+        final key = label.toLowerCase();
+        final hit = byKey[key];
+        byKey[key] = hit == null
+            ? MapEntry(label, 1)
+            : MapEntry(hit.key, hit.value + 1);
+      }
+    }
+    final out = <String, int>{};
+    final keys = byKey.keys.toList()
+      ..sort((a, b) => byKey[a]!.key.toLowerCase().compareTo(
+            byKey[b]!.key.toLowerCase(),
+          ));
+    for (final k in keys) {
+      out[byKey[k]!.key] = byKey[k]!.value;
+    }
+    return out;
+  }
+
+  /// Open a tag "folder" — narrows the list to notes carrying [tag].
+  void openTag(String tag) {
+    final t = tag.trim();
+    if (t.isEmpty || _activeTag == t) return;
+    _activeTag = t;
+    _safeNotify();
+  }
+
+  /// Leave the folder and show everything again.
+  void clearTag() {
+    if (_activeTag == null) return;
+    _activeTag = null;
+    _safeNotify();
+  }
+
   // ── Query / filter / sort ───────────────────────────────────────────────────
   void setFilter(NoteFilter value) {
     if (_filter == value) return;
@@ -230,6 +290,11 @@ class NotepadProvider extends ChangeNotifier {
       isChecklist: checklist,
       // A brand-new checklist starts with one empty row to write into.
       checklist: checklist ? [ChecklistItem(id: _newId(), text: '')] : const [],
+      // ISSUE-1 (tags-as-folders): a note created while a folder is OPEN is
+      // filed into that folder. Without this the new note carries no tag, so it
+      // vanishes from the folder the moment it is saved — which reads as "the
+      // folder lost my note" and breaks "create notes within each tag".
+      tags: _activeTag == null ? const [] : [_activeTag!],
     );
     _notes[note.id] = note;
     // No notify: an empty draft is not shown in the list yet.

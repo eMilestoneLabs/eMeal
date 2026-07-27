@@ -14,6 +14,7 @@ import 'package:smart_meal_management/features/notepad/utils/note_share.dart';
 import 'package:smart_meal_management/features/notepad/widgets/note_actions_sheet.dart';
 import 'package:smart_meal_management/features/auth/providers/auth_provider.dart';
 import 'package:smart_meal_management/features/notepad/widgets/note_card.dart';
+import 'package:smart_meal_management/features/notepad/widgets/tag_folder_views.dart';
 import 'package:smart_meal_management/features/notepad/widgets/notepad_empty_state.dart';
 import 'package:smart_meal_management/features/notepad/widgets/notepad_hero.dart';
 import 'package:smart_meal_management/shared/widgets/app_skeleton.dart';
@@ -268,6 +269,23 @@ class _NotepadListScreenState extends State<NotepadListScreen> {
     );
   }
 
+  /// ISSUE-1 (tags-as-folders): true while the FOLDER GRID is on screen.
+  /// Purely a view switch — no provider state, nothing to dispose.
+  bool _browsingFolders = false;
+
+  void _toggleFolders() {
+    setState(() {
+      _browsingFolders = !_browsingFolders;
+      if (_browsingFolders) _searching = false;
+    });
+  }
+
+  /// Open a tag folder: narrow the list and leave the grid.
+  void _openFolder(String tag) {
+    _provider.openTag(tag);
+    setState(() => _browsingFolders = false);
+  }
+
   void _toggleSearch() {
     setState(() {
       _searching = !_searching;
@@ -279,19 +297,10 @@ class _NotepadListScreenState extends State<NotepadListScreen> {
   /// search bar pre-filled with the tag, filtering the list to notes carrying
   /// it (the provider's query already matches tags). Clearing search restores
   /// the full list; no new state machinery needed.
-  void _filterByTag(String tag) {
-    setState(() => _searching = true);
-    // Live-Test-14 ISSUE-003: assigning `.text` alone leaves the caret at
-    // offset 0, so the very first keystroke or backspace edited the FRONT of the
-    // tag — the search box looked stuck on the tag. Set value + selection
-    // together so the field behaves exactly as if the user had typed it.
-    // (The controller listener installed in initState still drives
-    // provider.setQuery, so the list filters on this assignment.)
-    _searchController.value = TextEditingValue(
-      text: tag,
-      selection: TextSelection.collapsed(offset: tag.length),
-    );
-  }
+  /// ISSUE-1: tapping a #tag opens that tag's FOLDER — a real, labelled
+  /// narrowing with its own header — instead of stuffing the tag into the
+  /// search box, where it read as a search and could be typed over.
+  void _filterByTag(String tag) => _openFolder(tag);
 
   // ── Build ────────────────────────────────────────────────────────────────────
 
@@ -327,9 +336,24 @@ class _NotepadListScreenState extends State<NotepadListScreen> {
     if (_provider.isLoading) {
       return const AppListSkeleton(rows: 5, rowHeight: 92);
     }
+    if (_browsingFolders && !selecting) {
+      return TagFolderGrid(
+        provider: _provider,
+        isDark: isDark,
+        onOpen: _openFolder,
+      );
+    }
     final notes = _provider.visibleNotes;
     return Column(
       children: [
+        if (!selecting && _provider.activeTag != null)
+          OpenFolderHeader(
+            tag: _provider.activeTag!,
+            count: notes.length,
+            isDark: isDark,
+            onClose: _provider.clearTag,
+            onBrowse: _toggleFolders,
+          ),
         if (!selecting) _FilterBar(provider: _provider, isDark: isDark),
         Expanded(
           child:
@@ -395,7 +419,24 @@ class _NotepadListScreenState extends State<NotepadListScreen> {
                 ),
               ),
       actions: [
+        // ISSUE-1 (tags-as-folders): browse tags as folders. Tinted while open
+        // or while a folder is active, so the current context is never a guess.
         if (!_searching)
+          IconButton(
+            tooltip: _browsingFolders ? 'Back to notes' : 'Tag folders',
+            icon: Icon(
+              _browsingFolders
+                  ? Icons.close_rounded
+                  : (_provider.activeTag != null
+                      ? Icons.folder_rounded
+                      : Icons.folder_outlined),
+              color: (_browsingFolders || _provider.activeTag != null)
+                  ? AppColors.primary
+                  : null,
+            ),
+            onPressed: _toggleFolders,
+          ),
+        if (!_searching && !_browsingFolders)
           IconButton(
             tooltip:
                 _provider.layout == NoteLayout.grid ? 'List view' : 'Grid view',

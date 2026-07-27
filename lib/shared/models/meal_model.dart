@@ -288,6 +288,18 @@ class MealModel {
             preferenceGroups.map((g) => g.toJson()).toList(),
         'price': price,
         'isGeneralAttendance': isGeneralAttendance,
+        // Live-Test-14 ISSUE-2: the server's window authority MUST survive the
+        // cache round-trip. This map is cache-only (request bodies are built by
+        // hand in meal_repository), and [fromJson] already reads all four keys —
+        // but toJson used to drop them, so every cached paint came back with
+        // windowState == null and orgClockMinutes == null. The window gate then
+        // lost the server verdict and fell back to the UNTRUSTED phone clock
+        // (and vacation math fell back to the device date via orgDate), which is
+        // exactly what the server-clock design exists to prevent.
+        'windowState': windowState,
+        'orgClockMinutes': orgClockMinutes,
+        'graceMinutes': graceMinutes,
+        'orgDate': orgDate,
       };
 
   MealModel copyWith({

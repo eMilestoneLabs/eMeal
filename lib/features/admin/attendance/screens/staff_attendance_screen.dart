@@ -845,11 +845,34 @@ class _StaffAttendanceScreenState extends State<StaffAttendanceScreen> {
     required VoidCallback onTap,
   }) {
     final active = enabled && !loading;
+    // Live-Test-14 follow-up: `selected` used to paint the SOLID accent fill
+    // regardless of `enabled`, so a meal already marked Present rendered a vivid,
+    // fully-saturated "Present" button AFTER its window closed — it looked
+    // perfectly tappable while `onTap` was null, which is exactly the
+    // "button still enabled but nothing happens" complaint (the other meals were
+    // unmarked, so they faded correctly and the contrast made it look like a bug
+    // in that one card).
+    //
+    // Three distinct states now, and disabled+selected is the important one:
+    //   • selected + enabled  → solid accent, white text     (actionable, current)
+    //   • selected + disabled → soft accent tint + a lock,   (RECORDED, settled)
+    //                           accent text, no ink
+    //   • unselected          → faint wash, faded label      (inert)
+    final Color fill;
+    final Color labelColor;
+    if (selected && enabled) {
+      fill = color;
+      labelColor = Colors.white;
+    } else if (selected) {
+      fill = color.withValues(alpha: 0.18);
+      labelColor = color;
+    } else {
+      fill = color.withValues(alpha: enabled ? 0.10 : 0.04);
+      labelColor = color.withValues(alpha: enabled ? 1 : 0.4);
+    }
     return Expanded(
       child: Material(
-        color: selected
-            ? color
-            : color.withValues(alpha: enabled ? 0.10 : 0.04),
+        color: fill,
         borderRadius: BorderRadius.circular(12),
         child: InkWell(
           borderRadius: BorderRadius.circular(12),
@@ -863,14 +886,23 @@ class _StaffAttendanceScreenState extends State<StaffAttendanceScreen> {
                     height: 18,
                     child: CircularProgressIndicator(strokeWidth: 2),
                   )
-                : Text(
-                    label,
-                    style: AppTypography.labelMedium.copyWith(
-                      fontWeight: FontWeight.w700,
-                      color: selected
-                          ? Colors.white
-                          : color.withValues(alpha: enabled ? 1 : 0.4),
-                    ),
+                : Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      // A locked-but-recorded status reads as a state, not a
+                      // control — the padlock removes any doubt.
+                      if (selected && !enabled) ...[
+                        Icon(Icons.lock_rounded, size: 13, color: labelColor),
+                        const SizedBox(width: 5),
+                      ],
+                      Text(
+                        label,
+                        style: AppTypography.labelMedium.copyWith(
+                          fontWeight: FontWeight.w700,
+                          color: labelColor,
+                        ),
+                      ),
+                    ],
                   ),
           ),
         ),
