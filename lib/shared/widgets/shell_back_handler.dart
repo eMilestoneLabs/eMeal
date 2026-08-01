@@ -145,15 +145,48 @@ class _ShellBackHandlerState extends State<ShellBackHandler> {
       );
   }
 
+  /// Re-asserts, to Android, that Flutter handles back.
+  ///
+  /// THE ANDROID GATE — without this the whole policy is dead on a device.
+  ///
+  /// The manifest sets `android:enableOnBackInvokedCallback="true"`, so on
+  /// Android 13+ the system routes back into Flutter ONLY while the framework
+  /// has claimed it via `SystemNavigator.setFrameworkHandlesBack(true)`, which
+  /// `WidgetsApp` derives from the last [NavigationNotification] it sees
+  /// (app.dart:1450).
+  ///
+  /// The shell's inner Navigator holds exactly one page and owns no [PopScope],
+  /// so on every tab switch it dispatches `canHandlePop: false`
+  /// (navigator.dart:3734). The ROOT navigator then propagates that `false`
+  /// unchanged — its listener only checks its own `canPop()`, which is also
+  /// false, and never re-consults this route's `popDisposition`
+  /// (navigator.dart:5904). Android therefore concluded Flutter did not want
+  /// back, finished the Activity itself, and [_handleBack] was NEVER CALLED.
+  ///
+  /// While this widget is mounted the claim is unconditionally true: `canPop`
+  /// is false, so every back press is ours to handle — go Home, hint, or exit.
+  /// Dispatching from `this.context` (ABOVE the listener) cannot re-enter the
+  /// listener, so there is no notification loop.
+  bool _reassertBackOwnership(NavigationNotification notification) {
+    if (notification.canHandlePop) {
+      return false; // already correct — let it bubble untouched.
+    }
+    const NavigationNotification(canHandlePop: true).dispatch(context);
+    return true; // stop the stale `false`.
+  }
+
   @override
   Widget build(BuildContext context) {
-    return PopScope(
-      canPop: false,
-      onPopInvokedWithResult: (didPop, _) {
-        if (didPop) return;
-        _handleBack();
-      },
-      child: widget.child,
+    return NotificationListener<NavigationNotification>(
+      onNotification: _reassertBackOwnership,
+      child: PopScope(
+        canPop: false,
+        onPopInvokedWithResult: (didPop, _) {
+          if (didPop) return;
+          _handleBack();
+        },
+        child: widget.child,
+      ),
     );
   }
 }

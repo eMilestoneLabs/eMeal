@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -214,12 +216,21 @@ void main() {
   group('ISSUE-2 ShellBackHandler', () {
     const home = '/student/dashboard';
     late List<String> exitCalls;
+    late List<bool> backOwnership;
 
     setUp(() {
       exitCalls = [];
+      backOwnership = [];
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
           .setMockMethodCallHandler(SystemChannels.platform, (call) async {
         if (call.method == 'SystemNavigator.pop') exitCalls.add(call.method);
+        // What the framework tells Android about who handles back. On Android
+        // 13+ (`enableOnBackInvokedCallback=true` in the manifest) a `false`
+        // here means the system finishes the Activity ITSELF and the back
+        // policy never runs — the exact defect seen on device.
+        if (call.method == 'SystemNavigator.setFrameworkHandlesBack') {
+          backOwnership.add(call.arguments as bool);
+        }
         return null;
       });
     });
@@ -285,6 +296,52 @@ void main() {
       await t.pumpAndSettle();
       return (router, goHomeCalls);
     }
+
+    testWidgets(
+        'ANDROID GATE: framework claims back on a tab (setFrameworkHandlesBack)',
+        (t) async {
+      // THE decisive check, and the one my other tests were blind to.
+      //
+      // The manifest sets `android:enableOnBackInvokedCallback="true"`, so on
+      // Android 13+ the system only routes back into Flutter when the
+      // framework has said it wants it, via
+      // `SystemNavigator.setFrameworkHandlesBack(true)`
+      // (WidgetsApp._defaultOnNavigationNotification → app.dart:1450).
+      // That flag is `navigatorCanPop || routeBlocksPop` (navigator.dart:3734).
+      // On a tab route BOTH navigators have one page, so `navigatorCanPop` is
+      // false — the flag is true ONLY because our PopScope makes the root
+      // page report `doNotPop`.
+      //
+      // If this is ever false, Android finishes the Activity itself and
+      // `popRoute()` is NEVER called: the app closes and every other test in
+      // this file still passes, because they invoke `popRoute()` directly.
+      final handled = backOwnership;
+      final (router, _) = await pumpShell(t);
+      // WidgetsApp._defaultOnNavigationNotification returns EARLY while
+      // `_appLifecycleState` is null (app.dart:1442-1445) — the default in a
+      // widget test. Without this the platform is never told anything and the
+      // assertions below would report a false alarm.
+      t.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+      await t.pumpAndSettle();
+
+      router.go('/student/meals');
+      await t.pumpAndSettle();
+      expect(handled.isNotEmpty, isTrue,
+          reason: 'the framework never told Android who handles back');
+      expect(handled.last, isTrue,
+          reason: 'on a non-Home TAB the framework must claim back, or Android '
+              'finishes the Activity and back never reaches ShellBackHandler');
+
+      router.go(home);
+      await t.pumpAndSettle();
+      expect(handled.last, isTrue,
+          reason: 'on HOME the shell must still claim back, or Android closes '
+              'the app before the exit-confirmation can ever run');
+
+      router.push('/student/settings');
+      await t.pumpAndSettle();
+      expect(handled.last, isTrue, reason: 'a pushed route is poppable');
+    });
 
     testWidgets('back from a bottom-nav tab returns Home, does NOT exit',
         (t) async {
@@ -413,7 +470,20 @@ void main() {
       // back pressed twice at the root. Asserts the app never throws and never
       // exits except on a genuine confirmed double-back at Home.
       final (router, _) = await pumpShell(t);
+      // Without a lifecycle state WidgetsApp never talks to the platform
+      // (app.dart:1442-1445), so back-ownership could not be observed.
+      t.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+      await t.pumpAndSettle();
       String loc() => router.routerDelegate.currentConfiguration.uri.toString();
+
+      /// Back ownership must NEVER be surrendered while a shell is on screen.
+      /// A single `false` at any point means Android takes over and closes the
+      /// app instead of running the policy — the device-only defect.
+      void ownsBack(String step) {
+        expect(backOwnership.isEmpty || backOwnership.last, isTrue,
+            reason: 'back ownership LOST after $step — Android would close '
+                'the app here instead of calling ShellBackHandler');
+      }
 
       // Disarms any pending exit confirmation, so no step below is ever a
       // CONFIRMED double-back at Home. Two backs at Home inside the window are
@@ -433,21 +503,25 @@ void main() {
           router.go(tab);
           await t.pumpAndSettle();
           expect(t.takeException(), isNull, reason: 'go($tab) threw');
+          ownsBack('go($tab)');
 
           for (final leaf in leaves) {
             router.push(leaf);
             await t.pumpAndSettle();
             expect(t.takeException(), isNull, reason: 'push($leaf) threw');
+            ownsBack('push($leaf)');
 
             await router.routerDelegate.popRoute(); // pop the leaf
             await t.pumpAndSettle();
             expect(t.takeException(), isNull, reason: 'pop of $leaf threw');
+            ownsBack('pop($leaf)');
           }
 
           // Back with nothing left to pop → policy runs.
           await router.routerDelegate.popRoute();
           await t.pumpAndSettle();
           expect(t.takeException(), isNull, reason: 'policy back threw');
+          ownsBack('policy back from $tab');
           await lapseWindow();
         }
 
@@ -471,6 +545,76 @@ void main() {
 
       // The app is still alive and coherent on a real route.
       expect(loc(), home);
+      expect(t.takeException(), isNull);
+    });
+
+    testWidgets('NO CRASH: back mashed MID-TRANSITION (never settled)',
+        (t) async {
+      // Every other test in this file settles between steps, so none of them
+      // ever exercises a back press while a route transition is still
+      // animating — which is exactly what a real user does when the app feels
+      // slow. Here nothing is settled: pushes are interrupted, and two back
+      // presses are fired concurrently on a half-built stack.
+      final (router, _) = await pumpShell(t);
+      t.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+      await t.pumpAndSettle();
+
+      for (var i = 0; i < 5; i++) {
+        router.push('/student/settings');
+        await t.pump(const Duration(milliseconds: 16)); // one frame in
+        router.push('/student/attendance/history');
+        await t.pump(const Duration(milliseconds: 16)); // still animating
+
+        // Two concurrent backs on a stack that is mid-flight.
+        unawaited(router.routerDelegate.popRoute());
+        unawaited(router.routerDelegate.popRoute());
+        await t.pump(const Duration(milliseconds: 16));
+        expect(t.takeException(), isNull,
+            reason: 'concurrent mid-transition back threw at iteration $i');
+
+        // A tab switch landing on top of an unfinished pop.
+        router.go('/student/meals');
+        await t.pump(const Duration(milliseconds: 16));
+        unawaited(router.routerDelegate.popRoute());
+        await t.pump(const Duration(milliseconds: 16));
+        expect(t.takeException(), isNull,
+            reason: 'back during an unsettled tab switch threw at $i');
+      }
+
+      await t.pumpAndSettle();
+      expect(t.takeException(), isNull, reason: 'settling revealed a late error');
+      // The app must still be alive and on a real route.
+      expect(
+        router.routerDelegate.currentConfiguration.uri.toString(),
+        anyOf(home, '/student/meals', '/student/settings',
+            '/student/attendance/history'),
+      );
+    });
+
+    testWidgets('an open DIALOG pops FIRST — the root-navigator path',
+        (t) async {
+      // Distinct code path from the bottom-sheet test below, and it was
+      // untested until now: `showDialog` defaults to `useRootNavigator: TRUE`
+      // (dialog.dart:1491) so a dialog lands on the ROOT navigator, ABOVE the
+      // shell page. `_findCurrentNavigator` then sees the shell route is no
+      // longer `isCurrent` and stops its descent (delegate.dart:110), so the
+      // ROOT navigator pops the dialog. `showModalBottomSheet` defaults to
+      // FALSE (bottom_sheet.dart:1255) and lands on the SHELL navigator, which
+      // is reached by the opposite branch — the descent-because-canPop one.
+      final (router, goHomeCalls) = await pumpShell(t);
+      showDialog<void>(
+        context: t.element(find.text('dashboard')),
+        builder: (_) => const AlertDialog(content: Text('dlg')),
+      );
+      await t.pumpAndSettle();
+      expect(find.text('dlg'), findsOneWidget);
+
+      await router.routerDelegate.popRoute();
+      await t.pumpAndSettle();
+
+      expect(find.text('dlg'), findsNothing, reason: 'the dialog must close');
+      expect(exitCalls, isEmpty, reason: 'a dialog back must never exit');
+      expect(goHomeCalls, isEmpty, reason: 'the policy must not run');
       expect(t.takeException(), isNull);
     });
 
