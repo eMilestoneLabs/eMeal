@@ -103,10 +103,38 @@ abstract final class AppTheme {
           ),
         ),
       ),
+      // ── Chips ────────────────────────────────────────────────────────────
+      // Live-Test-16 ISSUE-1: chip labels were INVISIBLE in light mode.
+      // `AppTypography.labelMedium` states no colour, and Flutter resolves the
+      // label with `chipTheme.labelStyle ?? chipDefaults.labelStyle` (a `??`,
+      // NOT a merge — chip.dart:1367). Supplying a colourless style therefore
+      // DISCARDED the Material-3 default that carries `onSurfaceVariant`, so
+      // the label reached the engine with no colour at all and rendered white
+      // on a #F1F5F9 chip (~1.09:1 contrast). The dark theme below already
+      // states both colours, which is why only light mode was affected.
+      //
+      // Only the two genuinely-missing tokens are added. `side`, `iconTheme`,
+      // `checkmarkColor` and `padding` are deliberately NOT set here: chips
+      // that render correctly today (correction/vacation filter rows) state
+      // their own label colour but inherit the M3 border, and adding a `side`
+      // would silently restyle them.
+      //
+      // Widgets that pass their own `labelStyle` are unaffected — RawChip
+      // merges widget-over-theme (chip.dart:1375) and `TextStyle.copyWith`
+      // resolves `color ?? this.color`, so an explicit colour still wins and
+      // only a null one now inherits.
       chipTheme: ChipThemeData(
         backgroundColor: AppColors.surfaceVariant,
         selectedColor: AppColors.primaryContainer,
-        labelStyle: AppTypography.labelMedium,
+        labelStyle: AppTypography.labelMedium.copyWith(
+          color: AppColors.textPrimary,
+        ),
+        // Read ONLY by ChoiceChip when it is selected and the call site passed
+        // no labelStyle (choice_chip.dart:230); FilterChip/ActionChip pass
+        // `labelStyle` straight through.
+        secondaryLabelStyle: AppTypography.labelMedium.copyWith(
+          color: AppColors.onPrimaryContainer,
+        ),
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(8),
         ),

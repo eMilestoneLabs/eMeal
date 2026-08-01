@@ -5,6 +5,7 @@ import 'package:smart_meal_management/data/services/cache_warmer.dart';
 import 'package:smart_meal_management/features/admin/dashboard/providers/admin_dashboard_provider.dart';
 import 'package:smart_meal_management/features/auth/providers/auth_provider.dart';
 import 'package:smart_meal_management/shared/widgets/app_bottom_nav_bar.dart';
+import 'package:smart_meal_management/shared/widgets/shell_back_handler.dart';
 
 /// Persistent shell for admin/manager roles.
 ///
@@ -68,6 +69,16 @@ class _AdminShellState extends State<AdminShell> {
 
   int _currentIndex = 0;
 
+  /// Current router location, captured in [didChangeDependencies] where it is
+  /// already read. Live-Test-16 ISSUE-2: the back policy keys off this, NOT off
+  /// [_currentIndex] — [_indexFromLocation] returns 0 for any unmatched path,
+  /// so an index-based test would mistake such a screen for Home and close the
+  /// app. Empty reads as "not home", the fail-safe direction.
+  String _location = '';
+
+  bool get _isHomeLocation =>
+      isShellHomeLocation(_location, RouteNames.adminDashboard);
+
   /// Shell-owned dashboard provider — hoisted here (not created per-screen) so
   /// its in-memory state survives tab switches and the Home tab never flashes
   /// zeros on return (Issue 1). Disposed with the shell (i.e. on logout).
@@ -127,6 +138,7 @@ class _AdminShellState extends State<AdminShell> {
       CacheWarmer.instance.warmAdmin(user);
     }
     final location = GoRouterState.of(context).uri.toString();
+    _location = location;
     final derived = _indexFromLocation(location);
     if (derived != _currentIndex) {
       setState(() => _currentIndex = derived);
@@ -135,7 +147,14 @@ class _AdminShellState extends State<AdminShell> {
 
   @override
   Widget build(BuildContext context) {
-    return AdminDashboardScope(
+    // Live-Test-16 ISSUE-2: shared Android back policy — back from any non-Home
+    // tab returns Home instead of closing the app. Consulted only when nothing
+    // is left to pop, so pushed sub-routes (Profile / Settings / Exports /
+    // My Attendance / group detail / meal schedule) still pop normally.
+    return ShellBackHandler(
+      isHome: () => _isHomeLocation,
+      onGoHome: () => _onTap(context, 0),
+      child: AdminDashboardScope(
       notifier: _dashboardProvider,
       child: Scaffold(
         body: widget.child,
@@ -144,6 +163,7 @@ class _AdminShellState extends State<AdminShell> {
           currentIndex: _currentIndex,
           onTap: (i) => _onTap(context, i),
         ),
+      ),
       ),
     );
   }

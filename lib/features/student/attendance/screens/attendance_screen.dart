@@ -224,8 +224,11 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
                             padding: const EdgeInsets.symmetric(
                                 horizontal: AppConstants.space16),
                             child: _VacationBanner(
+                              // Live-Test-16 ISSUE-2: push, not go — Settings
+                              // is a leaf; `go` left it with no back arrow and
+                              // Android back closed the app.
                               onSettings: () =>
-                                  context.go(RouteNames.studentSettings),
+                                  context.push(RouteNames.studentSettings),
                             ),
                           ),
                         ),

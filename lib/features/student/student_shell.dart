@@ -6,6 +6,7 @@ import 'package:smart_meal_management/features/auth/providers/auth_provider.dart
 import 'package:smart_meal_management/features/student/dashboard/providers/student_dashboard_provider.dart';
 import 'package:smart_meal_management/features/student/providers/group_config_provider.dart';
 import 'package:smart_meal_management/shared/widgets/app_bottom_nav_bar.dart';
+import 'package:smart_meal_management/shared/widgets/shell_back_handler.dart';
 
 /// Persistent shell for the student/member role.
 ///
@@ -156,6 +157,27 @@ class _StudentShellState extends State<StudentShell> {
 
   int _currentIndex = 0;
 
+  /// Current router location, captured in [didChangeDependencies] (where it is
+  /// already read) so the back handler costs no extra lookup.
+  ///
+  /// Live-Test-16 ISSUE-2: the back policy MUST key off this and not off
+  /// [_currentIndex] — [_indexFromLocation] returns 0 for every non-tab path
+  /// (`/student/settings`, `/student/billing`), so an index-based test would
+  /// mistake those screens for Home and close the app. Starts empty, which
+  /// reads as "not home" — the fail-safe direction (go home, never exit).
+  String _location = '';
+
+  bool get _isHomeLocation =>
+      isShellHomeLocation(_location, RouteNames.studentDashboard);
+
+  /// Back-to-Home routed through the SAME handler as a Home tab tap, so the
+  /// dashboard refresh in [_onTap] is not skipped.
+  void _goHome() {
+    final user = AuthProviderScope.of(context).currentUser;
+    final hasGroup = user?.effectiveGroupIds.isNotEmpty ?? false;
+    _onTap(context, 0, _buildRoutes(hasGroup));
+  }
+
   int _indexFromLocation(String location, List<String> routes) {
     for (int i = routes.length - 1; i >= 0; i--) {
       if (location.startsWith(routes[i])) return i;
@@ -195,6 +217,7 @@ class _StudentShellState extends State<StudentShell> {
     final hasGroup = user?.effectiveGroupIds.isNotEmpty ?? false;
     final routes = _buildRoutes(hasGroup);
     final location = GoRouterState.of(context).uri.toString();
+    _location = location;
     final derived = _indexFromLocation(location, routes);
     if (derived != _currentIndex) {
       setState(() => _currentIndex = derived);
@@ -203,7 +226,13 @@ class _StudentShellState extends State<StudentShell> {
 
   @override
   Widget build(BuildContext context) {
-    return StudentDashboardScope(
+    // Live-Test-16 ISSUE-2: sits OUTSIDE the ListenableBuilder so it never
+    // rebuilds — `canPop` is constant and the state is read lazily in the
+    // callback. Only consulted when nothing is left to pop.
+    return ShellBackHandler(
+      isHome: () => _isHomeLocation,
+      onGoHome: _goHome,
+      child: StudentDashboardScope(
       notifier: _dashboardProvider,
       child: GroupConfigScope(
       notifier: _groupConfig,
@@ -237,6 +266,7 @@ class _StudentShellState extends State<StudentShell> {
             ),
           );
         },
+      ),
       ),
       ),
     );

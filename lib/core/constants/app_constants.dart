@@ -71,4 +71,11 @@ abstract final class AppConstants {
   static const Duration animFast = Duration(milliseconds: 150);
   static const Duration animNormal = Duration(milliseconds: 300);
   static const Duration animSlow = Duration(milliseconds: 500);
+
+  // ── Navigation ─────────────────────────────────────────────────────────────
+  /// Live-Test-16 ISSUE-2: on a role shell's HOME tab there is nothing left to
+  /// pop, so Android back would close the app. A second back press inside this
+  /// window confirms the exit; the first one only shows the hint. Configurable
+  /// here rather than inline so the confirm window is tuned in one place.
+  static const Duration backExitConfirmWindow = Duration(seconds: 2);
 }

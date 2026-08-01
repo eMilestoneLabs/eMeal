@@ -1,3 +1,4 @@
+import 'package:smart_meal_management/app/router/route_kinds.dart';
 import 'package:smart_meal_management/app/router/route_names.dart';
 import 'package:smart_meal_management/features/auth/providers/auth_provider.dart';
 import 'package:smart_meal_management/shared/enums/user_role.dart';
@@ -32,60 +33,20 @@ String resolveNotificationRoute(String payload, AuthProvider auth) {
       return _dashboardOf(auth);
   }
 
-  if (_isRegisteredRoute(route)) return route;
+  if (isRegisteredRoute(route)) return route;
 
   // Unknown destination: land on the role home instead of the 404 screen.
   return _dashboardOf(auth);
 }
 
-/// Exact registered paths a notification may legitimately target.
-const Set<String> _knownRoutes = {
-  RouteNames.splash,
-  RouteNames.roleSelect,
-  RouteNames.studentDashboard,
-  RouteNames.studentMeals,
-  RouteNames.studentAttendance,
-  RouteNames.studentAttendanceHistory,
-  RouteNames.studentWeeklyMenu,
-  RouteNames.studentProfile,
-  RouteNames.studentSettings,
-  RouteNames.studentBilling,
-  RouteNames.adminDashboard,
-  RouteNames.adminMealConfig,
-  RouteNames.adminMealSchedule,
-  RouteNames.adminAttendance,
-  RouteNames.adminGroups,
-  RouteNames.adminExports,
-  RouteNames.adminBilling,
-  RouteNames.adminSettings,
-  RouteNames.adminProfile,
-  RouteNames.adminMore,
-  RouteNames.adminMyAttendance,
-  RouteNames.groupJoin,
-  RouteNames.notepad,
-  RouteNames.eventAdminRoot,
-  RouteNames.eventAdminCreate,
-  RouteNames.eventAdminDashboard,
-  RouteNames.eventGuestJoin,
-  RouteNames.eventGuestDashboard,
-};
-
-/// Dynamic route families (path-parameter sub-trees) that pass through.
-const List<String> _knownPrefixes = [
-  '/admin/groups/',
-  '/event-admin/event/',
-];
-
-bool _isRegisteredRoute(String route) {
-  // Live-Test-11 ISSUE-001: deep-links may carry query intents
-  // (e.g. /admin/attendance?open=corrections) — match on the path alone.
-  final path = route.split('?').first;
-  if (_knownRoutes.contains(path)) return true;
-  for (final p in _knownPrefixes) {
-    if (path.startsWith(p)) return true;
-  }
-  return false;
-}
+// Live-Test-16: the registered-path list and the prefix list used to live here
+// as `_knownRoutes` / `_knownPrefixes`. They moved verbatim to
+// `route_kinds.dart` (`kRouteKinds` / `kRouteKindPrefixes`), which also records
+// HOW each route is meant to be entered (tab / leaf / reset) — the knowledge
+// whose absence let `/student/settings` be reached with `go` from two call
+// sites and `push` from two others. Same 28 paths, same prefixes, same
+// matching rule: `test/route_kind_guard_test.dart` pins the set so deep-link
+// behaviour cannot drift.
 
 String _dashboardOf(AuthProvider auth) {
   final user = auth.currentUser;

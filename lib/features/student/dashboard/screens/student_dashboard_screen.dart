@@ -431,8 +431,15 @@ class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
                             horizontal: AppConstants.space20),
                         child: _VacationBanner(
                           dateRange: _vacationRangeLabel(provider.activeVacation),
+                          // Live-Test-16 ISSUE-2: push, not go. Settings is a
+                          // LEAF, not a tab — `go` replaced the shell's only
+                          // page, so it rendered with no back arrow
+                          // (automaticallyImplyLeading saw an unpoppable
+                          // navigator) and Android back closed the app. The
+                          // other two entry points to this same screen
+                          // (Today's Meals, Profile) already push.
                           onDisable: () =>
-                              context.go(RouteNames.studentSettings),
+                              context.push(RouteNames.studentSettings),
                         ),
                       ),
                     ),
@@ -568,8 +575,15 @@ class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
                         child: _SectionHeader(
                           title: '30-Day Summary',
                           actionLabel: 'History',
+                          // Live-Test-16 ISSUE-2: push, not go. `go` built the
+                          // whole `/student/attendance/history` match stack, so
+                          // back landed on the Attendance TAB rather than
+                          // returning here — and it constructed AttendanceScreen
+                          // needlessly. History depends only on
+                          // AuthProviderScope (shell-level), so pushing it
+                          // alone is both correct and one screen cheaper.
                           onAction: () =>
-                              context.go(RouteNames.studentAttendanceHistory),
+                              context.push(RouteNames.studentAttendanceHistory),
                         ),
                       ),
                       const SliverToBoxAdapter(
@@ -594,8 +608,10 @@ class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
                         child: _QuickActionsRow(
                           onAttendance: () =>
                               context.go(RouteNames.studentAttendance),
+                          // Live-Test-16 ISSUE-2: push — see the 30-Day Summary
+                          // header above; back must return to this dashboard.
                           onHistory: () =>
-                              context.go(RouteNames.studentAttendanceHistory),
+                              context.push(RouteNames.studentAttendanceHistory),
                           // FR-MODE-013: Meal Mode adds Today's Meals.
                           onMeals: provider.mealsEnabled
                               ? () => context.go(RouteNames.studentAttendance)
