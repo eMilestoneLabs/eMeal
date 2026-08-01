@@ -55,6 +55,29 @@ class VacationRequestModel {
   bool get isRejected => status == 'rejected';
   bool get isCancelled => status == 'cancelled';
 
+  /// Live-Test-15 ISSUE-2B — true once the vacation's LAST day is strictly in
+  /// the past, i.e. the vacation is over.
+  ///
+  /// Date-only comparison in UTC components (same normalization as
+  /// [coversMealOn]) so a stored UTC-midnight business day is never shifted a
+  /// day by a local-timezone conversion. A vacation ending TODAY is NOT ended —
+  /// it is still running and stays cancellable.
+  ///
+  /// Client-side affordance gating ONLY: this hides a button the server will
+  /// reject anyway. The authoritative guard lives in `VacationsService.cancel`,
+  /// so an untrusted phone clock can never grant an illegal cancel.
+  bool hasEnded({DateTime? now}) {
+    DateTime d(DateTime x) => DateTime.utc(x.year, x.month, x.day);
+    final today = d(now ?? DateTime.now());
+    return d(endDate).isBefore(today);
+  }
+
+  /// USER-LOCKED RULE: an APPROVED vacation that has ended is a permanent
+  /// historical record — no role may cancel it. A pending request never took
+  /// effect, so it stays cancellable (and must, since overlap validation
+  /// counts pending rows).
+  bool get isCancellable => isPending || (isApproved && !hasEnded());
+
   /// FR-VACX-003 — exact Dart mirror of the server's `requestCoversMeal`
   /// boundary math (vacation-coverage.util.ts): on the start date only meals
   /// opening AT/AFTER the startSlotKey meal's open time are covered; on the

@@ -232,6 +232,33 @@ class _GroupAppBar extends StatelessWidget {
       );
       return;
     }
+    // A group may not carry the ORGANISATION's own name: every bare-name
+    // surface (dashboard header, notices, exports) would become ambiguous.
+    // `organizationName` rides the group-detail payload this screen already
+    // loaded (getGroupById sets it), so the check costs no request. Skipped
+    // when the payload carries no org name — never a false block.
+    // Read the PROVIDER's current group, not the instance captured when this
+    // widget built: the detail screen paints from the list first (no
+    // organizationName) and the SWR refresh fills it in moments later, possibly
+    // while this dialog is open. The captured `group` would still be the stale
+    // one. Falls back to it when the provider has nothing newer.
+    final orgName =
+        (provider.selectedGroup?.organizationName ?? group.organizationName)
+                ?.trim() ??
+            '';
+    if (orgName.isNotEmpty &&
+        newName.toLowerCase() == orgName.toLowerCase()) {
+      messenger.showSnackBar(
+        const SnackBar(
+          content: Text(
+            'A group cannot have the same name as the organisation. '
+            'Choose a different group name.',
+          ),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      return;
+    }
 
     final ok = await provider.updateGroup(
       organizationId: organizationId,
@@ -710,7 +737,9 @@ class _MembersTab extends StatelessWidget {
       itemCount: members.length,
       itemBuilder: (context, i) {
         final member = members[i];
-        final isBlocked = provider.isMemberBlocked(member.id);
+        // ISSUE-1: pass the row so the check reads THIS member's server-truth
+        // status directly (no list scan, no session-only guess).
+        final isBlocked = provider.isMemberBlocked(member.id, member: member);
         return GroupMemberTile(
           member: member,
           isCurrentUser: member.id == currentUserId,

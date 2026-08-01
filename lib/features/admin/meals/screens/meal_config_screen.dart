@@ -426,6 +426,9 @@ class _MealConfigScreenState extends State<MealConfigScreen> {
                       _BillingCycleTile(
                         day: _provider.selectedGroup?.mealConfig
                             .billingCycleStartDay,
+                        changeUsed: _provider.selectedGroup?.mealConfig
+                                .billingCycleChangeUsed ??
+                            false,
                         // ISSUE-004: patches are queued + optimistic — the
                         // picker stays interactive during a save.
                         saving: false,
@@ -1023,11 +1026,17 @@ class _BillingCycleTile extends StatelessWidget {
     required this.day,
     required this.saving,
     required this.onChanged,
+    this.changeUsed = false,
   });
 
   final int? day;
   final bool saving;
   final ValueChanged<int> onChanged;
+
+  /// True once this group's ONE-TIME change has been consumed. The control
+  /// renders permanently locked. Backend stays authoritative — it rejects any
+  /// further change even from a modified client.
+  final bool changeUsed;
 
   @override
   Widget build(BuildContext context) {
@@ -1063,31 +1072,85 @@ class _BillingCycleTile extends StatelessWidget {
                   style: AppTypography.labelSmall
                       .copyWith(color: AppColors.textSecondary),
                 ),
+                const SizedBox(height: 2),
+                Text(
+                  changeUsed
+                      ? 'Locked — this group already used its one-time change'
+                      : 'Can be changed ONCE. Also sets the data-retention boundary.',
+                  style: AppTypography.labelSmall.copyWith(
+                    color: changeUsed
+                        ? AppColors.textTertiary
+                        : AppColors.warning,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
               ],
             ),
           ),
           // SRS Module 03 BILL-012 (survey Q20): anchor days 1–31 all valid —
           // a day missing from a short month clamps to its last calendar day
           // server-side (the configured value never changes).
-          DropdownButton<int>(
-            value: effective.clamp(1, 31),
-            underline: const SizedBox.shrink(),
-            items: [
-              for (var d = 1; d <= 31; d++)
-                DropdownMenuItem(
-                  value: d,
-                  child: Text(d == 1 ? '1st (month)' : '$d${_ord(d)}'),
-                ),
-            ],
-            onChanged: saving
-                ? null
-                : (v) {
-                    if (v != null && v != effective) onChanged(v);
-                  },
+          if (changeUsed)
+            const Padding(
+              padding: EdgeInsets.only(right: 4),
+              child: Icon(Icons.lock_rounded,
+                  size: 18, color: AppColors.textTertiary),
+            )
+          else
+            DropdownButton<int>(
+              value: effective.clamp(1, 31),
+              underline: const SizedBox.shrink(),
+              items: [
+                for (var d = 1; d <= 31; d++)
+                  DropdownMenuItem(
+                    value: d,
+                    child: Text(d == 1 ? '1st (month)' : '$d${_ord(d)}'),
+                  ),
+              ],
+              onChanged: saving
+                  ? null
+                  : (v) async {
+                      if (v == null || v == effective) return;
+                      // The change is PERMANENT and also moves the retention
+                      // boundary — never apply it without explicit consent.
+                      final ok = await _confirmPermanentChange(context, v);
+                      if (ok) onChanged(v);
+                    },
+            ),
+        ],
+      ),
+    );
+  }
+
+  /// Explicit, unmissable consent before consuming the one-time change.
+  Future<bool> _confirmPermanentChange(BuildContext context, int day) async {
+    final label = day == 1 ? 'the 1st (calendar month)' : '$day${_ord(day)}';
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Change Billing Cycle Start Date?'),
+        content: Text(
+          'This setting defines the permanent billing-cycle boundary for this '
+          'group, and the data-retention boundary follows it.\n\n'
+          'You may change it only ONCE. Existing finalized billing periods and '
+          'historical records will not be modified.\n\n'
+          'After confirming, this setting can never be changed again.\n\n'
+          'New start day: $label',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            style: FilledButton.styleFrom(backgroundColor: AppColors.warning),
+            child: const Text('Change permanently'),
           ),
         ],
       ),
     );
+    return ok == true;
   }
 
   static String _ord(int d) {

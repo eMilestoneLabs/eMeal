@@ -313,34 +313,87 @@ class _NotepadListScreenState extends State<NotepadListScreen> {
       animation: _provider,
       builder: (context, _) {
         final selecting = _provider.selectionMode;
-        return Scaffold(
-          backgroundColor: bg,
-          appBar: selecting ? _selectionAppBar(isDark) : _buildAppBar(isDark),
-          floatingActionButton:
-              selecting
-                  ? null
-                  : FloatingActionButton.extended(
-                    onPressed: _showCreateMenu,
-                    backgroundColor: AppColors.primary,
-                    foregroundColor: Colors.white,
-                    icon: const Icon(Icons.add_rounded),
-                    label: const Text('New note'),
-                  ),
-          body: _buildBody(isDark, selecting),
+        // ISSUE-2: system BACK must unwind the notepad's own levels before it
+        // leaves the screen. Without this, backing out of a folder or the
+        // folder grid dropped the user straight out of the Notepad, which
+        // reads as the navigation being broken. Order mirrors how the user got
+        // here: selection → search → folder grid → open folder → leave.
+        final canLeave =
+            !selecting &&
+            !_searching &&
+            !_browsingFolders &&
+            _provider.activeTag == null;
+        return PopScope(
+          canPop: canLeave,
+          onPopInvokedWithResult: (didPop, _) {
+            if (didPop) return;
+            if (selecting) {
+              _provider.clearSelection();
+            } else if (_searching) {
+              _toggleSearch();
+            } else if (_browsingFolders) {
+              _toggleFolders();
+            } else if (_provider.activeTag != null) {
+              _provider.clearTag();
+            }
+          },
+          child: Scaffold(
+            backgroundColor: bg,
+            appBar: selecting ? _selectionAppBar(isDark) : _buildAppBar(isDark),
+            floatingActionButton:
+                selecting
+                    ? null
+                    : FloatingActionButton.extended(
+                      onPressed: _showCreateMenu,
+                      backgroundColor: AppColors.primary,
+                      foregroundColor: Colors.white,
+                      icon: const Icon(Icons.add_rounded),
+                      label: const Text('New note'),
+                    ),
+            body: _buildBody(isDark, selecting),
+          ),
         );
       },
     );
   }
+
+  /// One toggle, used by BOTH body branches — the notes list and the folder
+  /// grid — so the way back is never missing.
+  Widget _foldersToggle(bool isDark) => _FoldersToggle(
+        browsing: _browsingFolders,
+        openTag: _provider.activeTag,
+        isDark: isDark,
+        onTap: _toggleFolders,
+      );
 
   Widget _buildBody(bool isDark, bool selecting) {
     if (_provider.isLoading) {
       return const AppListSkeleton(rows: 5, rowHeight: 92);
     }
     if (_browsingFolders && !selecting) {
-      return TagFolderGrid(
-        provider: _provider,
-        isDark: isDark,
-        onOpen: _openFolder,
+      // The toggle must stay reachable WHILE the grid is open — it is the way
+      // back to the notes. This branch returns early, so it renders the toggle
+      // itself rather than falling through to the row below. Filter chips are
+      // omitted: they narrow notes, and no note list is showing.
+      return Column(
+        children: [
+          Align(
+            alignment: Alignment.centerLeft,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(
+                vertical: AppConstants.space8,
+              ),
+              child: _foldersToggle(isDark),
+            ),
+          ),
+          Expanded(
+            child: TagFolderGrid(
+              provider: _provider,
+              isDark: isDark,
+              onOpen: _openFolder,
+            ),
+          ),
+        ],
       );
     }
     final notes = _provider.visibleNotes;
@@ -354,7 +407,17 @@ class _NotepadListScreenState extends State<NotepadListScreen> {
             onClose: _provider.clearTag,
             onBrowse: _toggleFolders,
           ),
-        if (!selecting) _FilterBar(provider: _provider, isDark: isDark),
+        // ISSUE-2 (tags-as-folders): the Folders toggle lives HERE, beside the
+        // filter chips, because that is where view-switching already is — and
+        // because putting it in the app bar squeezed Fable's title into
+        // "Note…". Composed around _FilterBar so that widget stays untouched.
+        if (!selecting)
+          Row(
+            children: [
+              _foldersToggle(isDark),
+              Expanded(child: _FilterBar(provider: _provider, isDark: isDark)),
+            ],
+          ),
         Expanded(
           child:
               notes.isEmpty
@@ -419,23 +482,6 @@ class _NotepadListScreenState extends State<NotepadListScreen> {
                 ),
               ),
       actions: [
-        // ISSUE-1 (tags-as-folders): browse tags as folders. Tinted while open
-        // or while a folder is active, so the current context is never a guess.
-        if (!_searching)
-          IconButton(
-            tooltip: _browsingFolders ? 'Back to notes' : 'Tag folders',
-            icon: Icon(
-              _browsingFolders
-                  ? Icons.close_rounded
-                  : (_provider.activeTag != null
-                      ? Icons.folder_rounded
-                      : Icons.folder_outlined),
-              color: (_browsingFolders || _provider.activeTag != null)
-                  ? AppColors.primary
-                  : null,
-            ),
-            onPressed: _toggleFolders,
-          ),
         if (!_searching && !_browsingFolders)
           IconButton(
             tooltip:
@@ -830,6 +876,79 @@ class _SectionHeader extends StatelessWidget {
           fontWeight: FontWeight.w700,
           letterSpacing: 0.9,
           color: isDark ? AppColors.textTertiaryDark : AppColors.textTertiary,
+        ),
+      ),
+    );
+  }
+}
+
+/// Folders entry point for the tag-as-folder view — a chip matching the filter
+/// row it sits beside. Tinted while the grid is open or a folder is active, so
+/// the current context is never a guess.
+class _FoldersToggle extends StatelessWidget {
+  const _FoldersToggle({
+    required this.browsing,
+    required this.openTag,
+    required this.isDark,
+    required this.onTap,
+  });
+
+  final bool browsing;
+  final String? openTag;
+  final bool isDark;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final active = browsing || openTag != null;
+    final fg = active
+        ? Colors.white
+        : (isDark ? AppColors.textSecondaryDark : AppColors.textSecondary);
+    return Padding(
+      padding: const EdgeInsets.only(
+        left: AppConstants.space16,
+        right: AppConstants.space8,
+      ),
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          decoration: BoxDecoration(
+            color: active
+                ? AppColors.primary
+                : (isDark ? AppColors.surfaceDark : AppColors.surface),
+            borderRadius: BorderRadius.circular(AppConstants.chipRadius),
+            border: Border.all(
+              color: active
+                  ? AppColors.primary
+                  : (isDark
+                      ? AppColors.textTertiaryDark.withValues(alpha: 0.35)
+                      : AppColors.textTertiary.withValues(alpha: 0.35)),
+            ),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                browsing
+                    ? Icons.close_rounded
+                    : (openTag != null
+                        ? Icons.folder_rounded
+                        : Icons.folder_outlined),
+                size: 15,
+                color: fg,
+              ),
+              const SizedBox(width: 6),
+              Text(
+                browsing ? 'Close' : 'Folders',
+                style: AppTypography.labelSmall.copyWith(
+                  fontWeight: FontWeight.w600,
+                  color: fg,
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );

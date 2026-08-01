@@ -371,6 +371,7 @@ class GroupMealConfig extends Equatable {
     this.vacationModeEnabled = false,
     this.vacationRequiresApproval = false,
     this.billingCycleStartDay,
+    this.billingCycleChangeUsed = false,
     this.mealPricingEnabled = false,
     this.billSkippedMeals = false,
     this.billAbsentMeals = false,
@@ -400,6 +401,11 @@ class GroupMealConfig extends Equatable {
   /// the billing cycle starts; days missing from a short month clamp to its
   /// last calendar day server-side. Null = calendar month.
   final int? billingCycleStartDay;
+
+  /// True once this group has consumed its ONE-TIME billing-cycle-start-day
+  /// change. Server-side truth (`billingCycleChangedAt`) — the client only
+  /// mirrors it to lock the control; the backend rejects any further change.
+  final bool billingCycleChangeUsed;
 
   /// Additive: when true, meals carry a ₹ price shown to students and used for
   /// billing/exports. When false, no price UI appears anywhere.
@@ -445,6 +451,7 @@ class GroupMealConfig extends Equatable {
         ),
         vacationModeEnabled: j['vacationModeEnabled'] ?? false,
         vacationRequiresApproval: j['vacationRequiresApproval'] ?? false,
+        billingCycleChangeUsed: j['billingCycleChangeUsed'] == true,
         billingCycleStartDay: (j['billingCycleStartDay'] is num)
             ? (j['billingCycleStartDay'] as num).toInt()
             : null,
@@ -489,6 +496,7 @@ class GroupMealConfig extends Equatable {
     bool? vacationModeEnabled,
     bool? vacationRequiresApproval,
     int? billingCycleStartDay,
+    bool? billingCycleChangeUsed,
     bool clearBillingCycleStartDay = false,
     bool? mealPricingEnabled,
     bool? billSkippedMeals,
@@ -505,6 +513,8 @@ class GroupMealConfig extends Equatable {
         vacationModeEnabled: vacationModeEnabled ?? this.vacationModeEnabled,
         vacationRequiresApproval:
             vacationRequiresApproval ?? this.vacationRequiresApproval,
+        billingCycleChangeUsed:
+            billingCycleChangeUsed ?? this.billingCycleChangeUsed,
         billingCycleStartDay: clearBillingCycleStartDay
             ? null
             : (billingCycleStartDay ?? this.billingCycleStartDay),
@@ -525,6 +535,7 @@ class GroupMealConfig extends Equatable {
         vacationModeEnabled,
         vacationRequiresApproval,
         billingCycleStartDay,
+        billingCycleChangeUsed,
         mealPricingEnabled,
         billSkippedMeals,
         billAbsentMeals,

@@ -48,6 +48,7 @@ class UserModel extends Equatable {
     this.loginPreference = 'email',
     this.createdAt,
     this.groupFunctionalRole,
+    this.membershipStatus,
   });
 
   final String id;
@@ -97,6 +98,22 @@ class UserModel extends Equatable {
   /// global account role) is left untouched so any isAdmin gating is unaffected.
   final UserRole? groupFunctionalRole;
 
+  /// Live-Test-15 ISSUE-1: the member's `GroupMember.status` for the group
+  /// currently in context ('active' | 'pending' | 'blocked' | 'removed').
+  ///
+  /// SERVER TRUTH — the backend already emits it on every member row
+  /// (`GroupMemberSerializer.toResponse`), it was simply discarded by the
+  /// client. Null for account-level user objects (a plain `/users/me` payload
+  /// carries no membership), which is why every consumer treats null as
+  /// "not a member row / unknown" and falls back to prior behaviour.
+  ///
+  /// Display + affordance gating only — enforcement stays server-side.
+  final String? membershipStatus;
+
+  /// True when this member row is blocked in the group currently in context.
+  /// Null-safe: an account-level user object is never "blocked" here.
+  bool get isBlockedMember => membershipStatus == 'blocked';
+
   /// Resolved group membership list.
   ///
   /// Falls back to [groupId] when [groupIds] is empty so that users
@@ -144,6 +161,9 @@ class UserModel extends Equatable {
             j['createdAt'] != null ? DateTime.parse(j['createdAt']) : null,
         groupFunctionalRole:
             UserRole.fromName(j['groupFunctionalRole'] as String?),
+        // Round-trips through the SWR cache (see toJson) so a cache-first
+        // paint can never show a blocked member as active.
+        membershipStatus: j['membershipStatus'] as String?,
       );
 
   Map<String, dynamic> toJson() => {
@@ -167,6 +187,7 @@ class UserModel extends Equatable {
         'loginPreference': loginPreference,
         'createdAt': createdAt?.toIso8601String(),
         'groupFunctionalRole': groupFunctionalRole?.name,
+        'membershipStatus': membershipStatus,
       };
 
   // Sentinel used to distinguish "caller passed null intentionally" from
@@ -216,6 +237,8 @@ class UserModel extends Equatable {
     Object? createdAt = _absent,
     /// Pass [UserModel.absent] to explicitly clear this field to null.
     Object? groupFunctionalRole = _absent,
+    /// Pass [UserModel.absent] to explicitly clear this field to null.
+    Object? membershipStatus = _absent,
   }) =>
       UserModel(
         id: id,
@@ -246,6 +269,9 @@ class UserModel extends Equatable {
         groupFunctionalRole: identical(groupFunctionalRole, _absent)
             ? this.groupFunctionalRole
             : groupFunctionalRole as UserRole?,
+        membershipStatus: identical(membershipStatus, _absent)
+            ? this.membershipStatus
+            : membershipStatus as String?,
       );
 
   /// Sentinel value to pass for nullable [copyWith] fields when you want to
@@ -271,5 +297,7 @@ class UserModel extends Equatable {
         emailVerified,
         loginPreference,
         groupFunctionalRole,
+        // ISSUE-1: part of equality so a status flip repaints the tile.
+        membershipStatus,
       ];
 }

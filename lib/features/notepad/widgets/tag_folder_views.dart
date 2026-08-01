@@ -54,8 +54,7 @@ class TagFolderGrid extends StatelessWidget {
             final n = counts[tag] ?? 0;
             // Stable per-tag accent — the same folder keeps its colour across
             // sessions because it is derived from the tag text itself.
-            final accent =
-                NotePalette.accent((tag.hashCode.abs() % 6) + 1, isDark);
+            final accent = tagAccent(tag, isDark);
             return GestureDetector(
               behavior: HitTestBehavior.opaque,
               onTap: () => onOpen(tag),
@@ -247,3 +246,12 @@ class OpenFolderHeader extends StatelessWidget {
     );
   }
 }
+
+/// The stable accent for a tag — the SAME colour wherever that tag appears:
+/// its folder tile, the open-folder header, and its chip on a note card.
+///
+/// Derived from the tag text itself, so a folder keeps its colour across
+/// sessions with nothing persisted. Kept here beside [TagFolderGrid] so the
+/// grid and the chips can never drift onto different palettes.
+Color tagAccent(String tag, bool isDark) =>
+    NotePalette.accent((tag.hashCode.abs() % 6) + 1, isDark);

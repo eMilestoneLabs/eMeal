@@ -1,4 +1,9 @@
+import 'dart:async';
 import 'dart:io';
+import 'dart:math' as math;
+import 'dart:typed_data';
+import 'package:flutter/foundation.dart' show compute;
+import 'package:smart_meal_management/core/config/env_config.dart';
 import 'package:smart_meal_management/core/utils/time_format.dart';
 import 'package:excel/excel.dart' as xls;
 import 'package:path_provider/path_provider.dart';
@@ -182,22 +187,67 @@ class ExportService {
     bool billSkippedMeals = false,
     // Live-Test-7 ISSUE-4: independent Absent policy (null = follow Skip).
     bool? billAbsentMeals,
+    // Live-Test-15 ISSUE-3: rows/summaries the CALLER already computed (the
+    // preview screen computes exactly these to render itself). Supplying them
+    // removes a full duplicate O(members x meals x days) pass on the UI thread.
+    // Omit them and the original self-computing behaviour is used unchanged.
+    List<BillingRow>? precomputedRows,
+    List<BillingSummary>? precomputedSummaries,
   }) async {
     // Issue 3 & 7: pass today's published overlay + vacation members so exported
     // billing matches the on-screen figures (per-day window auto-skip + vacation
     // exclusion) instead of the master-window / no-vacation fallback.
-    final rows = BillingService.buildRows(
-      records: records,
-      meals: meals,
-      from: from,
-      to: to,
-      todayMeals: todayMeals,
-      vacationUserIds: vacationUserIds,
-    );
-    final summaries =
+    final rows = precomputedRows ??
+        BillingService.buildRows(
+          records: records,
+          meals: meals,
+          from: from,
+          to: to,
+          todayMeals: todayMeals,
+          vacationUserIds: vacationUserIds,
+        );
+    final summaries = precomputedSummaries ??
         BillingService.summarize(rows,
             billSkippedMeals: billSkippedMeals,
             billAbsentMeals: billAbsentMeals);
+
+    // ISSUE-3: serialization (layout + render of every page) is the heavy
+    // stage. Above the configured row threshold it runs in a BACKGROUND
+    // ISOLATE so the UI thread keeps producing frames — the app no longer
+    // freezes. Below it, the direct call is cheaper than the isolate spawn.
+    final job = _PdfJob(
+      rows: rows,
+      summaries: summaries,
+      groupName: groupName,
+      pricingEnabled: pricingEnabled,
+      dateRangeLabel: dateRangeLabel,
+      financialsByUser: financialsByUser,
+      billSkippedMeals: billSkippedMeals,
+      billAbsentMeals: billAbsentMeals,
+    );
+    final bytes = rows.length >= EnvConfig.current.exportIsolateRowThreshold
+        ? await compute(_buildPdfBytesWorker, job)
+        : await _buildPdfBytes(job);
+
+    await _shareBytes(
+      bytes,
+      'attendance_${_safe(groupName)}_${_stamp()}.pdf',
+      'Attendance Report — $groupName',
+    );
+  }
+
+  /// Pure document build + serialize. No platform channels, no plugin access
+  /// (this codebase loads NO custom fonts, so the built-in Helvetica metrics
+  /// are used) — which is exactly what makes it isolate-safe.
+  Future<Uint8List> _buildPdfBytes(_PdfJob job) async {
+    final rows = job.rows;
+    final summaries = job.summaries;
+    final groupName = job.groupName;
+    final pricingEnabled = job.pricingEnabled;
+    final dateRangeLabel = job.dateRangeLabel;
+    final financialsByUser = job.financialsByUser;
+    final billSkippedMeals = job.billSkippedMeals;
+    final billAbsentMeals = job.billAbsentMeals;
     final pdf = pw.Document();
 
     pdf.addPage(
@@ -260,11 +310,7 @@ class ExportService {
       ),
     );
 
-    await _shareBytes(
-      await pdf.save(),
-      'attendance_${_safe(groupName)}_${_stamp()}.pdf',
-      'Attendance Report — $groupName',
-    );
+    return pdf.save();
   }
 
   pw.Widget _pdfSummaryBlock(
@@ -355,18 +401,55 @@ class ExportService {
     bool billSkippedMeals = false,
     // Live-Test-7 ISSUE-4: independent Absent policy (null = follow Skip).
     bool? billAbsentMeals,
+    // ISSUE-3: caller-supplied rows/summaries (see exportPdf) — skips a full
+    // duplicate billing pass. Omit for the original self-computing behaviour.
+    List<BillingRow>? precomputedRows,
+    List<BillingSummary>? precomputedSummaries,
   }) async {
-    final rows = BillingService.buildRows(
-        records: records,
-        meals: meals,
-        from: from,
-        to: to,
-        todayMeals: todayMeals,
-        vacationUserIds: vacationUserIds);
-    final summaries =
+    final rows = precomputedRows ??
+        BillingService.buildRows(
+            records: records,
+            meals: meals,
+            from: from,
+            to: to,
+            todayMeals: todayMeals,
+            vacationUserIds: vacationUserIds);
+    final summaries = precomputedSummaries ??
         BillingService.summarize(rows,
             billSkippedMeals: billSkippedMeals,
             billAbsentMeals: billAbsentMeals);
+
+    final job = _PdfJob(
+      rows: rows,
+      summaries: summaries,
+      groupName: groupName,
+      pricingEnabled: pricingEnabled,
+      dateRangeLabel: dateRangeLabel,
+      financialsByUser: financialsByUser,
+      billSkippedMeals: billSkippedMeals,
+      billAbsentMeals: billAbsentMeals,
+    );
+    final bytes = rows.length >= EnvConfig.current.exportIsolateRowThreshold
+        ? await compute(_buildXlsxBytesWorker, job)
+        : await _buildXlsxBytes(job);
+
+    await _shareBytes(
+      bytes,
+      'attendance_${_safe(groupName)}_${_stamp()}.xlsx',
+      'Attendance Export — $groupName',
+    );
+  }
+
+  /// Pure workbook build + encode — isolate-safe (no plugin access).
+  Future<Uint8List> _buildXlsxBytes(_PdfJob job) async {
+    final rows = job.rows;
+    final summaries = job.summaries;
+    final groupName = job.groupName;
+    final pricingEnabled = job.pricingEnabled;
+    final dateRangeLabel = job.dateRangeLabel;
+    final financialsByUser = job.financialsByUser;
+    final billSkippedMeals = job.billSkippedMeals;
+    final billAbsentMeals = job.billAbsentMeals;
 
     final book = xls.Excel.createExcel();
 
@@ -449,11 +532,7 @@ class ExportService {
     if (bytes == null) {
       throw Exception('Failed to encode Excel file');
     }
-    await _shareBytes(
-      bytes,
-      'attendance_${_safe(groupName)}_${_stamp()}.xlsx',
-      'Attendance Export — $groupName',
-    );
+    return Uint8List.fromList(bytes);
   }
 
   // ── Event Guest Export (unchanged) ──────────────────────────────────────────
@@ -598,13 +677,56 @@ class ExportService {
   Future<void> _shareBytes(
       List<int> bytes, String fileName, String subject) async {
     final dir = await getTemporaryDirectory();
+    // ISSUE-3: prune PREVIOUS exports before writing this one. Deliberately
+    // NOT after the share: the receiving app (WhatsApp/Drive/mail) reads the
+    // shared URI asynchronously once the sheet closes, so deleting the file we
+    // just handed over could truncate or fail the send. Pruning on the next
+    // run is race-free and bounds temp growth (files accumulated forever).
+    unawaited(_pruneStaleExports(dir));
     final file = File('${dir.path}/$fileName');
     await file.writeAsBytes(bytes);
     await Share.shareXFiles([XFile(file.path)], subject: subject);
   }
 
+  /// Best-effort cleanup of exports older than [EnvConfig.exportTempTtl].
+  /// Fully fail-soft: temp housekeeping must never break an export.
+  Future<void> _pruneStaleExports(Directory dir) async {
+    try {
+      final cutoff = DateTime.now().subtract(EnvConfig.current.exportTempTtl);
+      await for (final e in dir.list(followLinks: false)) {
+        if (e is! File) continue;
+        final name = e.path.split(Platform.pathSeparator).last;
+        // Only ever touch files THIS service created.
+        if (!_exportFilePattern.hasMatch(name)) continue;
+        try {
+          if ((await e.stat()).modified.isBefore(cutoff)) await e.delete();
+        } catch (_) {
+          // File vanished or is locked by the OS — skip it.
+        }
+      }
+    } catch (_) {
+      // Temp dir unreadable — nothing to prune, never surface to the user.
+    }
+  }
+
+  /// Matches only this service's own generated exports, so pruning can never
+  /// delete a file belonging to another feature sharing the temp directory.
+  /// The random suffix group is OPTIONAL so exports written by builds from
+  /// BEFORE the collision-safe stamp (`<name>_<ms>.pdf`) are also cleaned up —
+  /// otherwise those legacy leftovers would linger in temp forever.
+  static final RegExp _exportFilePattern =
+      RegExp(r'^(attendance|event_guests)_.*_\d+(_[a-z0-9]+)?\.(pdf|xlsx)$');
+
   String _safe(String s) => s.replaceAll(RegExp(r'[^A-Za-z0-9]+'), '_');
-  String _stamp() => DateTime.now().millisecondsSinceEpoch.toString();
+
+  /// UNI-033: export filenames must never collide. millisecondsSinceEpoch
+  /// alone collides when two exports land in the same millisecond, so a short
+  /// random suffix is appended.
+  String _stamp() =>
+      '${DateTime.now().millisecondsSinceEpoch}_'
+      '${(_rand.nextInt(1 << 32)).toRadixString(36)}';
+
+  static final math.Random _rand = math.Random();
 
   String _formatDate(DateTime dt) =>
       '${dt.day.toString().padLeft(2, '0')}/${dt.month.toString().padLeft(2, '0')}/${dt.year}';
@@ -628,3 +750,45 @@ class ExportService {
   }
 
 }
+
+// ── ISSUE-3: isolate offload plumbing ────────────────────────────────────────
+
+/// Immutable, isolate-transferable payload for a report build.
+///
+/// Holds ONLY plain data (strings, bools, nums, DateTimes, enums and lists of
+/// them) so `compute` can copy it across the isolate boundary. Shared by the
+/// PDF and XLSX builders — both render the same rows/summaries, so one payload
+/// type serves both (DRY; no parallel duplicate class).
+class _PdfJob {
+  const _PdfJob({
+    required this.rows,
+    required this.summaries,
+    required this.groupName,
+    required this.pricingEnabled,
+    required this.dateRangeLabel,
+    required this.financialsByUser,
+    required this.billSkippedMeals,
+    required this.billAbsentMeals,
+  });
+
+  final List<BillingRow> rows;
+  final List<BillingSummary> summaries;
+  final String groupName;
+  final bool pricingEnabled;
+  final String? dateRangeLabel;
+  final Map<String, MemberExportFinancials> financialsByUser;
+  final bool billSkippedMeals;
+  final bool? billAbsentMeals;
+}
+
+/// Top-level isolate entry points (required by `compute`).
+///
+/// [ExportService] is a STATELESS singleton (private ctor, no mutable fields),
+/// so resolving `instance` inside the worker isolate is safe and keeps every
+/// existing layout/formatting method reachable unchanged — no rendering code
+/// was duplicated or rewritten for the isolate path.
+Future<Uint8List> _buildPdfBytesWorker(_PdfJob job) =>
+    ExportService.instance._buildPdfBytes(job);
+
+Future<Uint8List> _buildXlsxBytesWorker(_PdfJob job) =>
+    ExportService.instance._buildXlsxBytes(job);

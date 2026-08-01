@@ -262,6 +262,7 @@ Future<Set<String>> _pumpDashboard(
 }
 
 void main() {
+  _headerLabelTests();
   const sizes = <String, Size>{
     'small phone': Size(320, 640),
     'large phone': Size(412, 915),
@@ -288,4 +289,56 @@ void main() {
       await tester.binding.setSurfaceSize(null);
     });
   }
+}
+
+/// Live-Test-14 ISSUE-3B — the header label, asserted on the REAL screen.
+///
+/// The mirror test in admin_header_group_binding_test.dart pins the rule; this
+/// one proves the screen actually renders it, since a mirror can drift from the
+/// widget it mirrors.
+class _AllGroupsProvider extends _FakeDashboardProvider {
+  @override
+  String? get selectedGroupId => null;
+  @override
+  GroupModel? get selectedGroup => null; // "All groups"
+  // `groupCount` reads the private `_groups` field, which a getter override
+  // cannot reach — so the fake states it explicitly to match `groups`.
+  @override
+  int get groupCount => 2;
+}
+
+Future<void> _pumpWith(WidgetTester tester, AdminDashboardProvider p) async {
+  await tester.binding.setSurfaceSize(const Size(430, 932));
+  await tester.pumpWidget(
+    MaterialApp(
+      home: AuthProviderScope(
+        provider: AuthProvider(),
+        child: AdminDashboardScope(
+          notifier: p,
+          child: const AdminDashboardScreen(),
+        ),
+      ),
+    ),
+  );
+  await tester.pump();
+}
+
+void _headerLabelTests() {
+  testWidgets('a selected group renders as the header label', (tester) async {
+    await _pumpWith(tester, _FakeDashboardProvider()); // selectedGroup = _groupA
+    expect(find.textContaining(_groupA.name), findsWidgets,
+        reason: 'header must show the SELECTED group, not the organisation');
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+  });
+
+  testWidgets('"All groups" renders organisation + group count',
+      (tester) async {
+    await _pumpWith(tester, _AllGroupsProvider());
+    // Two distinct lines — organisation, then the count beneath it.
+    expect(find.text('Midnapore Namaste Mess'), findsWidgets,
+        reason: 'organisation on its own line');
+    expect(find.text('2 groups'), findsOneWidget,
+        reason: 'group count on a SECOND line, not appended to the name');
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+  });
 }

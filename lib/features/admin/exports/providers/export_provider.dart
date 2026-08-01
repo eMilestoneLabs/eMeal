@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart';
+import 'package:smart_meal_management/data/services/billing_service.dart';
 import 'package:smart_meal_management/data/services/export_service.dart';
 import 'package:smart_meal_management/shared/models/attendance_model.dart';
 import 'package:smart_meal_management/shared/models/meal_model.dart';
@@ -54,6 +55,10 @@ class ExportProvider extends ChangeNotifier {
     bool billSkippedMeals = false,
     // Live-Test-7 ISSUE-4: independent Absent policy (null = follow Skip).
     bool? billAbsentMeals,
+    // Live-Test-15 ISSUE-3: rows/summaries the preview already computed —
+    // forwarded so the export does not repeat the full billing pass.
+    List<BillingRow>? precomputedRows,
+    List<BillingSummary>? precomputedSummaries,
   }) async {
     if (_isExporting) return;
     _isExporting = true;
@@ -76,6 +81,8 @@ class ExportProvider extends ChangeNotifier {
             financialsByUser: financialsByUser,
             billSkippedMeals: billSkippedMeals,
             billAbsentMeals: billAbsentMeals,
+            precomputedRows: precomputedRows,
+            precomputedSummaries: precomputedSummaries,
           );
         // RPT-001: CSV export removed — Excel + PDF only.
         default: // 'xlsx'
@@ -91,6 +98,8 @@ class ExportProvider extends ChangeNotifier {
             financialsByUser: financialsByUser,
             billSkippedMeals: billSkippedMeals,
             billAbsentMeals: billAbsentMeals,
+            precomputedRows: precomputedRows,
+            precomputedSummaries: precomputedSummaries,
           );
       }
       _exportSuccess = true;

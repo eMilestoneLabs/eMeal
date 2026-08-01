@@ -317,7 +317,10 @@ class _VacationRequestsScreenState extends State<VacationRequestsScreen> {
         }, outlined: true),
       ];
     }
-    if (r.isApproved) {
+    // ISSUE-2B (USER-LOCKED): an ended vacation is a permanent record — no
+    // role may cancel it, so the affordance is not offered. Single source of
+    // truth with the student screen and the server guard.
+    if (r.isApproved && !r.hasEnded()) {
       return [
         _btn('Cancel vacation', AppColors.warning, () async {
           final note = await _askNote('Cancel vacation');

@@ -223,6 +223,10 @@ class AdminGroupProvider extends ChangeNotifier {
     // Clear stale meal/member lists immediately so UI shows loading state
     _selectedGroupMeals = [];
     _selectedGroupMembers = [];
+    // ISSUE-1 (group isolation): drop the optimistic blocked overlay on every
+    // group switch so a member blocked in the previous group can never render
+    // as blocked here. Server truth repopulates on the member load below.
+    clearBlockedOverlay();
     notifyListeners();
 
     if (_selectedGroup == null) {
@@ -751,16 +755,48 @@ class AdminGroupProvider extends ChangeNotifier {
 
   // ── Block / Unblock ───────────────────────────────────────────────────────
 
-  /// Local cache of blocked user IDs for fast UI checks.
+  /// OPTIMISTIC-ONLY overlay of `groupId|userId` keys blocked in THIS session.
   ///
-  /// Kept in sync with [GroupRepository._store] via [blockMember] /
-  /// [unblockMember]. Because the repository store is static, the student
-  /// join flow will see the blocked state immediately in the same session.
+  /// Live-Test-15 ISSUE-1: this used to be the ONLY source of blocked state,
+  /// which made the feature unusable — the provider is constructed fresh in
+  /// `initState` on every open of the group detail screen, so the set was
+  /// always empty and `isMemberBlocked` always returned false. Server truth
+  /// (`UserModel.membershipStatus`) is now authoritative; this overlay only
+  /// covers the sub-second window between a successful mutation and the next
+  /// list refresh.
+  ///
+  /// Keys are GROUP-SCOPED (was a flat userId set — a member blocked in group
+  /// A rendered as blocked in group B) and cleared on group switch + logout,
+  /// per the org/group/user cache-isolation rule.
   final Set<String> _blockedIds = {};
+
+  static String _blockKey(String groupId, String userId) => '$groupId|$userId';
 
   Set<String> get blockedIds => Set.unmodifiable(_blockedIds);
 
-  bool isMemberBlocked(String userId) => _blockedIds.contains(userId);
+  /// Server truth first, optimistic overlay second.
+  ///
+  /// [member] is the row from [selectedGroupMembers]; when omitted the lookup
+  /// falls back to the current member list so existing callers keep working.
+  bool isMemberBlocked(String userId, {UserModel? member}) {
+    UserModel? row = member;
+    if (row == null) {
+      for (final m in _selectedGroupMembers) {
+        if (m.id == userId) {
+          row = m;
+          break;
+        }
+      }
+    }
+    final status = row?.membershipStatus;
+    if (status != null) return status == 'blocked';
+    final gid = _selectedGroup?.id;
+    return gid != null && _blockedIds.contains(_blockKey(gid, userId));
+  }
+
+  /// Drops the optimistic overlay. Called on group switch and logout so no
+  /// blocked flag can survive a context change.
+  void clearBlockedOverlay() => _blockedIds.clear();
 
   Future<bool> blockMember({
     required String groupId,
@@ -775,11 +811,20 @@ class AdminGroupProvider extends ChangeNotifier {
     );
     switch (result) {
       case Ok():
-        _blockedIds.add(userId);
-        // Remove from UI member list immediately
-        _selectedGroupMembers =
-            _selectedGroupMembers.where((m) => m.id != userId).toList();
-        _cacheMembers(orgId, groupId); // write-through: no stale list
+        _blockedIds.add(_blockKey(groupId, userId));
+        // ISSUE-1: FLIP the row in place — do NOT remove it. The old code
+        // deleted the member locally and wrote that truncated list through to
+        // `group_members:{org}:{group}`, so the cache deliberately disagreed
+        // with the server (whose roster correctly keeps blocked members). The
+        // next network refresh then re-added the member looking perfectly
+        // normal — the "blocked student reappears" symptom. Flipping in place
+        // keeps cache ≡ server AND makes the Blocked chip + Unblock action
+        // reachable.
+        _selectedGroupMembers = [
+          for (final m in _selectedGroupMembers)
+            if (m.id == userId) m.copyWith(membershipStatus: 'blocked') else m,
+        ];
+        _cacheMembers(orgId, groupId); // write-through: cache == server truth
         // Update the local _groups copy to reflect blockedMemberIds change
         final idx = _groups.indexWhere((g) => g.id == groupId);
         if (idx != -1) {
@@ -815,7 +860,15 @@ class AdminGroupProvider extends ChangeNotifier {
     );
     switch (result) {
       case Ok():
-        _blockedIds.remove(userId);
+        _blockedIds.remove(_blockKey(groupId, userId));
+        // ISSUE-1: mirror the block path — flip the row back to active and
+        // write through, so the restored member repaints instantly without a
+        // manual refresh.
+        _selectedGroupMembers = [
+          for (final m in _selectedGroupMembers)
+            if (m.id == userId) m.copyWith(membershipStatus: 'active') else m,
+        ];
+        _cacheMembers(orgId, groupId);
         // Update the local _groups copy to reflect unblock
         final idx = _groups.indexWhere((g) => g.id == groupId);
         if (idx != -1) {

@@ -764,6 +764,21 @@ class AdminDashboardScope extends InheritedNotifier<AdminDashboardProvider> {
     required super.child,
   }) : super(notifier: notifier);
 
+  /// Null-safe lookup for screens that may render OUTSIDE the admin shell.
+  ///
+  /// [AdminGroupsScreen], for one, is also pushed as a plain MaterialPageRoute
+  /// from the notice feed — that route is a sibling of the ShellRoute, so no
+  /// [AdminDashboardScope] is above it. [of] asserts and then force-unwraps,
+  /// which in a RELEASE build (asserts stripped) is a null-check crash. Callers
+  /// that only want optional context must use this instead.
+  /// NON-SUBSCRIBING on purpose. `dependOnInheritedWidgetOfExactType` would
+  /// register the CALLER for a rebuild on every notify — and this provider
+  /// notifies on each realtime event (800 ms debounce), refresh and group
+  /// switch. The one caller wants a single value while opening a sheet, so a
+  /// subscription would repaint an unrelated screen for nothing.
+  static AdminDashboardProvider? maybeOf(BuildContext context) =>
+      context.getInheritedWidgetOfExactType<AdminDashboardScope>()?.notifier;
+
   static AdminDashboardProvider of(BuildContext context) {
     final scope =
         context.dependOnInheritedWidgetOfExactType<AdminDashboardScope>();

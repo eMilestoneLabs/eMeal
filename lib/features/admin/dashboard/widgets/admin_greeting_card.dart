@@ -11,11 +11,18 @@ class AdminGreetingCard extends StatelessWidget {
     super.key,
     required this.adminName,
     required this.orgName,
+    this.orgSubtitle,
     this.roleLabel,
   });
 
   final String adminName;
   final String orgName;
+
+  /// Optional second line under [orgName]. Used for "All groups", where no
+  /// single group applies and the wider context is the organisation plus how
+  /// many groups it holds — rendered on its own line so neither value is
+  /// crowded out on a narrow phone. Null for a normal single-group header.
+  final String? orgSubtitle;
 
   /// #8: per-group functional role label for the selected group
   /// (e.g. "Hostel Admin"). null -> shows the generic "Admin" badge.
@@ -129,14 +136,33 @@ class AdminGreetingCard extends StatelessWidget {
                     size: 14, color: Colors.white70),
                 const SizedBox(width: 6),
                 Expanded(
-                  child: Text(
-                    orgName,
-                    style: const TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w500,
-                      color: Colors.white70,
-                    ),
-                    overflow: TextOverflow.ellipsis,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        orgName,
+                        style: const TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w500,
+                          color: Colors.white70,
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      if (orgSubtitle != null)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 2),
+                          child: Text(
+                            orgSubtitle!,
+                            style: const TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w500,
+                              color: Colors.white60,
+                            ),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                    ],
                   ),
                 ),
                 const Icon(Icons.calendar_today_rounded,

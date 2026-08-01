@@ -112,9 +112,18 @@ Future<AdminDashboardProvider> loadedProvider() async {
   return p;
 }
 
-/// Exactly what the dashboard screen hands to the greeting card.
+/// Mirrors `_AdminDashboardScreenState._headerLabel`.
 String headerLabel(AdminDashboardProvider p) =>
     p.selectedGroup?.name ?? p.orgName;
+
+/// Mirrors `_AdminDashboardScreenState._headerSubtitle` — the SECOND line,
+/// shown only for "All groups".
+String? headerSubtitle(AdminDashboardProvider p) {
+  if (p.selectedGroup != null) return null;
+  final count = p.groupCount;
+  if (count <= 0) return null;
+  return '$count ${count == 1 ? 'group' : 'groups'}';
+}
 
 void main() {
   // `load` binds the realtime service, which reaches for WidgetsBinding.
@@ -146,12 +155,24 @@ void main() {
     expect(headerLabel(p), 'Midnapore Namaste Mess');
   });
 
-  test('with no group selected it falls back to the organisation', () async {
+  test('"All groups" shows the organisation with the count on line TWO',
+      () async {
     final p = await loadedProvider();
 
     p.selectGroup(null);
 
-    expect(headerLabel(p), AdminDashboardProvider.kOrgNamePlaceholder,
-        reason: '"All groups" has no single group — org is the right context');
+    // Two separate lines, never one crowded string.
+    expect(headerLabel(p), AdminDashboardProvider.kOrgNamePlaceholder);
+    expect(headerSubtitle(p), '2 groups');
+  });
+
+  test('a selected group has NO second line', () async {
+    final p = await loadedProvider();
+
+    p.selectGroup(_second.id);
+
+    expect(headerLabel(p), 'Tata Office Cafeteria');
+    expect(headerSubtitle(p), isNull,
+        reason: 'a single group header needs nothing beyond its name');
   });
 }

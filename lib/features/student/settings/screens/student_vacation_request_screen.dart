@@ -444,7 +444,9 @@ class _StudentVacationRequestScreenState
       'cancelled' => AppColors.textTertiary,
       _ => AppColors.warning,
     };
-    final canCancel = r.isPending || r.isApproved;
+    // ISSUE-2B (USER-LOCKED): approved + ended => permanent record, never
+    // cancellable. Shared getter, identical to the admin screen + server rule.
+    final canCancel = r.isCancellable;
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
       padding: const EdgeInsets.all(14),

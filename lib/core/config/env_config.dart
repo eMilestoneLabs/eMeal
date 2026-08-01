@@ -27,6 +27,8 @@ class EnvConfig {
     required this.retryBaseDelayMs,
     required this.cacheMaxAgeMs,
     required this.imageCacheMaxBytes,
+    required this.exportTempTtlMs,
+    required this.exportIsolateRowThreshold,
   });
 
   // ── API ────────────────────────────────────────────────────────────────────
@@ -93,6 +95,20 @@ class EnvConfig {
   /// only. Configurable; never hardcoded at the call site.
   final int imageCacheMaxBytes;
 
+  /// Live-Test-15 ISSUE-3 — max age (ms) of a generated PDF/Excel export left
+  /// in the OS temp directory before the NEXT export prunes it.
+  ///
+  /// Pruning happens on the next run, never on the file just handed to the
+  /// share sheet: the receiving app (WhatsApp, Drive, mail) reads the URI
+  /// ASYNCHRONOUSLY after the sheet closes, so deleting it immediately can
+  /// truncate or fail the send. Configurable; never hardcoded.
+  final int exportTempTtlMs;
+
+  /// Row count at or above which PDF/Excel serialization is moved to a
+  /// background isolate. Below it the main-isolate path is cheaper than the
+  /// isolate spawn + data copy. Configurable; never hardcoded at the call site.
+  final int exportIsolateRowThreshold;
+
   // ── Derived helpers ────────────────────────────────────────────────────────
 
   /// Full versioned API prefix. e.g. `https://api.emilestone.com/v1`
@@ -103,6 +119,7 @@ class EnvConfig {
   Duration get sendTimeout => Duration(milliseconds: sendTimeoutMs);
   Duration get http2IdleTimeout => Duration(milliseconds: http2IdleTimeoutMs);
   Duration get cacheMaxAge => Duration(milliseconds: cacheMaxAgeMs);
+  Duration get exportTempTtl => Duration(milliseconds: exportTempTtlMs);
 
   /// HTTP/2 only works over TLS (h2 via ALPN), so it is enabled only when the
   /// master flag is on AND the base URL is HTTPS (never for local http dev).
@@ -129,6 +146,8 @@ class EnvConfig {
     retryBaseDelayMs: 300,
     cacheMaxAgeMs: 604800000, // 7 days
     imageCacheMaxBytes: 50331648, // 48 MiB decoded-image RAM ceiling
+    exportTempTtlMs: 86400000, // 24 h — prune stale exports on next run
+    exportIsolateRowThreshold: 400, // offload serialization above this
   );
 
   static const EnvConfig _staging = EnvConfig._(
@@ -147,6 +166,8 @@ class EnvConfig {
     retryBaseDelayMs: 300,
     cacheMaxAgeMs: 604800000, // 7 days
     imageCacheMaxBytes: 50331648, // 48 MiB decoded-image RAM ceiling
+    exportTempTtlMs: 86400000, // 24 h — prune stale exports on next run
+    exportIsolateRowThreshold: 400, // offload serialization above this
   );
 
   static const EnvConfig _production = EnvConfig._(
@@ -169,6 +190,8 @@ class EnvConfig {
     retryBaseDelayMs: 300,
     cacheMaxAgeMs: 604800000, // 7 days
     imageCacheMaxBytes: 50331648, // 48 MiB decoded-image RAM ceiling
+    exportTempTtlMs: 86400000, // 24 h — prune stale exports on next run
+    exportIsolateRowThreshold: 400, // offload serialization above this
   );
 
   // ── Active config resolver ─────────────────────────────────────────────────

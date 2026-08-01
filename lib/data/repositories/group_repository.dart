@@ -266,12 +266,20 @@ class GroupRepository implements IGroupRepository {
     // (m['functionalRole']), not the nested account profile. Carry it onto the
     // UserModel WITHOUT touching [role] so admin gating (isAdmin) is unchanged.
     final groupRole = UserRole.fromName(m['functionalRole'] as String?);
+    // Live-Test-15 ISSUE-1: the membership STATUS also lives on the OUTER
+    // record, not the nested account profile. It used to be read only by the
+    // no-profile fallback below — which never runs in production, because the
+    // backend include always supplies `user`. The blocked flag therefore never
+    // reached the UI, leaving the "Blocked" chip and "Unblock Member" action
+    // permanently unreachable. Carry it on BOTH branches now.
+    final status = m['status'] as String?;
     final user = m['user'];
     if (user is Map<String, dynamic>) {
-      return UserModel.fromJson(user)
-          .copyWith(groupFunctionalRole: groupRole ?? UserModel.absent);
+      return UserModel.fromJson(user).copyWith(
+        groupFunctionalRole: groupRole ?? UserModel.absent,
+        membershipStatus: status ?? UserModel.absent,
+      );
     }
-    final status = m['status'];
     return UserModel(
       id: (m['userId'] ?? '').toString(),
       name: '',
@@ -280,6 +288,7 @@ class GroupRepository implements IGroupRepository {
       organizationId: '',
       isActive: status != 'blocked' && status != 'removed',
       groupFunctionalRole: groupRole,
+      membershipStatus: status,
     );
   }
 

@@ -124,14 +124,44 @@ class ExportPreviewScreen extends StatelessWidget {
           padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
           child: ValueListenableBuilder<bool>(
             valueListenable: isExporting,
-            builder: (context, exporting, _) => Row(
+            builder: (context, exporting, _) => Column(
+              mainAxisSize: MainAxisSize.min,
               children: [
-                _exportBtn(context, 'PDF', Icons.picture_as_pdf_rounded,
-                    AppColors.absent, exporting, () => onExport('pdf')),
-                const SizedBox(width: 10),
-                _exportBtn(context, 'Excel', Icons.table_chart_rounded,
-                    AppColors.secondary, exporting, () => onExport('xlsx')),
-                // RPT-001: CSV export removed — Excel + PDF only.
+                // Live-Test-15 ISSUE-3: an explicit wait signal. Previously the
+                // ONLY feedback was the buttons turning grey, so a multi-second
+                // report build read as a frozen app. Report generation is now
+                // off the UI thread as well, so this bar animates smoothly.
+                if (exporting) ...[
+                  Row(
+                    children: [
+                      const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          'Preparing your report — the share sheet opens '
+                          'automatically.',
+                          style: AppTypography.labelSmall
+                              .copyWith(color: AppColors.textSecondary),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+                ],
+                Row(
+                  children: [
+                    _exportBtn(context, 'PDF', Icons.picture_as_pdf_rounded,
+                        AppColors.absent, exporting, () => onExport('pdf')),
+                    const SizedBox(width: 10),
+                    _exportBtn(context, 'Excel', Icons.table_chart_rounded,
+                        AppColors.secondary, exporting, () => onExport('xlsx')),
+                    // RPT-001: CSV export removed — Excel + PDF only.
+                  ],
+                ),
               ],
             ),
           ),

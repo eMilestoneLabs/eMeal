@@ -68,6 +68,33 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   // identical, so the tap looked dead. This state drives visible feedback.
   bool _isRefreshing = false;
 
+  /// ISSUE-3B: what the greeting card shows beside the 🏢 icon.
+  ///
+  /// A group IS selected → that group's name, so the header, the dropdown and
+  /// the role chip all read `selectedGroup` and can never disagree. The header
+  /// used to hold `_groups.first.name` — the FIRST group, never the selected
+  /// one — which is why it stayed on the previous group after a switch while
+  /// the role chip beside it updated correctly.
+  ///
+  /// "All groups" → no single group applies, so this shows the ORGANISATION,
+  /// with the group count on the second line ([_headerSubtitle]).
+  ///
+  /// Composed here rather than in [AdminGreetingCard]: the card just renders
+  /// the strings it is handed, and the selection logic lives with the selection.
+  String get _headerLabel =>
+      _provider.selectedGroup?.name ?? _provider.orgName;
+
+  /// Second header line, shown only for "All groups": how many groups the
+  /// organisation holds. On its own line so a long organisation name and the
+  /// count never compete for width on a narrow phone. Null when a single group
+  /// is selected — that header needs nothing beyond the group name.
+  String? get _headerSubtitle {
+    if (_provider.selectedGroup != null) return null;
+    final count = _provider.groupCount;
+    if (count <= 0) return null;
+    return '$count ${count == 1 ? 'group' : 'groups'}';
+  }
+
   Future<void> _refresh(AuthProvider auth) async {
     final user = auth.currentUser;
     if (user == null || _isRefreshing) return;
@@ -170,15 +197,8 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                 // ── Greeting card ────────────────────────────────────────────
                 AdminGreetingCard(
                   adminName: _provider.adminName,
-                  // ISSUE-3B: this line shows the CURRENTLY SELECTED GROUP, so
-                  // it changes with the dropdown and always matches it. It used
-                  // to hold `_groups.first.name` — the FIRST group, never the
-                  // selected one — which is why the header stayed on the
-                  // previous group after a switch while the role chip beside it
-                  // updated correctly. Reading `selectedGroup` binds both to the
-                  // same source. With no group selected ("All groups") the
-                  // organisation name is the correct wider context.
-                  orgName: _provider.selectedGroup?.name ?? _provider.orgName,
+                  orgName: _headerLabel,
+                  orgSubtitle: _headerSubtitle,
                   // #8: show the selected/default group's functional role.
                   roleLabel: _provider.selectedGroup?.functionalRole?.label,
                 ),

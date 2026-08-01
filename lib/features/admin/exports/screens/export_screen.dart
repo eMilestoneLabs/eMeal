@@ -313,6 +313,12 @@ class _ExportScreenState extends State<ExportScreen> {
             format: format,
             records: records,
             meals: meals,
+            // ISSUE-3: hand the export the rows/summaries this preview is
+            // ALREADY rendering, so the file build cannot repeat the
+            // O(members x meals x days) pass — and cannot disagree with what
+            // the admin just approved on screen.
+            precomputedRows: rows,
+            precomputedSummaries: summaries,
             groupName: groupName,
             pricingEnabled: pricingEnabled,
             rangeLabel: rangeLabel,
@@ -338,11 +344,15 @@ class _ExportScreenState extends State<ExportScreen> {
     Map<String, MemberExportFinancials> financialsByUser = const {},
     bool billSkippedMeals = false,
     bool? billAbsentMeals,
+    List<BillingRow>? precomputedRows,
+    List<BillingSummary>? precomputedSummaries,
   }) async {
     _provider.setFormat(format);
     _exporting.value = true;
     try {
       await _provider.export(
+        precomputedRows: precomputedRows,
+        precomputedSummaries: precomputedSummaries,
         records: records,
         meals: meals,
         groupName: groupName,

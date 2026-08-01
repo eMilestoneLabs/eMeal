@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import 'package:smart_meal_management/app/router/route_names.dart';
 import 'package:smart_meal_management/core/theme/app_colors.dart';
 import 'package:smart_meal_management/core/theme/app_typography.dart';
+import 'package:smart_meal_management/features/admin/dashboard/providers/admin_dashboard_provider.dart';
 import 'package:smart_meal_management/features/admin/groups/providers/admin_group_provider.dart';
 import 'package:smart_meal_management/features/admin/groups/widgets/group_card.dart';
 import 'package:smart_meal_management/shared/models/group_model.dart';
@@ -134,6 +135,12 @@ class _AdminGroupsScreenState extends State<AdminGroupsScreen> {
       builder: (_) => _CreateGroupSheet(
         provider: _provider,
         organizationId: orgId,
+        // Read HERE, not inside the sheet: the modal route is pushed above
+        // AdminDashboardScope, so the sheet itself cannot see it.
+        // `maybeOf` because this screen is ALSO reachable as a plain
+        // MaterialPageRoute from the notice feed, where no scope exists —
+        // `of` would null-check crash in release. Null → rule simply skipped.
+        orgName: AdminDashboardScope.maybeOf(context)?.orgName,
         onCreated: (group) {
           if (!mounted) return;
           context.push(
@@ -368,10 +375,16 @@ class _CreateGroupSheet extends StatefulWidget {
     required this.provider,
     required this.organizationId,
     required this.onCreated,
+    this.orgName,
   });
 
   final AdminGroupProvider provider;
   final String organizationId;
+
+  /// The ORGANISATION's name, so a group cannot be created with it. Null when
+  /// it has not resolved yet — the rule is then skipped rather than guessed,
+  /// so it can never produce a false rejection.
+  final String? orgName;
   final void Function(GroupModel group) onCreated;
 
   @override
@@ -506,6 +519,14 @@ class _CreateGroupSheetState extends State<_CreateGroupSheet> {
     final v = _nameCtrl.text.trim();
     if (v.isEmpty) return 'Required';
     if (v.length < 2) return 'At least 2 characters';
+    // A group may not carry the ORGANISATION's own name — every bare-name
+    // surface (dashboard header, notices, exports) would become ambiguous.
+    // Inline so it blocks Create before a round trip; skipped when the org name
+    // is unknown, so it never rejects wrongly.
+    final org = widget.orgName?.trim() ?? '';
+    if (org.isNotEmpty && v.toLowerCase() == org.toLowerCase()) {
+      return 'This is the organisation name — choose another';
+    }
     return null;
   }
 

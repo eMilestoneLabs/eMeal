@@ -3,6 +3,7 @@ import 'package:smart_meal_management/core/constants/app_constants.dart';
 import 'package:smart_meal_management/core/theme/app_colors.dart';
 import 'package:smart_meal_management/core/theme/app_typography.dart';
 import 'package:smart_meal_management/features/notepad/models/note.dart';
+import 'package:smart_meal_management/features/notepad/widgets/tag_folder_views.dart';
 import 'package:smart_meal_management/features/notepad/utils/note_date_format.dart';
 
 /// A single note preview card — title, content preview (text snippet or
@@ -328,28 +329,36 @@ class NoteCard extends StatelessWidget {
         // opaque flag fixes the same defect with ZERO extra render objects and
         // no new disposable resources — the original design had no splash
         // either, so no affordance is lost.
-        ...shown.map(
-          (t) => GestureDetector(
+        // ISSUE-2 polish: the chip wears its tag's OWN accent — the same colour
+        // that tag's folder tile and open-folder header use — so a tag is
+        // recognisable at a glance and the notepad reads as one system instead
+        // of a wall of identical purple pills. Still a plain Container behind an
+        // opaque GestureDetector: no Material, no ink, no extra render objects.
+        ...shown.map((t) {
+          final accent = tagAccent(t, isDark);
+          return GestureDetector(
             behavior: HitTestBehavior.opaque,
             onTap: onTagTap == null ? null : () => onTagTap!(t),
             child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+              padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
               decoration: BoxDecoration(
-                color:
-                    AppColors.primary.withValues(alpha: isDark ? 0.20 : 0.10),
+                color: accent.withValues(alpha: isDark ? 0.22 : 0.12),
                 borderRadius: BorderRadius.circular(AppConstants.chipRadius),
+                border: Border.all(
+                  color: accent.withValues(alpha: isDark ? 0.38 : 0.26),
+                ),
               ),
               child: Text(
                 '#$t',
                 style: AppTypography.labelSmall.copyWith(
                   fontSize: 11,
-                  color: isDark ? AppColors.primaryLight : AppColors.primary,
-                  fontWeight: FontWeight.w600,
+                  color: accent,
+                  fontWeight: FontWeight.w700,
                 ),
               ),
             ),
-          ),
-        ),
+          );
+        }),
         if (extra > 0)
           Text(
             '+$extra',
