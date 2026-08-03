@@ -374,7 +374,6 @@ class GroupMealConfig extends Equatable {
     this.billingCycleChangeUsed = false,
     this.mealPricingEnabled = false,
     this.mealPricingLocked = false,
-    this.windowMinGapMinutes = 60,
     this.billSkippedMeals = false,
     this.billAbsentMeals = false,
     this.attendanceDefault = 'absent',
@@ -422,14 +421,6 @@ class GroupMealConfig extends Equatable {
   ///
   /// Only the ON/OFF MODE is locked — individual meal prices stay editable.
   final bool mealPricingLocked;
-
-  /// Live-Test-16 F2: the EFFECTIVE minimum gap (minutes) the SERVER enforces
-  /// between one attendance window closing and the next opening. Sent in the
-  /// group payload so the client's fast-feedback validation uses the same rule
-  /// the backend applies — a hardcoded client value would either warn late (gap
-  /// raised) or block a configuration the server accepts (gap lowered).
-  /// Defaults to 60 for older servers that omit the key.
-  final int windowMinGapMinutes;
 
   /// SRS Module 03 (survey Q17/Q22): "Bill Skip" policy — when true,
   /// system-generated Skip meals are billed at the final scheduled price.
@@ -479,9 +470,6 @@ class GroupMealConfig extends Equatable {
         // Live-Test-16 ISSUE-1: absent on pre-fix servers → unlocked (the
         // pre-existing behaviour), so an older backend degrades gracefully.
         mealPricingLocked: j['mealPricingLocked'] == true,
-        windowMinGapMinutes: (j['windowMinGapMinutes'] is num)
-            ? (j['windowMinGapMinutes'] as num).toInt()
-            : 60,
         billSkippedMeals: j['billSkippedMeals'] ?? false,
         // Pre-split servers omit the key — fall back to the legacy coupling.
         billAbsentMeals:
@@ -504,8 +492,6 @@ class GroupMealConfig extends Equatable {
     // round-tripped a CONSUMED one-time billing-cycle change back to `false`
     // and a cache-first paint advertised the privilege as still available.
     'billingCycleChangeUsed',
-    // F2: server-enforced rule value — display/validation only, never sent.
-    'windowMinGapMinutes',
   };
 
   /// Wire-safe payload for POST /groups and PATCH /groups/:id — byte-identical
@@ -554,7 +540,6 @@ class GroupMealConfig extends Equatable {
         // from every request body by [kServerOwnedMealConfigKeys] — the
         // backend's mealConfig DTO is whitelist+forbid and would 422 on it.
         'mealPricingLocked': mealPricingLocked,
-        'windowMinGapMinutes': windowMinGapMinutes,
         'billSkippedMeals': billSkippedMeals,
         'billAbsentMeals': billAbsentMeals,
         'attendanceDefault': attendanceDefault,
@@ -574,7 +559,6 @@ class GroupMealConfig extends Equatable {
     bool clearBillingCycleStartDay = false,
     bool? mealPricingEnabled,
     bool? mealPricingLocked,
-    int? windowMinGapMinutes,
     bool? billSkippedMeals,
     bool? billAbsentMeals,
     String? attendanceDefault,
@@ -596,8 +580,6 @@ class GroupMealConfig extends Equatable {
             : (billingCycleStartDay ?? this.billingCycleStartDay),
         mealPricingEnabled: mealPricingEnabled ?? this.mealPricingEnabled,
         mealPricingLocked: mealPricingLocked ?? this.mealPricingLocked,
-        windowMinGapMinutes:
-            windowMinGapMinutes ?? this.windowMinGapMinutes,
         billSkippedMeals: billSkippedMeals ?? this.billSkippedMeals,
         billAbsentMeals: billAbsentMeals ?? this.billAbsentMeals,
         attendanceDefault: attendanceDefault ?? this.attendanceDefault,
@@ -617,7 +599,6 @@ class GroupMealConfig extends Equatable {
         billingCycleChangeUsed,
         mealPricingEnabled,
         mealPricingLocked,
-        windowMinGapMinutes,
         billSkippedMeals,
         billAbsentMeals,
         attendanceDefault,

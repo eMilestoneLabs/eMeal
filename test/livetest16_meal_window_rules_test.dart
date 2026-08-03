@@ -18,58 +18,72 @@ void main() {
       );
 
   group('validateMealWindows', () {
-    test('allows an exactly 1-hour gap (60 is valid)', () {
+    test('accepts a valid same-day window', () {
+      expect(validateMealWindows([w('m1', 'Breakfast', '07:00', '09:00')]),
+          isNull);
+    });
+
+    test('rejects a missing window', () {
+      expect(validateMealWindows([w('m1', 'Breakfast', null, null)]),
+          contains('needs an attendance window'));
+    });
+
+    test('rejects an overnight window', () {
+      expect(validateMealWindows([w('m1', 'Midnight Meal', '23:00', '01:00')]),
+          contains('same day'));
+    });
+
+    // WITHDRAWN 2026-08-03: no-overlap and the 1-hour gap were removed, so any
+    // number of concurrent windows is allowed.
+    test('ALLOWS fully concurrent windows', () {
       expect(
         validateMealWindows([
           w('m1', 'Breakfast', '07:00', '09:00'),
-          w('m2', 'Lunch', '10:00', '12:00'),
+          w('m2', 'Lunch', '07:00', '09:00'),
+          w('m3', 'Dinner', '07:00', '09:00'),
         ]),
         isNull,
       );
     });
 
-    test('rejects 59 minutes (one minute short)', () {
-      expect(
-        validateMealWindows([
-          w('m1', 'Breakfast', '07:00', '09:00'),
-          w('m2', 'Lunch', '09:59', '12:00'),
-        ]),
-        contains('cannot begin before 10:00 AM'),
-      );
-    });
-
-    test('rejects a direct overlap', () {
+    test('ALLOWS overlap and sub-hour gaps', () {
       expect(
         validateMealWindows([
           w('m1', 'Breakfast', '07:00', '10:00'),
           w('m2', 'Lunch', '09:00', '12:00'),
+          w('m3', 'Snack', '12:01', '13:00'),
         ]),
-        contains('overlaps'),
+        isNull,
       );
     });
 
-    test('rejects a fully contained window', () {
+    test('still validates EVERY window in a concurrent set', () {
       expect(
         validateMealWindows([
-          w('m1', 'All Day', '07:00', '12:00'),
-          w('m2', 'Snack', '08:00', '09:00'),
+          w('m1', 'Breakfast', '07:00', '09:00'),
+          w('m2', 'Lunch', null, null),
         ]),
-        contains('overlaps'),
+        contains('"Lunch" needs an attendance window'),
       );
     });
 
-    test('rejects a missing window', () {
-      expect(
-        validateMealWindows([w('m1', 'Breakfast', null, null)]),
-        contains('needs an attendance window'),
-      );
+    // PARITY: the client must never be MORE permissive than the server's
+    // `hhmmToMinutes` (/^(\d{1,2}):(\d{2})$/) — otherwise the form says the
+    // window is fine and the save comes back 422. The time picker only emits
+    // "HH:mm", so these forms are unreachable from the UI; the guard exists so
+    // a future free-text field cannot silently reintroduce the drift.
+    test('PARITY: rejects the exact forms the server rejects', () {
+      for (final bad in ['7:5', '07:00:00', ' 07:00', '0700', '07:', ':00']) {
+        expect(parseHHmm(bad), isNull, reason: '"$bad" must not parse');
+      }
     });
 
-    test('rejects an overnight window', () {
-      expect(
-        validateMealWindows([w('m1', 'Midnight Meal', '23:00', '01:00')]),
-        contains('same day'),
-      );
+    test('PARITY: accepts the exact forms the server accepts', () {
+      expect(parseHHmm('07:00'), 7 * 60);
+      expect(parseHHmm('7:00'), 7 * 60, reason: 'server allows a 1-digit hour');
+      expect(parseHHmm('23:59'), 23 * 60 + 59);
+      expect(parseHHmm('24:00'), isNull, reason: 'hour > 23 is invalid');
+      expect(parseHHmm('07:60'), isNull, reason: 'minute > 59 is invalid');
     });
 
     test('exempts the implicit __general__ slot', () {
@@ -81,11 +95,6 @@ void main() {
         ]),
         isNull,
       );
-    });
-
-    test('a single valid window with no siblings passes', () {
-      expect(validateMealWindows([w('m1', 'Breakfast', '07:00', '09:00')]),
-          isNull);
     });
   });
 
@@ -174,44 +183,6 @@ void main() {
         isTrue,
         reason: 'pre-publish the admin must still be able to enable pricing',
       );
-    });
-
-    // F2: the server-enforced gap must survive the cache and never be sent.
-    test('F2: windowMinGapMinutes round-trips and is stripped from the wire',
-        () {
-      const cfg = GroupMealConfig(windowMinGapMinutes: 90);
-      expect(cfg.toJson()['windowMinGapMinutes'], 90);
-      expect(GroupMealConfig.fromJson(cfg.toJson()).windowMinGapMinutes, 90);
-      expect(cfg.toRequestJson().containsKey('windowMinGapMinutes'), isFalse);
-    });
-
-    test('F2: an older server omitting the key defaults to 60', () {
-      expect(
-        GroupMealConfig.fromJson(const {'mealsEnabled': true})
-            .windowMinGapMinutes,
-        60,
-      );
-    });
-
-    test('F2: the validator honours a server gap of 90', () {
-      const windows = [
-        MealWindowRef(
-          mealId: 'm1',
-          label: 'Breakfast',
-          openTime: '07:00',
-          closeTime: '09:00',
-        ),
-        MealWindowRef(
-          mealId: 'm2',
-          label: 'Lunch',
-          openTime: '10:00',
-          closeTime: '12:00',
-        ),
-      ];
-      // Legal at 60, a violation at the server-configured 90.
-      expect(validateMealWindows(windows, gapMinutes: 60), isNull);
-      expect(validateMealWindows(windows, gapMinutes: 90),
-          contains('90-minute gap'));
     });
 
     test('no server-owned key ever reaches the wire', () {

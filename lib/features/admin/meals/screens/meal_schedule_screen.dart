@@ -148,6 +148,13 @@ class _MealScheduleScreenState extends State<MealScheduleScreen>
     // financial configuration first. Once locked (`mealPricingLocked`, server
     // truth) every later publish takes the original path unchanged.
     if (!group.mealConfig.mealPricingLocked) {
+      // The SERVER outcome, captured inside the callback. The sheet's return
+      // value only says HOW it closed: a swipe-away or a back press while the
+      // publish was still in flight resolves it to null even though the publish
+      // then SUCCEEDS and the server consumes the lock. Keying off this flag
+      // instead means the snackbar and the lock mirror follow what actually
+      // happened, on every dismissal path, without a confirmation round-trip.
+      var publishedOk = false;
       final confirmed = await showFirstPublishReviewSheet(
         context,
         groupName: group.name,
@@ -157,13 +164,14 @@ class _MealScheduleScreenState extends State<MealScheduleScreen>
             organizationId: orgId,
             groupId: group.id,
           );
+          publishedOk = published;
           // null = success; the message keeps the sheet open on failure so a
           // failed publish can never be mistaken for a locked-in one.
           return published ? null : (_provider.error ?? 'Failed to publish');
         },
       );
       if (!mounted) return;
-      if (confirmed == true) {
+      if (confirmed == true || publishedOk) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text(
@@ -307,32 +315,6 @@ class _MealScheduleScreenState extends State<MealScheduleScreen>
     }
     if (entry == null || template == null) return;
 
-    // Live-Test-16 ISSUE-2: the EFFECTIVE windows of the OTHER meals enabled on
-    // this same day — per-day override first, master template window otherwise,
-    // exactly as the server resolves them. Built from provider state already in
-    // memory, so the editor opens with no extra fetch.
-    final siblings = <MealWindowRef>[];
-    for (final e in (daySchedule?.meals ?? <DayMealEntry>[])) {
-      // Presence in daySchedule.meals IS enablement for the day (see the
-      // `isEnabled = dayEntry != null` rule the day cards use).
-      if (e.mealId == mealId) continue;
-      MealModel? master;
-      for (final m in _provider.meals) {
-        if (m.id == e.mealId) {
-          master = m;
-          break;
-        }
-      }
-      if (master == null) continue;
-      siblings.add(MealWindowRef(
-        mealId: e.mealId,
-        label: master.name,
-        slotKey: master.slotKey,
-        openTime: e.openTime ?? master.attendanceWindow.openTime,
-        closeTime: e.closeTime ?? master.attendanceWindow.closeTime,
-      ));
-    }
-
     showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
@@ -353,10 +335,6 @@ class _MealScheduleScreenState extends State<MealScheduleScreen>
         // ISSUE-011: Global OFF locks the per-day preference toggle.
         globalPreferencesEnabled: _provider.preferencesEnabled,
         templatePrice: template.price,
-        siblingWindows: siblings,
-        windowMinGapMinutes:
-            _provider.selectedGroup?.mealConfig.windowMinGapMinutes ??
-                kMinWindowGapMinutes,
         onSave: ({
           required String name,
           required List<String> menuItems,
@@ -1444,8 +1422,6 @@ class _DayMealEditSheet extends StatefulWidget {
     required this.pricingEnabled,
     this.templatePrice,
     this.globalPreferencesEnabled = true,
-    this.siblingWindows = const [],
-    this.windowMinGapMinutes = kMinWindowGapMinutes,
     required this.onSave,
   });
 
@@ -1474,15 +1450,6 @@ class _DayMealEditSheet extends StatefulWidget {
 
   /// Master meal price used as the placeholder when no per-day override is set.
   final int? templatePrice;
-
-  /// Live-Test-16 ISSUE-2: the EFFECTIVE windows of the other meals scheduled
-  /// on THIS day (per-day override, else the master template window). A custom
-  /// per-day timing must clear all of them by the minimum gap.
-  final List<MealWindowRef> siblingWindows;
-
-  /// Live-Test-16 F2: server-enforced gap, from the group payload.
-  final int windowMinGapMinutes;
-
 
   final void Function({
     required String name,
@@ -1641,18 +1608,14 @@ class _DayMealEditSheetState extends State<_DayMealEditSheet> {
     // validation at all — not even close > open. Validate the effective window
     // for this day against the day's other meals before handing the change to
     // the planner. The backend re-validates authoritatively on save/publish.
-    final conflict = validateMealWindows(
-      [
-        ...widget.siblingWindows,
-        MealWindowRef(
+    final conflict = validateMealWindows([
+      MealWindowRef(
           mealId: widget.entry.mealId,
           label: widget.templateName,
           openTime: _useCustomTiming ? _openHHmm : widget.templateOpenTime,
           closeTime: _useCustomTiming ? _closeHHmm : widget.templateCloseTime,
-        ),
-      ],
-      gapMinutes: widget.windowMinGapMinutes,
-    );
+      ),
+    ]);
     if (conflict != null) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(

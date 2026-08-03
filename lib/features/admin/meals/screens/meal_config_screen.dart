@@ -11,7 +11,6 @@ import 'package:smart_meal_management/features/admin/meals/screens/preference_gr
 import 'package:smart_meal_management/features/admin/meals/widgets/guest_config_sheet.dart';
 import 'package:smart_meal_management/features/admin/meals/widgets/meal_config_form.dart';
 import 'package:smart_meal_management/shared/models/meal_model.dart';
-import 'package:smart_meal_management/shared/utils/meal_window_rules.dart';
 import 'package:smart_meal_management/shared/widgets/app_empty_state.dart';
 import 'package:smart_meal_management/shared/widgets/app_section_title.dart';
 import 'package:smart_meal_management/shared/widgets/app_status_chip.dart';
@@ -38,26 +37,6 @@ class _MealConfigScreenState extends State<MealConfigScreen> {
   /// published — the Meal-Pricing ON/OFF mode is then permanent (server truth).
   bool get _pricingLocked =>
       _provider.selectedGroup?.mealConfig.mealPricingLocked ?? false;
-
-  /// Live-Test-16 F2: the gap the SERVER enforces (group payload), so client
-  /// validation never diverges from backend validation.
-  int get _windowMinGap =>
-      _provider.selectedGroup?.mealConfig.windowMinGapMinutes ??
-      kMinWindowGapMinutes;
-
-  /// Live-Test-16 ISSUE-2: the group's other ACTIVE meal windows, built from
-  /// the meals already held in the provider — zero network, zero extra query.
-  List<MealWindowRef> _siblingWindows({String? excludeMealId}) => [
-        for (final m in _provider.meals)
-          if (m.isActive && m.id != excludeMealId)
-            MealWindowRef(
-              mealId: m.id,
-              label: m.name,
-              slotKey: m.slotKey,
-              openTime: m.attendanceWindow.openTime,
-              closeTime: m.attendanceWindow.closeTime,
-            ),
-      ];
 
   @override
   void initState() {
@@ -836,10 +815,6 @@ class _MealConfigScreenState extends State<MealConfigScreen> {
                 // ISSUE-011: Global OFF locks the per-meal toggle (read-only).
                 globalPreferencesEnabled: _provider.preferencesEnabled,
                 pricingEnabled: _provider.mealPricingEnabled,
-                // Live-Test-16 ISSUE-2: every OTHER active meal's window, read
-                // from state already in memory — no fetch, no extra wave.
-                siblingWindows: _siblingWindows(),
-                windowMinGapMinutes: _windowMinGap,
                 // Live-Test-9 ISSUE-001: pop the SHEET'S OWN route, ONLY on
                 // success. The old handler captured the SCREEN's navigator and
                 // popped unconditionally after the await — a failed save
@@ -950,10 +925,6 @@ class _MealConfigScreenState extends State<MealConfigScreen> {
                 // ISSUE-011: Global OFF locks the per-meal toggle (read-only).
                 globalPreferencesEnabled: _provider.preferencesEnabled,
                 pricingEnabled: _provider.mealPricingEnabled,
-                // Live-Test-16 ISSUE-2: siblings EXCLUDING the meal being
-                // edited (a meal never conflicts with itself).
-                siblingWindows: _siblingWindows(excludeMealId: meal.id),
-                windowMinGapMinutes: _windowMinGap,
                 // Live-Test-9 ISSUE-001: pop the SHEET'S OWN route, ONLY on
                 // success — see _showAddMealSheet for the failure analysis.
                 onSave: (data) async {

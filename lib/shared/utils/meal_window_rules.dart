@@ -2,23 +2,19 @@
 /// invariant, so the admin gets IMMEDIATE feedback instead of a round-trip 422.
 ///
 /// The backend (`window-conflict.util.ts`) remains the authority — this exists
-/// purely for UX. Both sides implement exactly the same three rules:
+/// purely for UX. Both sides implement exactly the same two rules:
 ///
 ///   1. every admin-configured window has BOTH an open and a close time;
 ///   2. `close > open` — a window opens and closes on the same calendar date
 ///      (overnight windows such as 23:00 → 01:00 are rejected);
-///   3. windows applying to the same date never overlap and are separated by at
-///      least [kMinWindowGapMinutes]:  next.open >= previous.close + gap.
 ///
-/// Validation is LINEAR WITHIN A DATE — the next date is a new attendance
-/// lifecycle, so today's last window is never compared with tomorrow's first.
+/// WITHDRAWN 2026-08-03 (user decision): the no-overlap rule and the minimum
+/// 1-hour gap were removed. ANY NUMBER of CONCURRENT windows is allowed — a
+/// group may open every meal 07:00-09:00 so members declare the whole day in
+/// one morning session. Windows are therefore never compared with each other.
 ///
 /// Pure functions: no state, no I/O, safe to call inside `build`.
 library;
-
-/// Minimum minutes between one window's close and the next one's open.
-/// Mirrors the server default (`MEALS_WINDOW_MIN_GAP_MINUTES`, default 60).
-const int kMinWindowGapMinutes = 60;
 
 /// The implicit system attendance slot — never an admin-created window, so it
 /// is exempt from every rule here (matches the backend exemption).
@@ -43,38 +39,30 @@ class MealWindowRef {
   final String? closeTime;
 }
 
+/// Accepted time shape — byte-for-byte the server's own
+/// (`entry-chrono.util.ts`: `/^(\d{1,2}):(\d{2})$/`). Kept identical so the
+/// client can never be MORE permissive than the backend: a looser split-based
+/// parse accepts "7:5", "07:00:00" and " 07:00", which the server rejects —
+/// the admin would be told the window is fine and then get a 422 on save.
+final RegExp _kHHmm = RegExp(r'^(\d{1,2}):(\d{2})$');
+
 /// "HH:mm" → minutes since midnight; null when missing or unparseable.
 int? parseHHmm(String? value) {
   if (value == null) return null;
-  final parts = value.split(':');
-  if (parts.length < 2) return null;
-  final h = int.tryParse(parts[0]);
-  final m = int.tryParse(parts[1]);
-  if (h == null || m == null || h < 0 || h > 23 || m < 0 || m > 59) return null;
-  return h * 60 + m;
+  final m = _kHHmm.firstMatch(value);
+  if (m == null) return null;
+  final h = int.parse(m.group(1)!);
+  final min = int.parse(m.group(2)!);
+  if (h > 23 || min > 59) return null;
+  return h * 60 + min;
 }
 
-String _to12h(int minutes) {
-  final h24 = minutes ~/ 60;
-  final m = minutes % 60;
-  final suffix = h24 < 12 ? 'AM' : 'PM';
-  final h = h24 % 12 == 0 ? 12 : h24 % 12;
-  return '$h:${m.toString().padLeft(2, '0')} $suffix';
-}
-
-String _gapLabel(int gap) =>
-    gap % 60 == 0 ? '${gap ~/ 60}-hour' : '$gap-minute';
-
-/// Validates one date's set of windows.
+/// Validates each window independently.
 ///
-/// Returns null when the set is valid, or a ready-to-show admin message naming
-/// the conflicting meal, both windows and the earliest allowed start time.
-String? validateMealWindows(
-  List<MealWindowRef> windows, {
-  int gapMinutes = kMinWindowGapMinutes,
-}) {
-  final parsed = <({MealWindowRef ref, int open, int close})>[];
-
+/// Returns null when every window is valid, or a ready-to-show admin message
+/// naming the offending meal. Windows are NOT compared with one another —
+/// concurrent windows are allowed.
+String? validateMealWindows(List<MealWindowRef> windows) {
   for (final w in windows) {
     if (w.slotKey == kGeneralAttendanceSlotKey) continue;
     final open = parseHHmm(w.openTime);
@@ -87,37 +75,6 @@ String? validateMealWindows(
       return '"${w.label}" must open and close on the same day — the closing '
           'time has to be later than the opening time.';
     }
-    parsed.add((ref: w, open: open, close: close));
-  }
-
-  if (parsed.length < 2) return null;
-  parsed.sort((a, b) {
-    final byOpen = a.open.compareTo(b.open);
-    if (byOpen != 0) return byOpen;
-    return a.close.compareTo(b.close);
-  });
-
-  // Compare against the LATEST close seen so far so a fully-contained window
-  // (07:00–12:00 vs 08:00–09:00) is caught too.
-  var boundary = parsed.first;
-  for (var i = 1; i < parsed.length; i++) {
-    final current = parsed[i];
-    if (current.open < boundary.close) {
-      return 'Attendance Window Conflict — "${current.ref.label}" '
-          '(${_to12h(current.open)} – ${_to12h(current.close)}) overlaps '
-          '"${boundary.ref.label}" (${_to12h(boundary.open)} – '
-          '${_to12h(boundary.close)}). Two meals can never accept attendance '
-          'at the same time.';
-    }
-    if (current.open - boundary.close < gapMinutes) {
-      final earliest = boundary.close + gapMinutes;
-      return '"${boundary.ref.label}" attendance ends at '
-          '${_to12h(boundary.close)}. "${current.ref.label}" attendance cannot '
-          'begin before ${_to12h(earliest)} because a minimum '
-          '${_gapLabel(gapMinutes)} gap is required between different meal '
-          'attendance windows.';
-    }
-    if (current.close > boundary.close) boundary = current;
   }
   return null;
 }

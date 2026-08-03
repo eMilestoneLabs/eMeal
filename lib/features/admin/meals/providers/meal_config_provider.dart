@@ -967,6 +967,13 @@ class MealConfigProvider extends ChangeNotifier {
   void markMealPricingLocked({required String organizationId}) {
     final group = _selectedGroup;
     if (group == null || group.mealConfig.mealPricingLocked) return;
+    // Mirror the server's M2 gate EXACTLY (`schedules.service.ts`:
+    // `if (group.mealsEnabled !== true) return;`). An Attendance-Only group
+    // can still reach a publish when it kept `weeklyMenuEnabled` from a
+    // previous meals-ON life, and the server deliberately does NOT stamp it.
+    // Without this guard we would persist a lock the server never took into
+    // the SHARED `admin_groups:{org}` cache, where it would survive restarts.
+    if (!group.mealConfig.mealsEnabled) return;
     final locked = group.copyWith(
       mealConfig: group.mealConfig.copyWith(mealPricingLocked: true),
     );

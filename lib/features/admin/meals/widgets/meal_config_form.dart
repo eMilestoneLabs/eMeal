@@ -28,19 +28,7 @@ class MealConfigForm extends StatefulWidget {
     this.initialPreferencesEnabled = false,
     this.pricingEnabled = false,
     this.globalPreferencesEnabled = true,
-    this.siblingWindows = const [],
-    this.windowMinGapMinutes = kMinWindowGapMinutes,
   });
-
-  /// Live-Test-16 F2: the gap the SERVER enforces, taken from the group
-  /// payload. Passing it (instead of assuming 60) keeps client validation
-  /// identical to backend validation even when the value is reconfigured.
-  final int windowMinGapMinutes;
-
-  /// Live-Test-16 ISSUE-2: the group's OTHER active meal windows, so an
-  /// overlapping / under-gapped window is caught before the save round-trip.
-  /// The backend enforces the same rule authoritatively; this is fast feedback.
-  final List<MealWindowRef> siblingWindows;
 
   /// If non-null, pre-populates the form for editing.
   final MealModel? initialMeal;
@@ -234,24 +222,20 @@ class _MealConfigFormState extends State<MealConfigForm> {
       return;
     }
     _shortWindowWarning = diff < 30;
-    // Live-Test-16 ISSUE-2: the window must also clear every OTHER active meal
-    // window in this group by the minimum gap. Identical arithmetic to the
-    // server's `assertMealWindowsValid`, shared via meal_window_rules.dart so
-    // the two can never drift.
-    _windowError = validateMealWindows(
-      [
-        ...widget.siblingWindows,
-        MealWindowRef(
+    // Live-Test-16 ISSUE-2: the window must be present and same-day. Windows
+    // are NOT compared with one another — any number of CONCURRENT meals is
+    // allowed. Identical arithmetic to the server's `assertMealWindowsValid`,
+    // shared via meal_window_rules.dart so the two can never drift.
+    _windowError = validateMealWindows([
+      MealWindowRef(
           mealId: widget.initialMeal?.id ?? '_new',
           label: _nameCtrl.text.trim().isEmpty
               ? 'This meal'
               : _nameCtrl.text.trim(),
-          openTime: _formatTime(_openTime),
-          closeTime: _formatTime(_closeTime),
-        ),
-      ],
-      gapMinutes: widget.windowMinGapMinutes,
-    );
+        openTime: _formatTime(_openTime),
+        closeTime: _formatTime(_closeTime),
+      ),
+    ]);
   }
 
   /// When group pricing is ON, a valid (>= 0) price is mandatory before saving.
