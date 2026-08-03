@@ -72,6 +72,13 @@ abstract final class AppConstants {
   static const Duration animNormal = Duration(milliseconds: 300);
   static const Duration animSlow = Duration(milliseconds: 500);
 
+  // ── SWR cache ──────────────────────────────────────────────────────────────
+  /// Max age for the staff self-attendance instant paint
+  /// (`staff_today:{org}:{group}:{user}`). Matches the 12h the other SWR
+  /// surfaces use; the network ALWAYS overwrites, so this only bounds how old
+  /// a first paint may be before the screen falls back to its loader.
+  static const Duration staffTodayCacheMaxAge = Duration(hours: 12);
+
   // ── Navigation ─────────────────────────────────────────────────────────────
   /// Live-Test-16 ISSUE-2: on a role shell's HOME tab there is nothing left to
   /// pop, so Android back would close the app. A second back press inside this

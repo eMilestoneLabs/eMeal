@@ -89,6 +89,9 @@ class _AdminShellState extends State<AdminShell> {
     RouteNames.adminProfile,
     RouteNames.adminSettings,
     RouteNames.adminExports,
+    // Live-Test-16: also pushed from the More hub, but it was missing here, so
+    // Mark My Attendance highlighted Home instead of More.
+    RouteNames.adminMyAttendance,
   ];
 
   /// Derives the active tab index from the current GoRouter location so the

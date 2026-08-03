@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:smart_meal_management/core/constants/app_constants.dart';
 import 'package:smart_meal_management/data/services/response_cache_service.dart';
 import 'package:smart_meal_management/core/theme/app_colors.dart';
 import 'package:smart_meal_management/core/theme/app_typography.dart';
@@ -72,7 +73,26 @@ class _StaffAttendanceScreenState extends State<StaffAttendanceScreen> {
   /// ISSUE-001: when [_meals] arrived, so the shared window gate can advance the
   /// SERVER's org clock by elapsed device time instead of trusting the phone's
   /// wall clock (a wrong timezone must never open or close a window).
+  ///
+  /// Live-Test-16: this is ALSO the single source of truth for "may the window
+  /// be judged". It stays NULL for a cache-first paint and on a failed fetch,
+  /// and the marking gate in `_mealCard` requires it to be non-null — so a
+  /// cached payload's snapshot clock can never open a window. Deliberately one
+  /// field rather than a second `isLive` flag: two would have to be kept in
+  /// sync, and desyncing them is a bug this screen already hit once.
   DateTime? _mealsFetchedAt;
+
+  /// SWR keys for the instant paint — org + group + user scoped, so a group or
+  /// account switch reads DIFFERENT keys and cross-context data can never be
+  /// shown. Cleared automatically on logout (`ResponseCacheService.clear()` is
+  /// prefix-based) and aged out by `prune()`; no extra wiring needed.
+  ///
+  /// Two typed LIST keys rather than one hand-rolled envelope, so the service's
+  /// `readListOrNull` / `readList` / `writeList` helpers do the parse and
+  /// serialize work instead of this screen re-implementing it.
+  String _mealsCacheKey(String gid) => 'staff_today_meals:$_orgId:$gid:$_userId';
+  String _recordsCacheKey(String gid) =>
+      'staff_today_records:$_orgId:$gid:$_userId';
 
   /// The selected group's row — carries `mealConfig` (guest policy, pricing,
   /// preferences), so the guest action needs NO extra request: it rides the
@@ -192,6 +212,14 @@ class _StaffAttendanceScreenState extends State<StaffAttendanceScreen> {
       _error = null;
     });
 
+    // Live-Test-16 — cache-first (stale-while-revalidate) paint. On a slow link
+    // this screen sat on skeletons for the whole round-trip because only the
+    // GROUP SELECTOR was cached, never its contents. The rows now appear
+    // instantly from the last known payload while the live wave below runs and
+    // ALWAYS overwrites. Best-effort: a miss, a corrupt entry or a decode
+    // failure changes nothing and the loader shows exactly as before.
+    unawaited(_paintFromCache(gid));
+
     // Independent reads — one parallel wave, not two sequential round-trips.
     final mealsF = _mealRepo.getTodayMeals(
       organizationId: _orgId,
@@ -204,7 +232,12 @@ class _StaffAttendanceScreenState extends State<StaffAttendanceScreen> {
     );
     final mealsRes = await mealsF;
     final recRes = await recF;
-    if (!mounted) return;
+    // Live-Test-16 — stale-response guard, mirroring
+    // student_meal_provider.dart:128. A response for a group that is no longer
+    // selected must never overwrite the newer group's rows; the newer _load()
+    // (every path that changes _groupId starts one) owns the state and clears
+    // the loader. False in every normal case, so the happy path is unchanged.
+    if (!mounted || _groupId != gid) return;
 
     List<MealModel> meals = [];
     if (mealsRes case Ok(:final value)) {
@@ -214,6 +247,11 @@ class _StaffAttendanceScreenState extends State<StaffAttendanceScreen> {
       _error = failure.message;
     }
     List<AttendanceModel> records = [];
+    // Live-Test-16: a FAILED record fetch must not be cached. It yields an
+    // empty list (that path is deliberately silent — pre-existing behaviour),
+    // and persisting it would store a false "nothing marked yet" state that the
+    // next open would paint. Only a genuinely successful pair is written.
+    final recordsOk = recRes is Ok;
     if (recRes case Ok(:final value)) {
       // GET /attendance/today is role-scoped server-side: for an admin it
       // returns GROUP-WIDE records (every member). This screen marks the
@@ -227,9 +265,70 @@ class _StaffAttendanceScreenState extends State<StaffAttendanceScreen> {
       _records = records;
       // ISSUE-001: only a LIVE payload carries orgClockMinutes; stamping it here
       // is what makes the window gate server-authoritative.
-      _mealsFetchedAt = DateTime.now();
+      // Live-Test-16: it is ALSO the single source of truth for "is the window
+      // judgeable" — non-null means live, null means cached-or-failed. One
+      // field, so the two can never fall out of sync.
+      _mealsFetchedAt = _error == null ? DateTime.now() : null;
       _loading = false;
     });
+
+    // Persist for the next instant paint — SUCCESS ONLY, and keyed by `gid`
+    // (never `_groupId`), so a late response can only ever write under the
+    // group it actually belongs to. Writing under the newly-selected group
+    // would be a cross-group overwrite.
+    if (_error == null && recordsOk) {
+      unawaited(_writeCache(gid, meals, records));
+    }
+  }
+
+  /// Live-Test-16 — instant paint from the last known payload for [gid].
+  ///
+  /// Deliberately CLEARS [_mealsFetchedAt]: the rows are shown, the window
+  /// verdict waits for the live wave.
+  Future<void> _paintFromCache(String gid) async {
+    // Uses the service's own "Modular cache-first helpers" rather than raw
+    // read/write: they own the read→parse boilerplate and are documented atomic
+    // + best-effort (never throw, never partial), so there is no local decode
+    // and no local try/catch to keep in sync. `readListOrNull` distinguishes a
+    // true MISS (null → keep the loader) from a cached EMPTY day — the same
+    // helper the group selector in _init already uses.
+    // Both reads are issued together: one wave, not two sequential disk hits.
+    final mealsF = ResponseCacheService.instance.readListOrNull(
+        _mealsCacheKey(gid), MealModel.fromJson,
+        maxAge: AppConstants.staffTodayCacheMaxAge);
+    final recordsF = ResponseCacheService.instance.readList(
+        _recordsCacheKey(gid), AttendanceModel.fromJson,
+        maxAge: AppConstants.staffTodayCacheMaxAge);
+    final meals = await mealsF;
+    final records = await recordsF;
+    if (meals == null) return; // true miss — loader stays, exactly as before
+    // The live wave may already have landed, or the group may have changed —
+    // in both cases the cached paint is obsolete and must be dropped.
+    if (!mounted || _groupId != gid || !_loading) return;
+    setState(() {
+      _meals = meals..sort(MealModel.compareChronological);
+      _records = records;
+      // MUST clear: a previous LIVE load (e.g. the group we just switched away
+      // from) would otherwise leave a fetch time set, and the window gate would
+      // judge THESE cached meals against THAT timestamp — with the buttons
+      // enabled. Nulling it is what enforces "cached rows, live gate" (see the
+      // marking gate in _mealCard).
+      _mealsFetchedAt = null;
+      // Content replaces the skeleton; the live wave overwrites it shortly.
+      _loading = false;
+    });
+  }
+
+  /// Live-Test-16 — best-effort write of the live payload for [gid].
+  Future<void> _writeCache(
+      String gid, List<MealModel> meals, List<AttendanceModel> records) async {
+    // `writeList` owns the serialize+store boilerplate and is best-effort by
+    // contract — a failed cache write can never surface to the user, so no
+    // local try/catch is needed here either.
+    await ResponseCacheService.instance
+        .writeList(_mealsCacheKey(gid), meals, (m) => m.toJson());
+    await ResponseCacheService.instance
+        .writeList(_recordsCacheKey(gid), records, (r) => r.toJson());
   }
 
   AttendanceStatus? _statusFor(String mealId) => _recordFor(mealId)?.status;
@@ -289,6 +388,19 @@ class _StaffAttendanceScreenState extends State<StaffAttendanceScreen> {
     // every member. After close, admins use Correction Requests too.
     final res = await _attendanceRepo.adminOverride(record: record);
     if (!mounted) return;
+    // Live-Test-16 — same stale-response guard as _load(). The server DID record
+    // the mark for `gid`, but applying it to the newly-selected group's rows
+    // would corrupt them (and the snackbar would name a meal from another
+    // group). The busy latch MUST be released first: _mark's own re-entry guard
+    // above returns early while `_busyMealId != null`, so leaving it set would
+    // lock marking for the new group until the screen is reopened.
+    if (_groupId != gid) {
+      setState(() {
+        _busyMealId = null;
+        _busyStatus = null;
+      });
+      return;
+    }
     switch (res) {
       case Ok(:final value):
         final i = _records.indexWhere((r) =>
@@ -305,6 +417,9 @@ class _StaffAttendanceScreenState extends State<StaffAttendanceScreen> {
           _busyMealId = null;
           _busyStatus = null;
         });
+        // Write-through: without this, re-entering the screen would paint the
+        // PRE-mark state from cache until the network landed.
+        unawaited(_writeCache(gid, _meals, _records));
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Marked ${_label(status)} for ${meal.name}.')),
         );
@@ -521,7 +636,13 @@ class _StaffAttendanceScreenState extends State<StaffAttendanceScreen> {
         AttendanceWindow.isOpen(meal, fetchedAt: _mealsFetchedAt);
     final windowPast =
         AttendanceWindow.isPast(meal, fetchedAt: _mealsFetchedAt);
-    final canMark = windowOpen && !busy;
+    // Live-Test-16: marking requires a LIVE payload. `_mealsFetchedAt` is null
+    // during a cache-first paint, so the rows show instantly while the window
+    // verdict waits for the server. Nulling it is not enough on its own —
+    // `AttendanceWindow.stateOf` falls back to the untrusted PHONE clock when
+    // `fetchedAt` is null (Guidebook §8) — hence the explicit conjunct here.
+    // Reuses the existing disabled state; no new UI, no second flag to desync.
+    final canMark = _mealsFetchedAt != null && windowOpen && !busy;
     final canPresent = prefsSatisfied && canMark;
 
     final config = _selectedGroup?.mealConfig ?? const GroupMealConfig();

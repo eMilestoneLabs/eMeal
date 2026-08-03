@@ -548,6 +548,48 @@ void main() {
       expect(t.takeException(), isNull);
     });
 
+    testWidgets('the wrapper does NOT remount its subtree on rebuild',
+        (t) async {
+      // The only mechanism by which adding ShellBackHandler at the TOP of a
+      // shell's tree could make an unrelated screen "always load": if the
+      // wrapper caused the subtree to remount, every screen's initState /
+      // didChangeDependencies would re-run on each shell rebuild and refetch.
+      // This pins that it does not — child State survives parent rebuilds.
+      var buildCount = 0;
+      late StateSetter rebuildParent;
+
+      await t.pumpWidget(MaterialApp(
+        home: StatefulBuilder(builder: (ctx, setState) {
+          rebuildParent = setState;
+          buildCount++;
+          return ShellBackHandler(
+            isHome: () => true,
+            onGoHome: () {},
+            child: const _StatefulProbe(),
+          );
+        }),
+      ));
+      await t.pumpAndSettle();
+
+      final first = t.state<_StatefulProbeState>(find.byType(_StatefulProbe));
+      expect(first.initCount, 1);
+      expect(buildCount, 1);
+
+      for (var i = 0; i < 5; i++) {
+        rebuildParent(() {});
+        await t.pumpAndSettle();
+      }
+
+      final after = t.state<_StatefulProbeState>(find.byType(_StatefulProbe));
+      expect(identical(first, after), isTrue,
+          reason: 'subtree was REMOUNTED — every screen would refetch on each '
+              'shell rebuild');
+      expect(after.initCount, 1,
+          reason: 'initState re-ran → screens would reload repeatedly');
+      expect(buildCount, 6, reason: 'the parent did rebuild, so this is a real '
+          'test of reconciliation, not a no-op');
+    });
+
     testWidgets('NO CRASH: back mashed MID-TRANSITION (never settled)',
         (t) async {
       // Every other test in this file settles between steps, so none of them
@@ -639,4 +681,23 @@ void main() {
       expect(goHomeCalls, isEmpty);
     });
   });
+}
+
+/// Probe for the remount test: counts how many times initState runs.
+class _StatefulProbe extends StatefulWidget {
+  const _StatefulProbe();
+  @override
+  State<_StatefulProbe> createState() => _StatefulProbeState();
+}
+
+class _StatefulProbeState extends State<_StatefulProbe> {
+  int initCount = 0;
+  @override
+  void initState() {
+    super.initState();
+    initCount++;
+  }
+
+  @override
+  Widget build(BuildContext context) => const SizedBox.shrink();
 }

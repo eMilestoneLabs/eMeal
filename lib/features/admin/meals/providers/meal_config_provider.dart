@@ -956,6 +956,56 @@ class MealConfigProvider extends ChangeNotifier {
     }
   }
 
+  /// Live-Test-16 ISSUE-1: mirror the lock the SERVER just established by
+  /// accepting this group's first schedule publication, so the Meal Config
+  /// screen renders its 🔒 state immediately.
+  ///
+  /// This is a state sync, not a guess: it runs only after a publish that
+  /// actually succeeded, and the backend remains the sole authority (it rejects
+  /// any locked flip regardless of what this flag says). Local-only, so the
+  /// screen never pays an extra network wave for it.
+  void markMealPricingLocked({required String organizationId}) {
+    final group = _selectedGroup;
+    if (group == null || group.mealConfig.mealPricingLocked) return;
+    final locked = group.copyWith(
+      mealConfig: group.mealConfig.copyWith(mealPricingLocked: true),
+    );
+    _selectedGroup = locked;
+    // Keep the in-memory list in step so the group selector agrees.
+    final i = _groups.indexWhere((g) => g.id == locked.id);
+    if (i >= 0) _groups[i] = locked;
+    notifyListeners();
+
+    // Shared-key write-through (guidebook §2): `admin_groups:{org}` is read by
+    // EVERY admin tab's group selector. Without this, a cache-first paint after
+    // an app restart would show the pricing toggle as still editable until the
+    // network refresh landed. Fire-and-forget with an internal catch — cache
+    // repair is best-effort and the next groups load rewrites the truth.
+    unawaited(() async {
+      try {
+        final key = 'admin_groups:$organizationId';
+        final cached = await ResponseCacheService.instance
+            .readListOrNull(key, GroupModel.fromJson);
+        if (cached == null) return;
+        var changed = false;
+        final next = <GroupModel>[];
+        for (final g in cached) {
+          if (g.id == locked.id && !g.mealConfig.mealPricingLocked) {
+            changed = true;
+            next.add(locked);
+          } else {
+            next.add(g);
+          }
+        }
+        if (changed) {
+          ResponseCacheService.instance.writeList(key, next, (g) => g.toJson());
+        }
+      } catch (_) {
+        // Best-effort only — never let cache repair surface to the admin.
+      }
+    }());
+  }
+
   Future<bool> publishSchedule({
     required String organizationId,
     required String groupId,

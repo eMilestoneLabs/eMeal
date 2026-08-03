@@ -373,6 +373,8 @@ class GroupMealConfig extends Equatable {
     this.billingCycleStartDay,
     this.billingCycleChangeUsed = false,
     this.mealPricingEnabled = false,
+    this.mealPricingLocked = false,
+    this.windowMinGapMinutes = 60,
     this.billSkippedMeals = false,
     this.billAbsentMeals = false,
     this.attendanceDefault = 'absent',
@@ -410,6 +412,24 @@ class GroupMealConfig extends Equatable {
   /// Additive: when true, meals carry a ₹ price shown to students and used for
   /// billing/exports. When false, no price UI appears anywhere.
   final bool mealPricingEnabled;
+
+  /// Live-Test-16 ISSUE-1: true once this group's FIRST meal schedule has been
+  /// successfully published — the moment [mealPricingEnabled] became permanent.
+  /// Server-side truth (`firstSchedulePublishedAt`); the client only mirrors it
+  /// to lock the toggle and skip the First-Publish review. The backend rejects
+  /// any locked flip regardless of what the app sends, so reinstalling the app
+  /// or clearing the cache cannot restore the choice.
+  ///
+  /// Only the ON/OFF MODE is locked — individual meal prices stay editable.
+  final bool mealPricingLocked;
+
+  /// Live-Test-16 F2: the EFFECTIVE minimum gap (minutes) the SERVER enforces
+  /// between one attendance window closing and the next opening. Sent in the
+  /// group payload so the client's fast-feedback validation uses the same rule
+  /// the backend applies — a hardcoded client value would either warn late (gap
+  /// raised) or block a configuration the server accepts (gap lowered).
+  /// Defaults to 60 for older servers that omit the key.
+  final int windowMinGapMinutes;
 
   /// SRS Module 03 (survey Q17/Q22): "Bill Skip" policy — when true,
   /// system-generated Skip meals are billed at the final scheduled price.
@@ -456,6 +476,12 @@ class GroupMealConfig extends Equatable {
             ? (j['billingCycleStartDay'] as num).toInt()
             : null,
         mealPricingEnabled: j['mealPricingEnabled'] ?? false,
+        // Live-Test-16 ISSUE-1: absent on pre-fix servers → unlocked (the
+        // pre-existing behaviour), so an older backend degrades gracefully.
+        mealPricingLocked: j['mealPricingLocked'] == true,
+        windowMinGapMinutes: (j['windowMinGapMinutes'] is num)
+            ? (j['windowMinGapMinutes'] as num).toInt()
+            : 60,
         billSkippedMeals: j['billSkippedMeals'] ?? false,
         // Pre-split servers omit the key — fall back to the legacy coupling.
         billAbsentMeals:
@@ -467,6 +493,43 @@ class GroupMealConfig extends Equatable {
             : const GroupGuestConfig(),
       );
 
+  /// Live-Test-16 ISSUE-1: keys [toJson] emits for CACHE fidelity that are
+  /// read-only server truth and must never be sent in a request body (the
+  /// backend mealConfig DTO is whitelist + forbidNonWhitelisted → 422).
+  /// [toRequestJson] is the wire format; [toJson] is the cache format.
+  static const Set<String> kServerOwnedMealConfigKeys = {
+    'mealPricingLocked',
+    // Pre-existing (Pass 12) gap closed alongside Live-Test-16 ISSUE-1: this
+    // flag was READ by fromJson but never WRITTEN by toJson, so the SWR cache
+    // round-tripped a CONSUMED one-time billing-cycle change back to `false`
+    // and a cache-first paint advertised the privilege as still available.
+    'billingCycleChangeUsed',
+    // F2: server-enforced rule value — display/validation only, never sent.
+    'windowMinGapMinutes',
+  };
+
+  /// Wire-safe payload for POST /groups and PATCH /groups/:id — byte-identical
+  /// to the pre-Live-Test-16 body.
+  Map<String, dynamic> toRequestJson() {
+    final json = toJson();
+    for (final k in kServerOwnedMealConfigKeys) {
+      json.remove(k);
+    }
+    // Live-Test-16 L3: once the group is locked the pricing MODE is immutable,
+    // so the app stops echoing it. The whole mealConfig is re-sent on every
+    // unrelated toggle (vacation approval, guest settings, meals on/off), and a
+    // cached value that predates a pre-lock pricing change would otherwise read
+    // as a flip attempt and 400 an edit that has nothing to do with pricing.
+    //
+    // This does NOT weaken the lock: a direct API call still carries the field
+    // and is still rejected with MEAL_PRICING_LOCKED, so the backend remains
+    // the sole authority (ISSUE-1 §9).
+    if (mealPricingLocked) {
+      json.remove('mealPricingEnabled');
+    }
+    return json;
+  }
+
   Map<String, dynamic> toJson() => {
         'mealsEnabled': mealsEnabled,
         'weeklyMenuEnabled': weeklyMenuEnabled,
@@ -475,12 +538,23 @@ class GroupMealConfig extends Equatable {
         'enabledPreferences': enabledPreferences.map((e) => e.name).toList(),
         'vacationModeEnabled': vacationModeEnabled,
         'vacationRequiresApproval': vacationRequiresApproval,
+        // SERVER-OWNED display flag (see [kServerOwnedMealConfigKeys]) — cached
+        // so a locked billing cycle stays locked on a cache-first paint,
+        // stripped from every request body.
+        'billingCycleChangeUsed': billingCycleChangeUsed,
         // OMITTED when null — an explicit null would CLEAR the configured
         // cycle day on every unrelated toggle (FR-HG-021 bug class). Day 1 is
         // semantically identical to calendar month, so "clear" is never needed.
         if (billingCycleStartDay != null)
           'billingCycleStartDay': billingCycleStartDay,
         'mealPricingEnabled': mealPricingEnabled,
+        // Live-Test-16 ISSUE-1: SERVER-OWNED display flag. Emitted so the SWR
+        // cache round-trips the locked state (a cache-first paint must not
+        // show the toggle as editable after the first publish), and STRIPPED
+        // from every request body by [kServerOwnedMealConfigKeys] — the
+        // backend's mealConfig DTO is whitelist+forbid and would 422 on it.
+        'mealPricingLocked': mealPricingLocked,
+        'windowMinGapMinutes': windowMinGapMinutes,
         'billSkippedMeals': billSkippedMeals,
         'billAbsentMeals': billAbsentMeals,
         'attendanceDefault': attendanceDefault,
@@ -499,6 +573,8 @@ class GroupMealConfig extends Equatable {
     bool? billingCycleChangeUsed,
     bool clearBillingCycleStartDay = false,
     bool? mealPricingEnabled,
+    bool? mealPricingLocked,
+    int? windowMinGapMinutes,
     bool? billSkippedMeals,
     bool? billAbsentMeals,
     String? attendanceDefault,
@@ -519,6 +595,9 @@ class GroupMealConfig extends Equatable {
             ? null
             : (billingCycleStartDay ?? this.billingCycleStartDay),
         mealPricingEnabled: mealPricingEnabled ?? this.mealPricingEnabled,
+        mealPricingLocked: mealPricingLocked ?? this.mealPricingLocked,
+        windowMinGapMinutes:
+            windowMinGapMinutes ?? this.windowMinGapMinutes,
         billSkippedMeals: billSkippedMeals ?? this.billSkippedMeals,
         billAbsentMeals: billAbsentMeals ?? this.billAbsentMeals,
         attendanceDefault: attendanceDefault ?? this.attendanceDefault,
@@ -537,6 +616,8 @@ class GroupMealConfig extends Equatable {
         billingCycleStartDay,
         billingCycleChangeUsed,
         mealPricingEnabled,
+        mealPricingLocked,
+        windowMinGapMinutes,
         billSkippedMeals,
         billAbsentMeals,
         attendanceDefault,

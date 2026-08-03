@@ -104,7 +104,10 @@ class GroupRepository implements IGroupRepository {
         'type': type.name,
         if (description != null) 'description': description,
         if (maxMembers != null) 'maxMembers': maxMembers,
-        if (mealConfig != null) 'mealConfig': mealConfig.toJson(),
+        // Live-Test-16 ISSUE-1: toRequestJson() strips the server-owned
+        // display flags that toJson() emits for cache fidelity. The body sent
+        // here is byte-identical to the pre-Live-Test-16 payload.
+        if (mealConfig != null) 'mealConfig': mealConfig.toRequestJson(),
         if (functionalRole != null) 'functionalRole': functionalRole.name,
         // Module 02 additive fields — only sent when provided.
         if (country != null) 'country': country,
@@ -143,7 +146,10 @@ class GroupRepository implements IGroupRepository {
         if (type != null) 'type': type.name,
         if (description != null) 'description': description,
         if (maxMembers != null) 'maxMembers': maxMembers,
-        if (mealConfig != null) 'mealConfig': mealConfig.toJson(),
+        // Live-Test-16 ISSUE-1: toRequestJson() strips the server-owned
+        // display flags that toJson() emits for cache fidelity. The body sent
+        // here is byte-identical to the pre-Live-Test-16 payload.
+        if (mealConfig != null) 'mealConfig': mealConfig.toRequestJson(),
         if (functionalRole != null) 'functionalRole': functionalRole.name,
       },
     );

@@ -11,6 +11,7 @@ import 'package:smart_meal_management/features/admin/meals/screens/preference_gr
 import 'package:smart_meal_management/features/admin/meals/widgets/guest_config_sheet.dart';
 import 'package:smart_meal_management/features/admin/meals/widgets/meal_config_form.dart';
 import 'package:smart_meal_management/shared/models/meal_model.dart';
+import 'package:smart_meal_management/shared/utils/meal_window_rules.dart';
 import 'package:smart_meal_management/shared/widgets/app_empty_state.dart';
 import 'package:smart_meal_management/shared/widgets/app_section_title.dart';
 import 'package:smart_meal_management/shared/widgets/app_status_chip.dart';
@@ -32,6 +33,31 @@ class _MealConfigScreenState extends State<MealConfigScreen> {
   late final MealConfigProvider _provider;
   bool _initialized = false;
   String _orgId = '';
+
+  /// Live-Test-16 ISSUE-1: true once this group's first meal schedule has been
+  /// published — the Meal-Pricing ON/OFF mode is then permanent (server truth).
+  bool get _pricingLocked =>
+      _provider.selectedGroup?.mealConfig.mealPricingLocked ?? false;
+
+  /// Live-Test-16 F2: the gap the SERVER enforces (group payload), so client
+  /// validation never diverges from backend validation.
+  int get _windowMinGap =>
+      _provider.selectedGroup?.mealConfig.windowMinGapMinutes ??
+      kMinWindowGapMinutes;
+
+  /// Live-Test-16 ISSUE-2: the group's other ACTIVE meal windows, built from
+  /// the meals already held in the provider — zero network, zero extra query.
+  List<MealWindowRef> _siblingWindows({String? excludeMealId}) => [
+        for (final m in _provider.meals)
+          if (m.isActive && m.id != excludeMealId)
+            MealWindowRef(
+              mealId: m.id,
+              label: m.name,
+              slotKey: m.slotKey,
+              openTime: m.attendanceWindow.openTime,
+              closeTime: m.attendanceWindow.closeTime,
+            ),
+      ];
 
   @override
   void initState() {
@@ -272,19 +298,41 @@ class _MealConfigScreenState extends State<MealConfigScreen> {
                     const SizedBox(height: 12),
 
                     // ── Meal pricing toggle ────────────────────────────────
+                    // Live-Test-16 ISSUE-1 §11: after the group's FIRST meal
+                    // schedule is published the ON/OFF mode is permanent, so
+                    // the control stays VISIBLE (the admin must still be able
+                    // to read the group's configuration) but becomes read-only
+                    // with an explicit reason. Server-enforced either way.
                     _ToggleTile(
                       icon: Icons.payments_rounded,
-                      title: 'Enable Meal Pricing',
-                      subtitle: _provider.mealPricingEnabled
-                          ? 'Meals carry a ₹ price — shown to members & used for billing'
-                          : 'No pricing — members see meals without a price',
+                      title: _pricingLocked
+                          ? 'Meal Pricing — ${_provider.mealPricingEnabled ? 'Enabled' : 'Disabled'} 🔒'
+                          : 'Enable Meal Pricing',
+                      subtitle: _pricingLocked
+                          ? 'Finalized when this group published its first meal '
+                              'schedule, so it can no longer be changed. '
+                              'Individual meal prices remain editable.'
+                          : _provider.mealPricingEnabled
+                              ? 'Meals carry a ₹ price — shown to members & used for billing'
+                              : 'No pricing — members see meals without a price',
                       value: _provider.mealPricingEnabled,
-                      onChanged: (v) => _provider.toggleMealPricing(
+                      onChanged: _pricingLocked
+                          ? null
+                          : (v) => _provider.toggleMealPricing(
                                 organizationId: _orgId,
                                 groupId: _provider.selectedGroup!.id,
                                 enabled: v,
                               ),
                     ),
+                    // Live-Test-16 ISSUE-1 §2: while the group has never
+                    // published, tell the admin these two settings need review
+                    // BEFORE the first schedule goes out.
+                    if (!_pricingLocked && _provider.mealsEnabled) ...[
+                      const SizedBox(height: 8),
+                      _FirstPublishNoticeBanner(
+                        pricingEnabled: _provider.mealPricingEnabled,
+                      ),
+                    ],
                     const SizedBox(height: 12),
 
                     // ── Billing policy (SRS Module 03 Q17/Q22 + Live-Test-11
@@ -422,7 +470,14 @@ class _MealConfigScreenState extends State<MealConfigScreen> {
                     const SizedBox(height: 12),
 
                     // ── Billing cycle (Pass 12, FR-BILLX-020) ──────────────
-                    if (_provider.mealPricingEnabled) ...[
+                    // Live-Test-16 ISSUE-1 §5/§10: the First-Publish review
+                    // shows the billing cycle to EVERY group, priced or not
+                    // (it also anchors data retention), and §5 requires the
+                    // admin to be able to correct it before confirming — so
+                    // the control is also shown while the group is still
+                    // unpublished. Priced groups keep their existing
+                    // always-visible behaviour unchanged.
+                    if (_provider.mealPricingEnabled || !_pricingLocked) ...[
                       _BillingCycleTile(
                         day: _provider.selectedGroup?.mealConfig
                             .billingCycleStartDay,
@@ -781,6 +836,10 @@ class _MealConfigScreenState extends State<MealConfigScreen> {
                 // ISSUE-011: Global OFF locks the per-meal toggle (read-only).
                 globalPreferencesEnabled: _provider.preferencesEnabled,
                 pricingEnabled: _provider.mealPricingEnabled,
+                // Live-Test-16 ISSUE-2: every OTHER active meal's window, read
+                // from state already in memory — no fetch, no extra wave.
+                siblingWindows: _siblingWindows(),
+                windowMinGapMinutes: _windowMinGap,
                 // Live-Test-9 ISSUE-001: pop the SHEET'S OWN route, ONLY on
                 // success. The old handler captured the SCREEN's navigator and
                 // popped unconditionally after the await — a failed save
@@ -891,6 +950,10 @@ class _MealConfigScreenState extends State<MealConfigScreen> {
                 // ISSUE-011: Global OFF locks the per-meal toggle (read-only).
                 globalPreferencesEnabled: _provider.preferencesEnabled,
                 pricingEnabled: _provider.mealPricingEnabled,
+                // Live-Test-16 ISSUE-2: siblings EXCLUDING the meal being
+                // edited (a meal never conflicts with itself).
+                siblingWindows: _siblingWindows(excludeMealId: meal.id),
+                windowMinGapMinutes: _windowMinGap,
                 // Live-Test-9 ISSUE-001: pop the SHEET'S OWN route, ONLY on
                 // success — see _showAddMealSheet for the failure analysis.
                 onSave: (data) async {
@@ -1156,6 +1219,50 @@ class _BillingCycleTile extends StatelessWidget {
   static String _ord(int d) {
     if (d >= 11 && d <= 13) return 'th';
     return switch (d % 10) { 1 => 'st', 2 => 'nd', 3 => 'rd', _ => 'th' };
+  }
+}
+
+// ── First-publish notice (Live-Test-16 ISSUE-1 §2) ────────────────────────────
+
+/// Tells the admin, BEFORE the group's first schedule is published, that Meal
+/// Pricing + Billing Cycle need review because the first publication freezes
+/// the pricing mode permanently. Disappears once the group is locked.
+class _FirstPublishNoticeBanner extends StatelessWidget {
+  const _FirstPublishNoticeBanner({required this.pricingEnabled});
+
+  final bool pricingEnabled;
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final fg = isDark ? AppColors.warning : AppColors.onWarningContainer;
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: isDark
+            ? AppColors.warning.withValues(alpha: 0.10)
+            : AppColors.warningContainer,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.warning.withValues(alpha: 0.45)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(Icons.info_outline_rounded, size: 18, color: fg),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              'Review before your first publish — Meal Pricing is currently '
+              '${pricingEnabled ? 'ON' : 'OFF'}. Publishing this group\'s first '
+              'meal schedule locks that choice permanently. Check Meal Pricing '
+              'and the Billing Cycle now; you will confirm both at publish.',
+              style: AppTypography.bodySmall.copyWith(color: fg),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }
 
