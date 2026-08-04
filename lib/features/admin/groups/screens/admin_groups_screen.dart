@@ -588,7 +588,10 @@ class _CreateGroupSheetState extends State<_CreateGroupSheet> {
       ],
       decoration: InputDecoration(
         labelText: label,
-        isDense: true,
+        // Live-Test-17 ISSUE-2: `isDense: true` made these location fields
+        // visibly SHORTER than Group Name / Maximum Members, which use the
+        // default density. One form = one density, so every equivalent input
+        // now shares the same height, padding and label position.
         errorText: error,
         helperText: helper,
         filled: true,
@@ -900,7 +903,14 @@ class _CreateGroupSheetState extends State<_CreateGroupSheet> {
                 .copyWith(color: colorScheme.onSurfaceVariant),
           ),
           const SizedBox(height: 12),
-          Row(children: [
+          // Live-Test-17 ISSUE-2: paired fields TOP-align. Row defaults to
+          // CrossAxisAlignment.center, which vertically centres each child
+          // against the tallest one — so the moment a sibling grows a helper or
+          // error line, its input BOX slides up relative to its partner. With
+          // `start`, helper/error text grows downward and can never move the
+          // neighbouring box. No fixed heights, no IntrinsicHeight, so the row
+          // stays fully responsive on every screen width.
+          Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Expanded(
               child: _reqField(
                 _stateCtrl,
@@ -920,7 +930,11 @@ class _CreateGroupSheetState extends State<_CreateGroupSheet> {
             ),
           ]),
           const SizedBox(height: 10),
-          Row(children: [
+          // Same rule as the State/City row above. THIS is the pair from the
+          // report: QR expiry carries `0 = never` while PIN Code carries no
+          // helper, so centring lifted the QR box ~half a helper-line above the
+          // PIN box.
+          Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Expanded(
               child: _reqField(
                 _pinCtrl,

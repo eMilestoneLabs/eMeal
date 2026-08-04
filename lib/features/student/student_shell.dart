@@ -1,7 +1,11 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:smart_meal_management/app/router/route_names.dart';
+import 'package:smart_meal_management/core/constants/realtime_events.dart';
 import 'package:smart_meal_management/data/services/cache_warmer.dart';
+import 'package:smart_meal_management/data/services/realtime_service.dart';
 import 'package:smart_meal_management/features/auth/providers/auth_provider.dart';
 import 'package:smart_meal_management/features/student/dashboard/providers/student_dashboard_provider.dart';
 import 'package:smart_meal_management/features/student/providers/group_config_provider.dart';
@@ -33,7 +37,8 @@ class StudentShell extends StatefulWidget {
   State<StudentShell> createState() => _StudentShellState();
 }
 
-class _StudentShellState extends State<StudentShell> {
+class _StudentShellState extends State<StudentShell>
+    with WidgetsBindingObserver {
   // ── GroupConfigProvider — created here, injected via GroupConfigScope ──────
   late final GroupConfigProvider _groupConfig;
 
@@ -83,6 +88,26 @@ class _StudentShellState extends State<StudentShell> {
     RouteNames.studentProfile,
   ];
 
+  // ── Live-Test-17 JOIN-01: membership reconciliation ───────────────────────
+  //
+  // Admin approval is an AUTHORITATIVE server-side transition that must land on
+  // the member's already-open app — no Profile→Home, no restart, no re-login.
+  // Owned by the SHELL (not a screen) because the screen that is stuck is
+  // `NoGroupScreen`, and the same stale state is reachable from the Attendance
+  // tab; a screen-scoped listener would only reconcile while that one screen
+  // happened to be mounted.
+  StreamSubscription<RealtimeMessage>? _rtSub;
+
+  /// Single-flight guard. The server emits to `group:{id}` AND `user:{id}`, so
+  /// a socket in both rooms receives the frame twice — and `refreshSession`
+  /// ROTATES the refresh token, where two concurrent calls would land on the
+  /// theft-detection reuse path. One reconcile at a time, always.
+  bool _reconcilingJoin = false;
+
+  /// Captured in [didChangeDependencies] so the realtime callback never has to
+  /// touch an InheritedWidget outside of build.
+  AuthProvider? _auth;
+
   @override
   void initState() {
     super.initState();
@@ -92,10 +117,102 @@ class _StudentShellState extends State<StudentShell> {
     _dashboardProvider = StudentDashboardProvider(
       groupConfigProvider: _groupConfig,
     );
+    // The socket is already open (AuthProvider connects on login/restore) and
+    // the gateway auto-joins `user:{id}`, so this needs no room management.
+    _rtSub = RealtimeService.instance
+        .on(RealtimeEvents.groupMemberUpdated)
+        .listen(_onMembershipEvent);
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  /// Realtime alone CANNOT cover approval — and this is the most common real
+  /// sequence, not an edge case.
+  ///
+  /// `RealtimeService` deliberately tears the socket DOWN while the app is
+  /// backgrounded (battery). Socket.IO does not replay frames to a disposed
+  /// client, so an approval that happens while the member is waiting with the
+  /// app in the background is lost permanently: on resume the socket
+  /// reconnects, no event arrives, and the member is still looking at
+  /// "You haven't joined a group yet".
+  ///
+  /// Cost is deliberately zero for everyone else: the probe only runs while the
+  /// member has NO group — i.e. exactly the stuck state. A member who already
+  /// belongs to a group performs no extra work on resume.
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state != AppLifecycleState.resumed) return;
+    if (!mounted || _reconcilingJoin) return;
+    final user = _auth?.currentUser;
+    if (user == null || user.effectiveGroupIds.isNotEmpty) return;
+    unawaited(_reconcileMembership());
+  }
+
+  /// Reconciles an approved join onto the live app.
+  ///
+  /// Deliberately does THREE things in order — doing fewer is a regression:
+  ///   1. `refreshSession()` ONLY when the org claim is missing. A first-time
+  ///      joiner signs up with no organization; approval sets it in the DB but
+  ///      the JWT still carries the old null claim, and `organizationId` is
+  ///      read from the JWT alone. Skipping this leaves every org-scoped call
+  ///      failing. Gating it on `isEmpty` keeps token rotation to once per
+  ///      member lifetime instead of once per membership event.
+  ///   2. `refreshCurrentUser()` — brings `groupIds` in, which flips the
+  ///      no-group gate and the shell's tab set.
+  ///   3. `load()` — MANDATORY. `StudentDashboardScreen.didChangeDependencies`
+  ///      is one-shot and the screen is ALREADY mounted, so nothing else would
+  ///      ever fire the first group-scoped load. Without it the member trades a
+  ///      correct "you haven't joined a group yet" screen for a hollow
+  ///      dashboard (no group name, no meals, no summary, no loader) AND a
+  ///      3-tab nav, because an unloaded GroupMealConfig defaults to
+  ///      Attendance-Only.
+  Future<void> _onMembershipEvent(RealtimeMessage msg) async {
+    if (!mounted || _reconcilingJoin) return;
+    if (msg.data['action'] != 'joined') return;
+
+    final auth = _auth;
+    final user = auth?.currentUser;
+    if (auth == null || user == null) return;
+    // User isolation: only ever react to THIS account's membership.
+    if (msg.data['userId']?.toString() != user.id) return;
+    final groupId = msg.data['groupId']?.toString();
+    if (groupId == null || groupId.isEmpty) return;
+    // Already known — nothing to reconcile (covers the duplicate delivery).
+    if (user.effectiveGroupIds.contains(groupId)) return;
+
+    await _reconcileMembership();
+  }
+
+  /// The single reconcile path, shared by the realtime event and the
+  /// resume probe so the two can never drift apart.
+  Future<void> _reconcileMembership() async {
+    final auth = _auth;
+    final user = auth?.currentUser;
+    if (auth == null || user == null || _reconcilingJoin) return;
+
+    _reconcilingJoin = true;
+    try {
+      if (user.organizationId.isEmpty) {
+        await auth.refreshSession();
+      }
+      await auth.refreshCurrentUser();
+      if (!mounted) return;
+      final refreshed = auth.currentUser;
+      if (refreshed != null && refreshed.effectiveGroupIds.isNotEmpty) {
+        await _dashboardProvider.load(user: refreshed);
+      }
+    } catch (_) {
+      // Fail-soft: a failed reconcile must never break the running app. The
+      // member keeps the pre-existing manual paths (pull-to-refresh, tab
+      // switch) and the next event or app resume retries.
+    } finally {
+      _reconcilingJoin = false;
+    }
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _rtSub?.cancel();
     _dashboardProvider.dispose();
     _groupConfig.dispose();
     super.dispose();
@@ -207,6 +324,7 @@ class _StudentShellState extends State<StudentShell> {
   void didChangeDependencies() {
     super.didChangeDependencies();
     final auth = AuthProviderScope.of(context);
+    _auth = auth; // JOIN-01: used by the realtime reconciler (no build context)
     final user = auth.currentUser;
     // Warm the non-landing tabs' caches once per account (self-guarded), so the
     // first open of Attendance/Profile/Groups is an instant cache hit instead

@@ -90,6 +90,31 @@ class _MealConfigScreenState extends State<MealConfigScreen> {
     );
   }
 
+  /// Live-Test-17 ISSUE-3: the server is the sole authority on the billing
+  /// cycle, so a rejection must be VISIBLE rather than a silent revert.
+  ///
+  /// The control is hidden once locked, so this is normally unreachable — but a
+  /// STALE CACHE makes it reachable for real: another admin publishes first,
+  /// this device still believes the group is a draft, and the change comes back
+  /// `BILLING_CYCLE_LOCKED`. Without this the dropdown would just snap back with
+  /// no explanation. Mirrors the existing guest-settings error pattern above.
+  Future<void> _setBillingCycle(int day) async {
+    final group = _provider.selectedGroup;
+    if (group == null) return;
+    final ok = await _provider.setBillingCycleStartDay(
+      organizationId: _orgId,
+      groupId: group.id,
+      day: day,
+    );
+    if (ok || !mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(_provider.error ?? 'Could not change the billing cycle'),
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+  }
+
   @override
   void dispose() {
     _provider.removeListener(_rebuild);
@@ -289,8 +314,9 @@ class _MealConfigScreenState extends State<MealConfigScreen> {
                           : 'Enable Meal Pricing',
                       subtitle: _pricingLocked
                           ? 'Finalized when this group published its first meal '
-                              'schedule, so it can no longer be changed. '
-                              'Individual meal prices remain editable.'
+                              'schedule, so this ON/OFF setting can no longer be '
+                              'changed. Individual meal prices are NOT locked — '
+                              'they remain fully editable.'
                           : _provider.mealPricingEnabled
                               ? 'Meals carry a ₹ price — shown to members & used for billing'
                               : 'No pricing — members see meals without a price',
@@ -456,21 +482,27 @@ class _MealConfigScreenState extends State<MealConfigScreen> {
                     // the control is also shown while the group is still
                     // unpublished. Priced groups keep their existing
                     // always-visible behaviour unchanged.
-                    if (_provider.mealPricingEnabled || !_pricingLocked) ...[
+                    // Live-Test-17 ISSUE-3 (Q2, user-locked): an
+                    // Attendance-Only group has NO financial billing cycle —
+                    // its retention follows the calendar-month lifecycle. The
+                    // control is hidden rather than disabled, and any value a
+                    // legacy AO group already stored is PRESERVED untouched
+                    // (hiding a control must never clear data).
+                    if (_provider.mealsEnabled &&
+                        (_provider.mealPricingEnabled || !_pricingLocked)) ...[
                       _BillingCycleTile(
                         day: _provider.selectedGroup?.mealConfig
                             .billingCycleStartDay,
-                        changeUsed: _provider.selectedGroup?.mealConfig
-                                .billingCycleChangeUsed ??
+                        // Draft until the first successful publish, permanent
+                        // after — derived from the same server truth as the
+                        // Meal-Pricing lock so the two can never disagree.
+                        changeUsed: _provider
+                                .selectedGroup?.mealConfig.billingCycleLocked ??
                             false,
                         // ISSUE-004: patches are queued + optimistic — the
                         // picker stays interactive during a save.
                         saving: false,
-                        onChanged: (d) => _provider.setBillingCycleStartDay(
-                          organizationId: _orgId,
-                          groupId: _provider.selectedGroup!.id,
-                          day: d,
-                        ),
+                        onChanged: (d) => _setBillingCycle(d),
                       ),
                       const SizedBox(height: 12),
                     ],
@@ -1109,8 +1141,8 @@ class _BillingCycleTile extends StatelessWidget {
                 const SizedBox(height: 2),
                 Text(
                   changeUsed
-                      ? 'Locked — this group already used its one-time change'
-                      : 'Can be changed ONCE. Also sets the data-retention boundary.',
+                      ? 'Locked — finalized at this group\'s first publish'
+                      : 'Draft — change it freely until the first schedule is published. Also sets the data-retention boundary.',
                   style: AppTypography.labelSmall.copyWith(
                     color: changeUsed
                         ? AppColors.textTertiary
@@ -1143,48 +1175,21 @@ class _BillingCycleTile extends StatelessWidget {
               ],
               onChanged: saving
                   ? null
-                  : (v) async {
+                  : (v) {
                       if (v == null || v == effective) return;
-                      // The change is PERMANENT and also moves the retention
-                      // boundary — never apply it without explicit consent.
-                      final ok = await _confirmPermanentChange(context, v);
-                      if (ok) onChanged(v);
+                      // Live-Test-17 ISSUE-3: while the group is still a DRAFT
+                      // this is a freely reversible configuration change, so
+                      // the old "you may change it only ONCE / never again"
+                      // consent dialog would now be factually wrong. The single
+                      // deliberate confirmation is the First-Publish review,
+                      // and after that publish this control is not rendered at
+                      // all (the 🔒 above replaces it).
+                      onChanged(v);
                     },
             ),
         ],
       ),
     );
-  }
-
-  /// Explicit, unmissable consent before consuming the one-time change.
-  Future<bool> _confirmPermanentChange(BuildContext context, int day) async {
-    final label = day == 1 ? 'the 1st (calendar month)' : '$day${_ord(day)}';
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Change Billing Cycle Start Date?'),
-        content: Text(
-          'This setting defines the permanent billing-cycle boundary for this '
-          'group, and the data-retention boundary follows it.\n\n'
-          'You may change it only ONCE. Existing finalized billing periods and '
-          'historical records will not be modified.\n\n'
-          'After confirming, this setting can never be changed again.\n\n'
-          'New start day: $label',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(false),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(ctx).pop(true),
-            style: FilledButton.styleFrom(backgroundColor: AppColors.warning),
-            child: const Text('Change permanently'),
-          ),
-        ],
-      ),
-    );
-    return ok == true;
   }
 
   static String _ord(int d) {
@@ -1224,10 +1229,15 @@ class _FirstPublishNoticeBanner extends StatelessWidget {
           const SizedBox(width: 8),
           Expanded(
             child: Text(
-              'Review before your first publish — Meal Pricing is currently '
-              '${pricingEnabled ? 'ON' : 'OFF'}. Publishing this group\'s first '
-              'meal schedule locks that choice permanently. Check Meal Pricing '
-              'and the Billing Cycle now; you will confirm both at publish.',
+              'Meal Pricing Configuration — currently '
+              '${pricingEnabled ? 'ON' : 'OFF'}. You can enable or disable this '
+              'setting, and change the Billing Cycle, until this group\'s first '
+              'schedule is published. You will review and confirm both at that '
+              'first publish.\n\n'
+              'After the first successful publish, the Enable Meal Pricing '
+              'setting and the Billing Cycle are permanently locked for this '
+              'group. This does NOT lock individual meal prices — if Meal '
+              'Pricing is enabled, each meal\'s ₹ price stays fully editable.',
               style: AppTypography.bodySmall.copyWith(color: fg),
             ),
           ),

@@ -170,8 +170,10 @@ class _FirstPublishReviewSheetState extends State<_FirstPublishReviewSheet> {
                       value: _ackPermanent,
                       onChanged: (v) => setState(() => _ackPermanent = v),
                       label:
-                          'I understand Meal Pricing becomes permanent for this '
-                          'group once this schedule is published.',
+                          'I understand that the Billing Cycle and the Enable '
+                          'Meal Pricing setting will be locked after the first '
+                          'successful publish. Individual meal prices will '
+                          'remain editable.',
                       textColor: textPrimary,
                     ),
                     if (_error != null) ...[
@@ -214,7 +216,7 @@ class _FirstPublishReviewSheetState extends State<_FirstPublishReviewSheet> {
                         fontWeight: FontWeight.w800,
                         letterSpacing: 0.6,
                       )),
-                  Text('Financial & Billing Review',
+                  Text('Final Financial Configuration Review',
                       style: AppTypography.titleMedium.copyWith(
                         color: textPrimary,
                         fontWeight: FontWeight.w800,
@@ -364,13 +366,13 @@ class _FirstPublishReviewSheetState extends State<_FirstPublishReviewSheet> {
                 )),
             const SizedBox(height: 6),
             Text(
-              widget.config.billingCycleChangeUsed
-                  ? 'This group has already used its one-time billing-cycle '
-                      'change, so this boundary is now fixed. It also sets the '
-                      'data-retention boundary.'
-                  : 'This boundary governs every billing period and the '
-                      'data-retention window. It can still be changed ONCE — '
-                      'publishing does not use up that change.',
+              // Live-Test-17 ISSUE-3: this text previously promised that
+              // "publishing does not use up that change" — the exact opposite
+              // of the rule this sheet now enforces. Publishing IS the event
+              // that makes the cycle permanent.
+              'This boundary governs every billing period and the '
+              'data-retention window. You can still change it now — after this '
+              'first publish it is permanently locked for this group.',
               style: AppTypography.bodySmall.copyWith(color: textSecondary),
             ),
           ],
@@ -409,10 +411,14 @@ class _FirstPublishReviewSheetState extends State<_FirstPublishReviewSheet> {
                   const SizedBox(height: 4),
                   Text(
                     'Publishing this first schedule finalises Meal Pricing as '
-                    '${pricingOn ? 'ENABLED' : 'DISABLED'} for the entire life of '
-                    'this group. The lock is enforced by the server, so it '
-                    'cannot be undone by reinstalling the app, clearing data or '
-                    'using another device.',
+                    '${pricingOn ? 'ENABLED' : 'DISABLED'} AND locks the Billing '
+                    'Cycle for the entire life of this group. The locks are '
+                    'enforced by the server, so they cannot be undone by '
+                    'reinstalling the app, clearing data, turning the meal '
+                    'system off and on again, or using another device.\n\n'
+                    'This does NOT lock individual meal prices. If Meal Pricing '
+                    'is enabled you can keep editing and customising each '
+                    'meal\'s ₹ price exactly as before.',
                     style: AppTypography.bodySmall.copyWith(
                       color: isDark
                           ? AppColors.warning

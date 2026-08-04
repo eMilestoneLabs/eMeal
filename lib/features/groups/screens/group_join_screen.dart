@@ -1,5 +1,9 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:smart_meal_management/core/constants/app_constants.dart';
+import 'package:smart_meal_management/core/constants/realtime_events.dart';
+import 'package:smart_meal_management/data/services/realtime_service.dart';
 import 'package:smart_meal_management/core/theme/app_colors.dart';
 import 'package:smart_meal_management/core/theme/app_typography.dart';
 import 'package:smart_meal_management/features/groups/providers/group_provider.dart';
@@ -32,6 +36,31 @@ class _GroupJoinScreenState extends State<GroupJoinScreen> {
   // MEM-004: set when a join created a pending approval request.
   GroupModel? _pendingGroup;
 
+  // Live-Test-17 JOIN-02: "waiting for approval" is a STABLE state, so it must
+  // also be the LANDING state. [_pendingGroup] is only ever set inline, right
+  // after a submit — so re-entering this screen (from the NoGroupScreen banner,
+  // the Attendance tab, or a second visit) dropped the member back on the
+  // code-entry + QR form even though the server says a request is pending.
+  // That is what made the QR page appear "again and again" before approval.
+  //
+  // The derivation below is ONE-SHOT per screen entry: without
+  // [_pendingDismissed], `_reset()` (the "Done" button) would clear
+  // [_pendingGroup] and the getter would immediately re-derive the very same
+  // pending view — turning Done into a dead button and making "Join another
+  // group" unreachable for anyone with an open request.
+  bool _pendingDismissed = false;
+
+  /// The pending request to display: the one just created, else the member's
+  /// single server-truth pending request until they explicitly dismiss it.
+  /// Stays null when several are pending — the list section handles that case
+  /// and picking one arbitrarily would hide the others.
+  GroupModel? get _effectivePendingGroup {
+    if (_pendingGroup != null) return _pendingGroup;
+    if (_pendingDismissed) return null;
+    final pending = _provider.pendingRequests;
+    return pending.length == 1 ? pending.first : null;
+  }
+
   // #2: the member's chosen per-group display role. Member-level only — admin
   // titles are never offered here (and the server rejects them). Default
   // 'student'; the same value is used by the QR/deep-link auto-join path.
@@ -42,18 +71,63 @@ class _GroupJoinScreenState extends State<GroupJoinScreen> {
     UserRole.guest,
   ];
 
+  // Live-Test-17 JOIN-01: this screen sits ABOVE the student shell on the root
+  // navigator, so the shell's reconciler cannot repaint it. Without its own
+  // listener a member who leaves the app open ON the "Waiting for approval"
+  // view keeps seeing that stale state after the admin approves — including a
+  // Cancel button whose request would now 404.
+  StreamSubscription<RealtimeMessage>? _rtSub;
+
+  /// Signed-in user id, captured for the realtime callback (which must not
+  /// touch an InheritedWidget outside build).
+  String? _userId;
+
   @override
   void initState() {
     super.initState();
     _codeCtrl = TextEditingController(text: widget.prefillCode ?? '');
     _provider = GroupProvider();
     _provider.addListener(_rebuild);
+    _rtSub = RealtimeService.instance
+        .on(RealtimeEvents.groupMemberUpdated)
+        .listen(_onMembershipApproved);
     // Auto-submit when a code arrives via deep-link / QR URL.
     if (widget.prefillCode != null && widget.prefillCode!.isNotEmpty) {
       WidgetsBinding.instance.addPostFrameCallback(
         (_) => _onJoin(widget.prefillCode!, preview: false),
       );
     }
+  }
+
+  /// Approval landed while this screen was open. [StudentShell] has already
+  /// refreshed the session, the user model and the dashboard, so the correct
+  /// destination is simply the screen underneath — popping is the reconciliation.
+  void _onMembershipApproved(RealtimeMessage msg) {
+    if (!mounted) return;
+    if (msg.data['action'] != 'joined') return;
+    // User isolation: only this account's own membership.
+    final me = _userId;
+    if (me == null || msg.data['userId']?.toString() != me) return;
+    // `isCurrent` is MANDATORY, not defensive: pop() removes the TOPMOST route.
+    // This screen can have a modal sheet above it (the pre-join preview), and
+    // popping then would dismiss that SHEET while leaving this stale screen
+    // behind — the exact opposite of reconciling. Only pop when this route is
+    // genuinely on top; otherwise fall through to the in-place reset, which is
+    // correct in every stack position.
+    final isTopmost = ModalRoute.of(context)?.isCurrent ?? false;
+    final navigator = Navigator.of(context);
+    if (isTopmost && navigator.canPop()) {
+      navigator.pop();
+      return;
+    }
+    // Not poppable (deep-link entry at the stack root) or not topmost: drop the
+    // stale pending state in place and re-read server truth instead of
+    // stranding the member on a request that no longer exists.
+    setState(() {
+      _pendingGroup = null;
+      _pendingDismissed = true;
+    });
+    _provider.loadPendingRequests(userId: me);
   }
 
   bool _loadedPending = false;
@@ -67,6 +141,7 @@ class _GroupJoinScreenState extends State<GroupJoinScreen> {
       // "Waiting for approval" (and Cancel). Cache-first (per user) so the
       // banner paints instantly instead of popping in after the network call.
       final user = AuthProviderScope.of(context).currentUser;
+      _userId = user?.id;
       _provider.loadPendingRequests(userId: user?.id);
     }
   }
@@ -77,6 +152,7 @@ class _GroupJoinScreenState extends State<GroupJoinScreen> {
 
   @override
   void dispose() {
+    _rtSub?.cancel();
     _provider.removeListener(_rebuild);
     _provider.dispose();
     _codeCtrl.dispose();
@@ -172,6 +248,11 @@ class _GroupJoinScreenState extends State<GroupJoinScreen> {
     setState(() {
       _successGroupId = null;
       _pendingGroup = null;
+      // JOIN-02: the member explicitly asked for the join form back, so stop
+      // deriving the pending view for the rest of this screen's lifetime. The
+      // request itself is untouched — the section above the form still lists
+      // it, and re-entering the screen lands on it again.
+      _pendingDismissed = true;
     });
   }
 
@@ -280,7 +361,7 @@ class _GroupJoinScreenState extends State<GroupJoinScreen> {
   }
 
   Future<void> _cancelPending() async {
-    final g = _pendingGroup;
+    final g = _effectivePendingGroup;
     if (g == null) return;
     final ok = await _provider.cancelPendingRequest(g.id);
     if (!mounted) return;
@@ -299,6 +380,8 @@ class _GroupJoinScreenState extends State<GroupJoinScreen> {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    // JOIN-02: pending approval is the landing state, not the QR/code form.
+    final pendingGroup = _effectivePendingGroup;
 
     return Scaffold(
       backgroundColor: isDark ? AppColors.backgroundDark : AppColors.background,
@@ -314,9 +397,9 @@ class _GroupJoinScreenState extends State<GroupJoinScreen> {
             horizontal: AppConstants.pagePaddingH,
             vertical: AppConstants.pagePaddingV,
           ),
-          child: _pendingGroup != null
+          child: pendingGroup != null
               ? _PendingView(
-                  group: _pendingGroup!,
+                  group: pendingGroup,
                   onCancel: _cancelPending,
                   onDone: _reset,
                 )

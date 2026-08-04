@@ -444,6 +444,21 @@ class GroupMealConfig extends Equatable {
 
   bool get isOptOut => attendanceDefault == 'present';
 
+  /// Live-Test-17 ISSUE-3: the Billing Cycle is DRAFT (freely re-configurable)
+  /// until the group's first successful meal-schedule publish, then PERMANENT.
+  ///
+  /// Deliberately derived from [mealPricingLocked] rather than from a new wire
+  /// field: both locks are the same server event (`firstSchedulePublishedAt`),
+  /// which the payload already carries — so this costs zero extra bytes and
+  /// cannot drift out of lock-step with the pricing lock.
+  ///
+  /// [billingCycleChangeUsed] is intentionally NOT consulted. The former
+  /// one-time-change privilege it recorded has been superseded; a legacy group
+  /// that consumed it but never published is DRAFT again, exactly as the
+  /// backend now decides. Reading it here would lock a control the server
+  /// happily accepts.
+  bool get billingCycleLocked => mealPricingLocked;
+
   /// Hosted guests are usable only in Meal Mode with the feature flag on.
   bool get guestsEnabled =>
       mealsEnabled && guestConfig.guestAttendanceEnabled;
@@ -512,6 +527,16 @@ class GroupMealConfig extends Equatable {
     // the sole authority (ISSUE-1 §9).
     if (mealPricingLocked) {
       json.remove('mealPricingEnabled');
+      // Live-Test-17 ISSUE-3: the cycle day is immutable once locked, for the
+      // SAME reason and by the SAME event. Stripping it is not cosmetic — the
+      // whole mealConfig is re-sent on every unrelated toggle, so a cached
+      // value that predates a pre-lock cycle change would read as a change
+      // attempt and 400 (`BILLING_CYCLE_LOCKED`) an edit that has nothing to
+      // do with billing.
+      //
+      // This does NOT weaken the lock: a direct API call still carries the
+      // field and is still rejected, so the backend remains the sole authority.
+      json.remove('billingCycleStartDay');
     }
     return json;
   }
