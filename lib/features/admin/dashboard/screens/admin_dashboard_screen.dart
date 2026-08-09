@@ -247,6 +247,14 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                 // FR-ADM-050 (ISSUE-15): "Publish Notice" + corrections queue
                 // are first-class dashboard actions, not buried in sub-screens.
                 QuickActionGrid(
+                  // Live-Test-15 ISSUE-2: this tile is org-wide, not
+                  // group-scoped, so it stays available while ANY group has a
+                  // financial subsystem and disappears only when none does.
+                  billingEnabled: _provider.groups.any(
+                    (g) =>
+                        g.mealConfig.mealsEnabled &&
+                        g.mealConfig.mealPricingEnabled,
+                  ),
                   onPublishNotice: () => _publishNotice(auth),
                   onReviewCorrections: () => Navigator.of(context).push(
                     MaterialPageRoute(

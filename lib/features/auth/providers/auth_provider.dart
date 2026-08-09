@@ -327,6 +327,73 @@ class AuthProvider extends ChangeNotifier {
     }
   }
 
+  /// Live-Test-15 ISSUE-5 (RC-B) — IN-SESSION EMAIL VERIFICATION.
+  ///
+  /// [verifyOtp] above is the OTP **login** state machine: it flips the session
+  /// to AuthLoading before the call and to AuthUnauthenticated on failure,
+  /// which is correct when nobody is signed in yet.
+  ///
+  /// "Verify now" is a different flow — the user is ALREADY signed in. Running
+  /// the login machine there meant a wrong or expired code left the app in
+  /// AuthUnauthenticated with the session still in memory: the OTP screen
+  /// stayed up, but backing out landed on /role-select because the router's
+  /// redirect saw an unauthenticated user on a protected route. A mistyped
+  /// digit logged people out.
+  ///
+  /// So this NEVER touches [_state] on failure. On success it adopts the fresh
+  /// session exactly like a login would (the backend returns real tokens and
+  /// stamps emailVerifiedAt), so the verified state reaches the UI with no
+  /// refresh, restart or re-login — requirement rows 14–17.
+  ///
+  /// Returns null on success, or an error message to show inline.
+  Future<String?> verifyEmailOtp({
+    required String identifier,
+    required String otp,
+    String purpose = 'signup',
+  }) async {
+    final result = await _repo.verifyOtp(
+      identifier: identifier,
+      otp: otp,
+      // The caller is already authenticated, so the workspace check the login
+      // path performs is redundant here; pass the live user's own role context
+      // so a legitimate verification can never be rejected as "wrong workspace".
+      roleContext: _roleContextOfCurrentUser(),
+      purpose: purpose,
+    );
+
+    switch (result) {
+      case Ok(:final value):
+        // Verification cannot change identity, so the returned session is
+        // normally the SAME account and its warm caches stay valid — no clear.
+        //
+        // Defence in depth for the multi-tenant rule: if the id ever did
+        // differ, adopting the session while keeping the previous account's
+        // caches would paint account A's data for account B. Fall back to the
+        // full ownership adoption in that (unreachable) case.
+        if (value.user.id != _session?.user.id) {
+          await _adoptCacheOwnership(value.user.id, clearWhenUnowned: true);
+        }
+        _session = value;
+        _state = AuthAuthenticated(session: value);
+        notifyListeners();
+        return null;
+
+      case Err(:final failure):
+        // Deliberately NO state change: the existing session survives an
+        // incorrect / expired / rate-limited code.
+        return failure.message;
+    }
+  }
+
+  /// The workspace string matching the signed-in user's role.
+  String _roleContextOfCurrentUser() {
+    final u = currentUser;
+    if (u == null) return 'student';
+    if (u.role.isAdminGroup) return 'admin';
+    if (u.role.isEventGroup) return 'event';
+    return 'student';
+  }
+
   // ── Reset password ────────────────────────────────────────────────────────
 
   /// Validate [otp] and reset password for [identifier].

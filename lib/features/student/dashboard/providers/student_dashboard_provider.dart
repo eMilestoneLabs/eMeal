@@ -141,6 +141,10 @@ class StudentDashboardProvider extends ChangeNotifier {
   /// True when admin has meal preferences enabled for this group.
   bool get preferencesEnabled => _groupConfig.preferencesEnabled;
 
+  /// Live-Test-15 ISSUE-2: Meal Pricing gates the entire billing feature.
+  /// Derived from the group config this provider already loaded — no extra wave.
+  bool get mealPricingEnabled => _groupConfig.mealPricingEnabled;
+
   /// The subset of [MealPreferenceOption]s the admin enabled.
   List<MealPreferenceOption> get enabledPreferences =>
       _groupConfig.enabledPreferences;

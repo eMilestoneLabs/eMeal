@@ -642,14 +642,30 @@ class _MealConfigFormState extends State<MealConfigForm> {
         ),
         const SizedBox(height: 4),
         Text(
-          'Lowercase identifier for this meal slot (e.g. "breakfast", "morning_tea", "iftar"). Used for analytics grouping.',
+          widget.initialMeal == null
+              ? 'Lowercase identifier for this meal slot (e.g. "breakfast", "morning_tea", "iftar"). Used for analytics grouping.'
+              // GAP 2: the server treats slotKey as IMMUTABLE after creation
+              // (SRS MMT-002 — it is the analytics/billing continuity key) and
+              // silently ignores it in a PATCH. Presenting an editable field
+              // whose edits are discarded is exactly the "ignore failures
+              // silently" trap, so on EDIT it is shown locked with the reason.
+              : 'Fixed when the meal was created — it is the analytics and '
+                  'billing continuity key, so past records keep resolving. '
+                  'Create a new meal if you need a different slot.',
           style: TextStyle(fontSize: 11, color: colorScheme.onSurfaceVariant),
         ),
         const SizedBox(height: 8),
         TextField(
           controller: _slotKeyCtrl,
+          enabled: widget.initialMeal == null,
           decoration: InputDecoration(
             hintText: 'e.g. breakfast, lunch, morning_tea',
+            filled: widget.initialMeal != null,
+            fillColor: colorScheme.surfaceContainerHighest,
+            suffixIcon: widget.initialMeal == null
+                ? null
+                : Icon(Icons.lock_outline_rounded,
+                    size: 16, color: colorScheme.onSurfaceVariant),
             border: OutlineInputBorder(
               borderRadius: BorderRadius.circular(AppConstants.inputRadius),
             ),

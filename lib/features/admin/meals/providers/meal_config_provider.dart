@@ -101,10 +101,29 @@ class MealConfigProvider extends ChangeNotifier {
     );
   }
 
+  /// Guidebook §4 (crash-safety): a provider must check a disposed flag before
+  /// `notifyListeners()`. This provider drives the planner, whose boot is a
+  /// parallel network wave — backing out of the Schedule screen mid-wave lets
+  /// an async continuation fire `notifyListeners()` on a disposed notifier,
+  /// which throws "A MealConfigProvider was used after being disposed" and
+  /// takes the route down.
+  ///
+  /// Guarded centrally by overriding `notifyListeners` rather than editing
+  /// every call site: one place to be correct, and every future call site is
+  /// covered automatically.
+  bool _disposed = false;
+
   @override
   void dispose() {
+    _disposed = true;
     _groupSelSub?.cancel();
     super.dispose();
+  }
+
+  @override
+  void notifyListeners() {
+    if (_disposed) return;
+    super.notifyListeners();
   }
 
   // ── Getters ───────────────────────────────────────────────────────────────
@@ -137,6 +156,32 @@ class MealConfigProvider extends ChangeNotifier {
   List<GroupModel> get groups => _groups;
   GroupModel? get selectedGroup => _selectedGroup;
   MealScheduleModel? get weekSchedule => _weekSchedule;
+
+  /// Live-Test-15 ISSUE-4 — CACHE-FIRST PAINT, FRESH-ONLY EDIT.
+  ///
+  /// True while the planner matrix on screen came from the on-device cache and
+  /// the authoritative copy has not landed yet.
+  ///
+  /// Guidebook §8 forbids SWR-caching planner drafts because a cached draft
+  /// must never become the SOURCE OF A WRITE (draft-clobber). That is a WRITE
+  /// rule, not a READ rule — so the matrix is painted instantly from cache and
+  /// every edit control stays disabled until this flips false. By the time the
+  /// admin can touch anything, the server's copy is on screen, so a save can
+  /// structurally never originate from stale data. The blank/skeleton wait is
+  /// gone; the safety property is unchanged.
+  bool _scheduleStale = false;
+  bool get scheduleStale => _scheduleStale;
+
+  /// Per-org, per-group key for the planner matrix (both modes share it — the
+  /// server always returns all 7 days; Day-Wise simply renders two of them).
+  String _scheduleCacheKey(String orgId, String groupId) =>
+      'planner_matrix:$orgId:$groupId';
+
+  /// Live-Test-15 ISSUE-1: the selected group's ACTIVE planner mode. Save and
+  /// publish date their entries through it, so Day-Wise writes Today+Tomorrow
+  /// as real consecutive calendar dates instead of `Monday + dayIndex`.
+  bool get _isDayWise =>
+      _selectedGroup?.mealConfig.dayWiseMealsEnabled ?? false;
   bool get mealsEnabled => _mealsEnabled;
   bool get preferencesEnabled => _preferencesEnabled;
   bool get mealPricingEnabled => _mealPricingEnabled;
@@ -286,7 +331,24 @@ class MealConfigProvider extends ChangeNotifier {
     notifyListeners();
 
     // 2 — one parallel network wave.
-    final selId = sel?.id;
+    //
+    // Live-Test-15 ISSUE-4: on a COLD cache `sel` is null (nothing to resolve
+    // the group from yet), so the schedule fetch used to drop out of this wave
+    // and run sequentially in step 3 — the "tap Schedule is slow" cold open.
+    //
+    // But `loadSchedule` needs ONLY a groupId, and `preferredGroupId` is the
+    // NAV PARAM carried from Meal Config: an input we already hold. Guidebook
+    // §3 pattern 2 — "start every fetch whose inputs are already known (nav
+    // param, cached selection) in the same wave". Seeding from it keeps the
+    // boot at ONE wave instead of two, and step 3's `finalId != selId` check
+    // then matches, so the duplicate second `loadSchedule` disappears too.
+    //
+    // Warm-cache behaviour is untouched (`sel?.id` still wins). If the nav
+    // param were ever stale, step 3 still reconciles exactly as before.
+    final selId = sel?.id ??
+        ((preferredGroupId != null && preferredGroupId.isNotEmpty)
+            ? preferredGroupId
+            : null);
     await Future.wait(<Future<void>>[
       loadGroups(organizationId: organizationId),
       if (selId != null)
@@ -335,6 +397,40 @@ class MealConfigProvider extends ChangeNotifier {
     );
   }
 
+  /// Live-Test-15 ISSUE-4 — ONE-WAVE group switch inside the planner.
+  ///
+  /// The planner used to switch groups with two SEQUENTIAL network waves:
+  /// `selectGroup` (meals) awaited to completion, then `loadSchedule`. Nothing
+  /// in the schedule fetch depends on the meals response — both need only the
+  /// groupId — so on a high-RTT link that doubled the dead time for no reason
+  /// (and the planner draft is deliberately never SWR-cached, so there is no
+  /// cached paint to hide it).
+  ///
+  /// They now ride ONE wave (guidebook §3 pattern 2). Ordering is preserved
+  /// where it matters: `_ensureWeekdaysPopulated` re-runs after both land, and
+  /// it is a strict no-op when the draft is already populated or published.
+  Future<void> selectGroupWithSchedule(
+    GroupModel group, {
+    required String organizationId,
+  }) async {
+    _selectedGroup = group;
+    _mealsEnabled = group.mealConfig.mealsEnabled;
+    _preferencesEnabled = group.mealConfig.preferencesEnabled;
+    _mealPricingEnabled = group.mealConfig.mealPricingEnabled;
+    unawaited(SelectedGroupStore.instance.write(organizationId, group.id));
+    notifyListeners();
+
+    await Future.wait(<Future<void>>[
+      _loadMeals(organizationId: organizationId, groupId: group.id),
+      loadSchedule(organizationId: organizationId, groupId: group.id),
+    ]);
+
+    // Late-meals guard (same reasoning as bootstrapPlanner): the schedule can
+    // land before the meal list, which would skip draft auto-population.
+    await _ensureWeekdaysPopulated(group.id);
+    notifyListeners();
+  }
+
   Future<void> _loadForGroup(
     GroupModel group, {
     required String organizationId,
@@ -350,6 +446,15 @@ class MealConfigProvider extends ChangeNotifier {
   }
 
   /// Per-org, per-group cache key for the configured meals list.
+  /// Which group `_meals` currently holds.
+  ///
+  /// `_loadMeals` and `loadSchedule` now ride ONE parallel wave, so the
+  /// schedule can land while `_meals` still belongs to the PREVIOUS group.
+  /// Draft auto-population reads `_meals`, so without this it could seed group
+  /// B's empty draft with group A's meals — and the later re-run would no-op,
+  /// because the draft is no longer empty, making it stick.
+  String? _mealsGroupId;
+
   String _mealsCacheKey(String orgId, String groupId) =>
       'meal_config_meals:$orgId:$groupId';
 
@@ -371,7 +476,10 @@ class MealConfigProvider extends ChangeNotifier {
       _meals = await ResponseCacheService.instance.readList(
           _mealsCacheKey(organizationId, groupId), MealModel.fromJson,
           maxAge: const Duration(hours: 12));
-      if (_meals.isNotEmpty) notifyListeners();
+      if (_meals.isNotEmpty) {
+        _mealsGroupId = groupId;
+        notifyListeners();
+      }
     }
     // Miss-vs-empty note: a cached-empty list is indistinguishable from a
     // miss here, but this method never gates a loader on it — the screen
@@ -395,6 +503,7 @@ class MealConfigProvider extends ChangeNotifier {
         // time, admin order as tie-breaker — consistent across all screens.
         _meals = List.of(value)
           ..sort(MealModel.compareChronological);
+        _mealsGroupId = groupId;
         _cacheMeals(organizationId, groupId);
       case Err(:final failure):
         _error = failure.message;
@@ -406,11 +515,50 @@ class MealConfigProvider extends ChangeNotifier {
     required String organizationId,
     required String groupId,
   }) async {
+    // ── CROSS-GROUP GUARD (must run FIRST) ────────────────────────────────
+    // `_weekSchedule` holds whichever group was loaded last. The cache-first
+    // paint below deliberately stops forcing a skeleton, so without this the
+    // PREVIOUS group's matrix would stay on screen during a group switch —
+    // and, because the network had already landed for that group, it would
+    // stay EDITABLE. A save would then write group A's plan under group A's
+    // schedule id while the admin believed they were editing group B.
+    //
+    // Dropping it here means the switch falls through to this group's own
+    // cached matrix (read-only until verified) or to the skeleton. Never
+    // another group's data. (Rule: "never display data from the previous
+    // account, group or organization".)
+    if (_weekSchedule != null && _weekSchedule!.groupId != groupId) {
+      _weekSchedule = null;
+      _scheduleStale = false;
+    }
+
+    // Live-Test-15 ISSUE-4: paint the last-known matrix INSTANTLY so tapping
+    // Schedule never shows a blank/skeleton wait, then reconcile. Marked stale
+    // so the screen renders it READ-ONLY until the authoritative copy lands.
+    if (_weekSchedule == null) {
+      final cached = await ResponseCacheService.instance.readObject(
+        _scheduleCacheKey(organizationId, groupId),
+        MealScheduleModel.fromJson,
+        maxAge: const Duration(hours: 12),
+      );
+      // The key is group-scoped, so a mismatch should be impossible — but a
+      // corrupt/hand-edited cache entry must never paint another group's plan.
+      if (cached != null && cached.groupId == groupId) {
+        _weekSchedule = cached;
+        _scheduleStale = true;
+        _isLoading = false;
+        notifyListeners();
+      }
+    }
+
     // Issue 4: keep the loading state on until the draft is populated, so the
     // planner shows a spinner instead of flashing "No schedule yet" before the
-    // master meals auto-fill the week.
-    _isLoading = true;
-    notifyListeners();
+    // master meals auto-fill the week. Skipped when a cached matrix is already
+    // painted — replacing real content with a skeleton would be a regression.
+    if (_weekSchedule == null) {
+      _isLoading = true;
+      notifyListeners();
+    }
     final result = await _mealRepo.getCurrentWeekSchedule(
       organizationId: organizationId,
       groupId: groupId,
@@ -419,8 +567,16 @@ class MealConfigProvider extends ChangeNotifier {
     switch (result) {
       case Ok(:final value):
         _weekSchedule = value;
+        // Truth is on screen — editing unlocks.
+        _scheduleStale = false;
+        // Write-through the SERVER copy only. A locally-edited draft is never
+        // cached, so the cache can never seed a stale write.
+        unawaited(ResponseCacheService.instance
+            .write(_scheduleCacheKey(organizationId, groupId), value.toJson()));
       case Err(:final failure):
         _error = failure.message;
+        // Network failed. If a cached matrix is on screen it STAYS read-only:
+        // the admin can look, but cannot edit or publish from unverified data.
     }
     // Issue 1 (#2): a freshly-loaded DRAFT must already contain every enabled
     // meal on all 7 weekdays so the admin can immediately configure each day,
@@ -438,6 +594,15 @@ class MealConfigProvider extends ChangeNotifier {
     final sched = _weekSchedule;
     if (sched == null) return;
     if (sched.isPublished) return;
+    // GROUP ISOLATION: `groupId` was previously accepted and never used. It is
+    // load-bearing now that meals and schedule load in parallel — populate ONLY
+    // when `_meals` provably belongs to THIS group, and only into THIS group's
+    // matrix. Otherwise group A's meals would seed group B's draft.
+    if (_mealsGroupId != groupId) return;
+    if (sched.groupId != groupId) return;
+    // Never fabricate a matrix on top of an unverified (cached) copy — it is
+    // read-only anyway, and the real one is moments away.
+    if (_scheduleStale) return;
     if (!_meals.any((m) => m.isActive)) return;
     final allEmpty =
         sched.days.isEmpty || sched.days.every((d) => d.meals.isEmpty);
@@ -692,6 +857,18 @@ class MealConfigProvider extends ChangeNotifier {
           onSaved?.call(value);
           notifyListeners();
           completer.complete(true);
+          if (isNewest) {
+            // Shared-key write-through: keep the group LIST and the persisted
+            // `admin_groups:{org}` cache in step with the flags we just saved,
+            // so no other screen (or a cold-start cache paint) can resolve a
+            // stale planner mode or a stale Meal-Pricing state.
+            //
+            // Awaited HERE — after the caller has been released and the UI has
+            // repainted — so it runs inside the serialized patch queue. Two
+            // rapid toggles therefore write the cache in order instead of
+            // racing each other.
+            await _writeThroughGroup(value, organizationId);
+          }
         case Err(:final failure):
           if (isNewest) {
             // Revert — the UI must never claim an unsaved state. (A stale
@@ -928,6 +1105,7 @@ class MealConfigProvider extends ChangeNotifier {
       organizationId: organizationId,
       groupId: groupId,
       schedule: _weekSchedule!,
+      dayWiseMode: _isDayWise,
     );
     switch (result) {
       case Ok(:final value):
@@ -1013,6 +1191,63 @@ class MealConfigProvider extends ChangeNotifier {
     }());
   }
 
+  /// Live-Test-15 (cache-consistency audit) — SHARED-KEY WRITE-THROUGH.
+  ///
+  /// `admin_groups:{org}` is read by EVERY admin tab's group selector and is
+  /// painted cache-first on a cold start. `_patchMealConfigOptimistic` updated
+  /// only `_selectedGroup`, so after a mealConfig toggle the group LIST and the
+  /// persisted cache still carried the OLD flags. Consequences that actually
+  /// bite (guidebook §2: "any mutation another screen displays must write
+  /// through the shared key"):
+  ///
+  ///   • Planner mode: switching away and back via the group selector re-read
+  ///     the stale entry, so "Schedule" could open the previous mode's planner
+  ///     — the exact ISSUE-1 §2 symptom, resurrected from cache.
+  ///   • Meal Pricing: the admin dashboard's Member Billing tile and the
+  ///     Billing Cycle tile derive visibility from these flags (ISSUE-2/3), so
+  ///     a cold start could show a billing surface for a pricing-OFF group.
+  ///
+  /// Writes the AUTHORITATIVE server group (never the optimistic guess), so a
+  /// server-side cascade (mode exclusivity, ATT-007) is what gets persisted.
+  /// Fire-and-forget with an internal catch — cache repair is best-effort and
+  /// the next groups load rewrites the truth either way.
+  /// Awaitable on purpose. It is `await`ed on the SERIALIZED patch queue, so a
+  /// later toggle's read-modify-write can never interleave with this one and
+  /// silently drop a cache update (rule: "prevent cache race conditions and
+  /// cache corruption"). It is awaited AFTER `notifyListeners()`, so the UI has
+  /// already repainted and only the queue waits on the local disk write.
+  Future<void> _writeThroughGroup(
+      GroupModel group, String organizationId) async {
+    final i = _groups.indexWhere((g) => g.id == group.id);
+    if (i >= 0) _groups[i] = group;
+
+    try {
+      final key = 'admin_groups:$organizationId';
+      final cached = await ResponseCacheService.instance
+          .readListOrNull(key, GroupModel.fromJson);
+      if (cached == null) return;
+      var changed = false;
+      final next = <GroupModel>[];
+      for (final g in cached) {
+        if (g.id == group.id) {
+          changed = true;
+          next.add(group);
+        } else {
+          next.add(g);
+        }
+      }
+      if (changed) {
+        // AWAITED: this is the actual disk write. Leaving it unawaited would
+        // defeat the queue serialization above — the next toggle's read could
+        // still observe the pre-write value and clobber this update.
+        await ResponseCacheService.instance
+            .writeList(key, next, (g) => g.toJson());
+      }
+    } catch (_) {
+      // Best-effort only — never let cache repair surface to the admin.
+    }
+  }
+
   Future<bool> publishSchedule({
     required String organizationId,
     required String groupId,
@@ -1034,6 +1269,7 @@ class MealConfigProvider extends ChangeNotifier {
         organizationId: organizationId,
         groupId: groupId,
         schedule: _weekSchedule!,
+        dayWiseMode: _isDayWise,
       );
       switch (saveResult) {
         case Ok(:final value):
@@ -1061,6 +1297,7 @@ class MealConfigProvider extends ChangeNotifier {
       // Existing week -> send entries for atomic replace+publish. New week was
       // just created with its entries, so a plain flag-flip publish suffices.
       schedule: isNew ? null : _weekSchedule,
+      dayWiseMode: _isDayWise,
     );
 
     switch (result) {

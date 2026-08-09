@@ -49,7 +49,7 @@ class MealScheduleScreen extends StatefulWidget {
 class _MealScheduleScreenState extends State<MealScheduleScreen>
     with SingleTickerProviderStateMixin {
   late final MealConfigProvider _provider;
-  late final TabController _tabController;
+  late TabController _tabController;
   bool _initialized = false;
   bool _previewMode = false;
   // True from the first frame until the initial loadGroups->loadSchedule chain
@@ -57,9 +57,23 @@ class _MealScheduleScreenState extends State<MealScheduleScreen>
   // state) during the gap between those two sequential fetches.
   bool _bootstrapping = true;
 
+  /// Live-Test-15 ISSUE-1 (RC-2): the EFFECTIVE planner mode.
+  ///
+  /// [widget.dayWiseMode] only carries the mode of the group the planner was
+  /// OPENED with. The in-planner group selector can switch to a group in the
+  /// other mode, and a construction-time flag can never follow that — a
+  /// Day-Wise group used to keep rendering 7 weekly tabs. The selected group's
+  /// own config is therefore the authority; the widget flag is just the
+  /// first-frame fallback, before the group has resolved.
+  bool get _dayWiseMode {
+    if (!_initialized) return widget.dayWiseMode;
+    return _provider.selectedGroup?.mealConfig.dayWiseMealsEnabled ??
+        widget.dayWiseMode;
+  }
+
   /// Days shown in the planner. Weekly mode = all 7 weekdays (unchanged).
   /// Day-Wise mode = only [Today, Tomorrow] — strictly a two-day window.
-  List<DayOfWeek> get _days => widget.dayWiseMode
+  List<DayOfWeek> get _days => _dayWiseMode
       ? <DayOfWeek>[
           DayOfWeek.fromWeekday(DateTime.now().weekday),
           DayOfWeek.fromWeekday(
@@ -75,6 +89,31 @@ class _MealScheduleScreenState extends State<MealScheduleScreen>
     _tabController.index = widget.dayWiseMode
         ? 0
         : DayOfWeek.fromWeekday(DateTime.now().weekday).index;
+  }
+
+  /// Live-Test-15 ISSUE-1 (RC-2): keep the TabController in step with the
+  /// EFFECTIVE mode when the in-planner group selector switches to a group in
+  /// the other mode (7 tabs ⇄ 2 tabs).
+  ///
+  /// A TabController whose length no longer matches its TabBar/TabBarView
+  /// throws and takes the whole route down, so the swap is deliberate: the new
+  /// controller is installed FIRST and the old one is disposed in a post-frame
+  /// callback, after the rebuild that stopped referencing it. Disposing inline
+  /// would free a controller the current frame is still rendering with.
+  void _syncTabController() {
+    final wanted = _days.length;
+    if (_tabController.length == wanted) return;
+    final old = _tabController;
+    _tabController = TabController(
+      length: wanted,
+      vsync: this,
+      initialIndex: _dayWiseMode
+          ? 0
+          : DayOfWeek.fromWeekday(DateTime.now().weekday)
+              .index
+              .clamp(0, wanted - 1),
+    );
+    WidgetsBinding.instance.addPostFrameCallback((_) => old.dispose());
   }
 
   @override
@@ -106,7 +145,11 @@ class _MealScheduleScreenState extends State<MealScheduleScreen>
   }
 
   void _rebuild() {
-    if (mounted) setState(() {});
+    if (!mounted) return;
+    // Before the rebuild: the group may have changed planner mode, which
+    // changes the tab count.
+    _syncTabController();
+    setState(() {});
   }
 
   @override
@@ -116,6 +159,12 @@ class _MealScheduleScreenState extends State<MealScheduleScreen>
     _provider.dispose();
     super.dispose();
   }
+
+  /// Live-Test-15 ISSUE-4: the matrix is EDITABLE only once the authoritative
+  /// copy has landed. While it is still the instantly-painted cached copy the
+  /// planner is read-only, so a save can never originate from stale data —
+  /// guidebook §8's draft-clobber rule is preserved, without the blank wait.
+  bool get _readOnly => _previewMode || _provider.scheduleStale;
 
   void _togglePreview() => setState(() => _previewMode = !_previewMode);
 
@@ -128,8 +177,8 @@ class _MealScheduleScreenState extends State<MealScheduleScreen>
     final user = auth.currentUser;
     if (user == null) return;
     final orgId = user.organizationId;
-    await _provider.selectGroup(group, organizationId: orgId);
-    await _provider.loadSchedule(organizationId: orgId, groupId: group.id);
+    // Live-Test-15 ISSUE-4: one parallel wave instead of meals-then-schedule.
+    await _provider.selectGroupWithSchedule(group, organizationId: orgId);
   }
 
   // SRS Module 03 SCH-011/012: _copyFromPreviousWeek and _toggleRecurring
@@ -377,7 +426,7 @@ class _MealScheduleScreenState extends State<MealScheduleScreen>
 
     return Scaffold(
       backgroundColor: colorScheme.surfaceContainerLowest,
-      floatingActionButton: (!_previewMode &&
+      floatingActionButton: (!_readOnly &&
               !isPublished &&
               _provider.weekSchedule != null &&
               !_provider.isLoading)
@@ -398,7 +447,7 @@ class _MealScheduleScreenState extends State<MealScheduleScreen>
               label: Text(
                 _provider.isSaving
                     ? 'Publishing…'
-                    : (widget.dayWiseMode
+                    : (_dayWiseMode
                         ? 'Publish Day Plan'
                         : 'Publish Schedule'),
                 style: AppTypography.labelLarge.copyWith(
@@ -413,7 +462,7 @@ class _MealScheduleScreenState extends State<MealScheduleScreen>
           crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisSize: MainAxisSize.min,
           children: [
-            Text(widget.dayWiseMode ? 'Daily Meal Plan' : 'Weekly Planner',
+            Text(_dayWiseMode ? 'Daily Meal Plan' : 'Weekly Planner',
                 style: AppTypography.titleLarge),
             if (_previewMode)
               Text(
@@ -439,7 +488,7 @@ class _MealScheduleScreenState extends State<MealScheduleScreen>
           // Weekly-only actions (copy previous week / recurring) are hidden in
           // Day-Wise mode — those are weekly scheduling concepts. Revert-to-draft
           // applies to both since publishing is shared.
-          if (!widget.dayWiseMode || isPublished)
+          if (!_dayWiseMode || isPublished)
             PopupMenuButton<_ScheduleAction>(
               icon: const Icon(Icons.more_vert_rounded),
               itemBuilder: (_) => [
@@ -507,7 +556,7 @@ class _MealScheduleScreenState extends State<MealScheduleScreen>
             final d = e.value;
             final isToday = d == today;
             // Day-Wise: label tabs "Today"/"Tomorrow" + the weekday name.
-            final label = widget.dayWiseMode
+            final label = _dayWiseMode
                 ? '${i == 0 ? 'Today' : 'Tomorrow'} · ${d.label}'
                 : d.label;
             return Tab(
@@ -525,13 +574,16 @@ class _MealScheduleScreenState extends State<MealScheduleScreen>
           }).toList(),
         ),
       ),
-      body: (_provider.isLoading || _bootstrapping)
+      // Live-Test-15 ISSUE-4: a cached matrix is real content — never replace it
+      // with a skeleton. The skeleton is now only for a genuinely cold open.
+      body: ((_provider.isLoading || _bootstrapping) &&
+              _provider.weekSchedule == null)
           ? const AppListSkeleton(rows: 5, rowHeight: 112)
           : _provider.weekSchedule == null
               ? AppEmptyState(
                   icon: Icons.calendar_month_outlined,
                   title: 'No schedule yet',
-                  subtitle: widget.dayWiseMode
+                  subtitle: _dayWiseMode
                       ? 'Add meals in Master Meal Template first — they become the daily template for Today and Tomorrow.'
                       : 'Configure meals first, then build your weekly schedule here.',
                 )
@@ -546,6 +598,9 @@ class _MealScheduleScreenState extends State<MealScheduleScreen>
                     _StatusBanner(
                       isPublished: isPublished,
                       isPreview: _previewMode,
+                      isSyncing: _provider.scheduleStale,
+                      requiresRepublish:
+                          _provider.weekSchedule?.requiresRepublish == true,
                     ),
                     Expanded(
                       child: TabBarView(
@@ -556,8 +611,8 @@ class _MealScheduleScreenState extends State<MealScheduleScreen>
                             day: day,
                             allMeals: _provider.activeMeals,
                             schedule: _provider.weekSchedule,
-                            readOnly: _previewMode,
-                            onToggle: _previewMode
+                            readOnly: _readOnly,
+                            onToggle: _readOnly
                                 ? null
                                 : (mealId, enabled) =>
                                     _provider.toggleMealDay(
@@ -565,7 +620,7 @@ class _MealScheduleScreenState extends State<MealScheduleScreen>
                                       day.index,
                                       enabled,
                                     ),
-                            onEdit: _previewMode
+                            onEdit: _readOnly
                                 ? null
                                 : (mealId) =>
                                     _openDayMealEditor(day, mealId),
@@ -582,17 +637,49 @@ class _MealScheduleScreenState extends State<MealScheduleScreen>
 // ── Status banner ──────────────────────────────────────────────────────────────
 
 class _StatusBanner extends StatelessWidget {
-  const _StatusBanner({required this.isPublished, required this.isPreview});
+  const _StatusBanner({
+    required this.isPublished,
+    required this.isPreview,
+    this.isSyncing = false,
+    this.requiresRepublish = false,
+  });
   final bool isPublished;
   final bool isPreview;
 
+  /// P-01: this published schedule predates full server-side snapshotting, so
+  /// its published configuration is not yet frozen and a Master edit can still
+  /// reach students. Publishing once locks it permanently.
+  final bool requiresRepublish;
+
+  /// Live-Test-15 ISSUE-4: the matrix on screen is the instantly-painted
+  /// cached copy and the authoritative one has not landed yet. Editing is
+  /// disabled for that moment, so the admin is told WHY rather than left
+  /// tapping controls that do nothing.
+  final bool isSyncing;
+
   @override
   Widget build(BuildContext context) {
+    if (isSyncing && !isPreview) {
+      return const _BannerStrip(
+        color: AppColors.info,
+        icon: Icons.sync_rounded,
+        message: 'Showing your last saved plan — syncing the latest…',
+      );
+    }
     if (isPreview) {
       return const _BannerStrip(
         color: AppColors.info,
         icon: Icons.visibility_rounded,
         message: 'Student view — tap ✏️ to return to edit mode.',
+      );
+    }
+    if (isPublished && requiresRepublish) {
+      return const _BannerStrip(
+        color: AppColors.warning,
+        icon: Icons.lock_open_rounded,
+        message:
+            'Published earlier — publish once to lock this schedule so master '
+            'edits no longer affect students.',
       );
     }
     if (isPublished) {

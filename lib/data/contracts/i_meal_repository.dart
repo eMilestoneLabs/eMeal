@@ -75,10 +75,14 @@ abstract interface class IMealRepository {
   /// When [schedule.id] is empty a new draft is created (POST /schedules);
   /// otherwise the existing draft is replaced (PATCH /schedules/:id). Returns
   /// the persisted schedule (with a real id) so the caller can publish it.
+  /// [dayWiseMode] selects the planner window: Weekly (7 cells of the current
+  /// ISO week) or Day-Wise (exactly Today + Tomorrow, dated as REAL consecutive
+  /// calendar dates so a Sunday's "Tomorrow" crosses into the next ISO week).
   Future<Result<MealScheduleModel>> saveSchedule({
     required String organizationId,
     required String groupId,
     required MealScheduleModel schedule,
+    bool dayWiseMode,
   });
 
   /// Publish a draft schedule, making it visible to members.
@@ -86,6 +90,8 @@ abstract interface class IMealRepository {
     required String organizationId,
     required String groupId,
     required String scheduleId,
+    MealScheduleModel? schedule,
+    bool dayWiseMode,
   });
 
   /// Issue 2: revert a published schedule back to draft (unpublish) so the

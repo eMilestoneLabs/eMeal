@@ -621,8 +621,13 @@ class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
                               ? () => context.go(RouteNames.studentWeeklyMenu)
                               : null,
                           // command_3: billing summary + notepad one tap away.
-                          onBilling: () =>
-                              context.push(RouteNames.studentBilling),
+                          // Live-Test-15 ISSUE-2: Meal Pricing is the master
+                          // gate — with pricing OFF the group has no billing
+                          // feature, so the card disappears exactly like the
+                          // Menu card does when the weekly menu is off.
+                          onBilling: provider.mealPricingEnabled
+                              ? () => context.push(RouteNames.studentBilling)
+                              : null,
                           onNotepad: () => context.push(RouteNames.notepad),
                         ),
                       ),

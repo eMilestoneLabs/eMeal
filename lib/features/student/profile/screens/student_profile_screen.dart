@@ -7,6 +7,7 @@ import 'package:flutter_image_compress/flutter_image_compress.dart';
 import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:smart_meal_management/app/router/route_names.dart';
+import 'package:smart_meal_management/features/student/providers/group_config_provider.dart';
 import 'package:smart_meal_management/core/constants/app_constants.dart';
 import 'package:smart_meal_management/core/theme/app_colors.dart';
 import 'package:smart_meal_management/core/theme/app_typography.dart';
@@ -175,6 +176,15 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
                       const SizedBox(height: AppConstants.space12),
 
                       // ── My Billing ────────────────────────────────
+                      // Live-Test-15 ISSUE-2: Meal Pricing is the master gate
+                      // for meal billing. With pricing OFF the group has no
+                      // financial subsystem, so this entry point must not exist
+                      // — showing it only to render ₹0 is what the requirement
+                      // rejects. Read from the shell's GroupConfigScope, which
+                      // is already in memory: zero extra network calls.
+                      if (GroupConfigScope.maybeOf(context)
+                              ?.mealPricingEnabled ??
+                          false) ...[
                       Material(
                         color: isDark
                             ? AppColors.surfaceDark
@@ -235,6 +245,7 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
                         ),
                       ),
                       const SizedBox(height: AppConstants.space12),
+                      ],
 
                       // ── Logout button ──────────────────────────────
                       _LogoutButton(onLogout: _logout),

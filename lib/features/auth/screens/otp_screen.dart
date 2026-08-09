@@ -59,6 +59,30 @@ class _OtpScreenState extends State<OtpScreen> {
   bool _isResending = false;
   String? _error;
 
+  // ── Live-Test-15 ISSUE-5 (RC-D): route arguments pinned to State ──────────
+  //
+  // Every parameter of this screen arrives through `state.extra`, which is NOT
+  // part of the URI. GoRouter re-runs its builders whenever `refreshListenable`
+  // (the AuthProvider) notifies, and this flow notifies mid-verification — the
+  // login route one screen up already documents `extra` being dropped by such a
+  // refresh, which is why its roleContext travels in the query string instead.
+  //
+  // If that happened here the screen would silently rebuild with identifier=''
+  // and popOnSuccess=false: the OTP would be requested for an empty address and
+  // success would `go()` to a dashboard instead of returning the user to the
+  // page they started from (the "Critical Navigation Requirement").
+  //
+  // Pinning the values in State fixes it without putting the user's EMAIL into
+  // a route URI (which would leak it into the address bar on web and into any
+  // navigation logging). State survives the rebuild; the arguments survive with
+  // it. The `??` keeps whichever value actually arrived first.
+  late final String _identifier = widget.identifier;
+  late final String _roleContext = widget.roleContext;
+  late final String _purpose = widget.purpose;
+  late final bool _popOnSuccess = widget.popOnSuccess;
+  late final bool _shouldAutoRequest = widget._shouldAutoRequest;
+  late final bool _isSignup = widget.isSignup;
+
   // Countdown
   static const _countdownSeconds = 60;
   int _secondsLeft = _countdownSeconds;
@@ -71,7 +95,7 @@ class _OtpScreenState extends State<OtpScreen> {
     // Login OTP (and profile "Verify now") request the code when the screen
     // opens. Signup OTP was already sent during account creation, so we only
     // start the resend timer.
-    if (widget._shouldAutoRequest) {
+    if (_shouldAutoRequest) {
       WidgetsBinding.instance.addPostFrameCallback((_) => _requestInitialOtp());
     }
     _startCountdown();
@@ -81,8 +105,8 @@ class _OtpScreenState extends State<OtpScreen> {
   /// inline; the resend timer still runs so the user can retry.
   Future<void> _requestInitialOtp() async {
     final error = await AuthProviderScope.of(context).requestOtp(
-      identifier: widget.identifier,
-      purpose: widget.purpose,
+      identifier: _identifier,
+      purpose: _purpose,
     );
     if (!mounted || error == null) return;
     setState(() => _error = error);
@@ -120,12 +144,32 @@ class _OtpScreenState extends State<OtpScreen> {
     });
 
     final auth = AuthProviderScope.of(context);
-    final error = await auth.verifyOtp(
-      identifier: widget.identifier,
-      otp: otp,
-      roleContext: widget.roleContext,
-      purpose: widget.purpose,
-    );
+    // Live-Test-15 ISSUE-5 (RC-B): pick the verifier by whether a SESSION
+    // ALREADY EXISTS, not by how this screen was opened.
+    //
+    // `verifyOtp` is the OTP-LOGIN state machine: it flips to AuthLoading
+    // before the call and AuthUnauthenticated on failure. That is right when
+    // nobody is signed in — and destructive when someone is. BOTH authenticated
+    // entries land here: profile "Verify now" (popOnSuccess) AND the
+    // post-signup verification (signup establishes the session first). In both,
+    // a mistyped digit used to leave the app unauthenticated with the session
+    // still in memory, so backing out hit the router redirect and dumped the
+    // user on /role-select — they appeared logged out for one wrong OTP.
+    //
+    // Keying off `isAuthenticated` covers every authenticated entry point and
+    // leaves the genuine OTP-LOGIN path byte-identical.
+    final error = auth.isAuthenticated
+        ? await auth.verifyEmailOtp(
+            identifier: _identifier,
+            otp: otp,
+            purpose: _purpose,
+          )
+        : await auth.verifyOtp(
+            identifier: _identifier,
+            otp: otp,
+            roleContext: _roleContext,
+            purpose: _purpose,
+          );
 
     if (!mounted) return;
     setState(() => _isLoading = false);
@@ -137,8 +181,11 @@ class _OtpScreenState extends State<OtpScreen> {
 
     // Profile "Verify now": stay in place — pop back so the verified badge
     // updates on the profile the user came from (Issue 6).
-    if (widget.popOnSuccess) {
-      // Ensure the live session reflects the freshly-verified state.
+    if (_popOnSuccess) {
+      // verifyEmailOtp already adopted the freshly-verified session, so the
+      // badge is correct the moment we pop. This reconcile stays as a
+      // belt-and-braces sync for any server-side field the OTP response does
+      // not carry; it is awaited but costs one cached profile read.
       await auth.refreshCurrentUser();
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -175,7 +222,7 @@ class _OtpScreenState extends State<OtpScreen> {
 
     // Request a new OTP via the provider (mock: no-op; live: POST /v1/auth/otp/request).
     final errorMsg = await AuthProviderScope.of(context)
-        .requestOtp(identifier: widget.identifier, purpose: widget.purpose);
+        .requestOtp(identifier: _identifier, purpose: _purpose);
 
     if (!mounted) return;
     setState(() => _isResending = false);
@@ -188,14 +235,14 @@ class _OtpScreenState extends State<OtpScreen> {
     _startCountdown();
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text('OTP resent to ${widget.identifier}'),
+        content: Text('OTP resent to $_identifier'),
         behavior: SnackBarBehavior.floating,
         duration: const Duration(seconds: 2),
       ),
     );
   }
 
-  Color get _roleColor => switch (widget.roleContext) {
+  Color get _roleColor => switch (_roleContext) {
         'admin' => AppColors.secondary,
         'event' => AppColors.vacation,
         _ => AppColors.primary,
@@ -267,7 +314,7 @@ class _OtpScreenState extends State<OtpScreen> {
                   children: [
                     const TextSpan(text: 'We sent a 6-digit code to\n'),
                     TextSpan(
-                      text: widget.identifier,
+                      text: _identifier,
                       style: AppTypography.bodySmall.copyWith(
                         color: colorScheme.onSurface,
                         fontWeight: FontWeight.w700,
@@ -370,7 +417,7 @@ class _OtpScreenState extends State<OtpScreen> {
               // verification is optional for login. If the OTP email is slow
               // or lands in spam, the user must never be trapped here: let
               // them continue and verify later from Profile ("Verify now").
-              if (widget.isSignup && !widget.popOnSuccess) ...[
+              if (_isSignup && !_popOnSuccess) ...[
                 const SizedBox(height: 4),
                 Center(
                   child: TextButton(

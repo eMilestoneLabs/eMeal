@@ -6,6 +6,7 @@ import 'package:smart_meal_management/data/services/dio_api_service.dart';
 import 'package:smart_meal_management/shared/models/attendance_model.dart';
 import 'package:smart_meal_management/shared/models/meal_model.dart';
 import 'package:smart_meal_management/shared/models/meal_schedule_model.dart';
+import 'package:smart_meal_management/shared/utils/planner_dates.dart';
 import 'package:smart_meal_management/shared/models/paginated_response.dart';
 import 'package:smart_meal_management/shared/models/result.dart';
 
@@ -222,23 +223,26 @@ class MealRepository implements IMealRepository {
     }
   }
 
-  @override
-  Future<Result<MealScheduleModel>> saveSchedule({
-    required String organizationId,
-    required String groupId,
-    required MealScheduleModel schedule,
-  }) async {
-    // Build entries[] from the edited days, attaching concrete dates for the
-    // current ISO week (Monday = weekStartDate; each day = Monday + index).
-    final now = DateTime.now();
-    final monday = DateTime(now.year, now.month, now.day)
-        .subtract(Duration(days: now.weekday - 1));
-    String fmt(DateTime d) =>
-        '${d.year.toString().padLeft(4, '0')}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
 
+  // ── Planner date resolution (Live-Test-15 ISSUE-1) ─────────────────────────
+  //
+  // Date resolution lives in `shared/utils/planner_dates.dart` — it is planner
+  // DOMAIN logic, not an HTTP concern, and keeping it there makes the Sunday
+  // cross-week rule directly unit-testable. This repository only shapes the
+  // wire payload.
+
+  /// Build the wire `entries[]` for [schedule], dating each day through
+  /// [dates]. Days absent from [dates] are skipped (see `plannerDates`).
+  /// Shared by save AND publish so the two can never disagree about dates.
+  static List<Map<String, dynamic>> _buildEntries(
+    MealScheduleModel schedule,
+    Map<DayOfWeek, DateTime> dates,
+  ) {
     final entries = <Map<String, dynamic>>[];
     for (final daySchedule in schedule.days) {
-      final date = fmt(monday.add(Duration(days: daySchedule.day.index)));
+      final dt = dates[daySchedule.day];
+      if (dt == null) continue; // not part of the active planner window
+      final date = formatPlannerDate(dt);
       for (final e in daySchedule.meals) {
         entries.add({
           'mealId': e.mealId,
@@ -266,6 +270,23 @@ class MealRepository implements IMealRepository {
         });
       }
     }
+    return entries;
+  }
+
+  @override
+  Future<Result<MealScheduleModel>> saveSchedule({
+    required String organizationId,
+    required String groupId,
+    required MealScheduleModel schedule,
+    bool dayWiseMode = false,
+  }) async {
+    // Live-Test-15 ISSUE-1: dates come from the shared planner resolver, so
+    // Day-Wise Today/Tomorrow are the real consecutive calendar dates (Sunday
+    // → Monday crosses into the next ISO week) and only those two cells ship.
+    final dates = plannerDates(dayWise: dayWiseMode);
+    final monday = plannerDates(dayWise: false)[DayOfWeek.monday]!;
+    String fmt(DateTime d) => formatPlannerDate(d);
+    final entries = _buildEntries(schedule, dates);
 
     if (schedule.id.isEmpty) {
       // CREATE — POST /schedules { groupId, weekStartDate, entries }
@@ -286,7 +307,10 @@ class MealRepository implements IMealRepository {
     // UPDATE — PATCH /schedules/:id { entries, replaceEntries: true }
     final result = await DioApiService.instance.patch<Map<String, dynamic>>(
       '/schedules/${schedule.id}',
-      body: {'entries': entries, 'replaceEntries': true},
+      body: {
+        'entries': entries,
+        'replaceEntries': true,
+      },
     );
     return switch (result) {
       Err(:final failure) => Err(failure),
@@ -300,6 +324,7 @@ class MealRepository implements IMealRepository {
     required String groupId,
     required String scheduleId,
     MealScheduleModel? schedule,
+    bool dayWiseMode = false,
   }) async {
     // Issue 2: when the local draft is supplied, send its entries so the
     // backend atomically REPLACES + publishes in one transaction. Students
@@ -307,35 +332,14 @@ class MealRepository implements IMealRepository {
     // editing a published week never strands them on the master meal config.
     Map<String, dynamic>? body;
     if (schedule != null) {
-      final now = DateTime.now();
-      final monday = DateTime(now.year, now.month, now.day)
-          .subtract(Duration(days: now.weekday - 1));
-      String fmt(DateTime d) =>
-          '${d.year.toString().padLeft(4, '0')}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
-      final entries = <Map<String, dynamic>>[];
-      for (final daySchedule in schedule.days) {
-        final date = fmt(monday.add(Duration(days: daySchedule.day.index)));
-        for (final e in daySchedule.meals) {
-          entries.add({
-            'mealId': e.mealId,
-            'date': date,
-            if (e.name.isNotEmpty) 'mealName': e.name,
-            if (e.openTime != null && e.closeTime != null)
-              'attendanceWindow': {
-                'openTime': e.openTime,
-                'closeTime': e.closeTime,
-              },
-            'preferencesEnabled': e.preferencesEnabled,
-            'enabledPreferences': e.enabledPreferences,
-          'enabledPreferenceGroupIds': e.enabledPreferenceGroupIds,
-            'menuItems': e.menuItems,
-            if (e.description != null) 'description': e.description,
-            if (e.imageUrl != null) 'imageUrl': e.imageUrl,
-            if (e.price != null) 'price': e.price,
-          });
-        }
-      }
-      body = {'entries': entries, 'replaceEntries': true};
+      // Live-Test-15 ISSUE-1: identical date resolution to saveSchedule —
+      // one shared source, so save and publish can never disagree.
+      final entries =
+          _buildEntries(schedule, plannerDates(dayWise: dayWiseMode));
+      body = {
+        'entries': entries,
+        'replaceEntries': true,
+      };
     }
     // POST /schedules/:id/publish — admin only. An entries body triggers atomic
     // replace-and-publish; no body = idempotent flag flip.

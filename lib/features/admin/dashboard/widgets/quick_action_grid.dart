@@ -16,7 +16,15 @@ class QuickActionGrid extends StatelessWidget {
     this.onPublishNotice,
     this.onReviewCorrections,
     this.onVacationRequests,
+    this.billingEnabled = true,
   });
+
+  /// Live-Test-15 ISSUE-2: Meal Pricing is the MASTER GATE for meal billing.
+  /// False hides the Member Billing tile entirely — when no group in the
+  /// organization has Meal Pricing on there is no financial subsystem to open,
+  /// and showing a screen that can only render ₹0 is what the requirement
+  /// rejects. Defaults to true so every existing call site is unchanged.
+  final bool billingEnabled;
 
   /// FR-ADM-050 (ISSUE-15): opens the notice composer when provided.
   final VoidCallback? onPublishNotice;
@@ -54,12 +62,13 @@ class QuickActionGrid extends StatelessWidget {
         color: AppColors.present,
         route: RouteNames.adminAttendance,
       ),
-      const _ActionItem(
-        icon: Icons.receipt_long_rounded,
-        label: 'Member Billing',
-        color: AppColors.info,
-        route: RouteNames.adminBilling,
-      ),
+      if (billingEnabled)
+        const _ActionItem(
+          icon: Icons.receipt_long_rounded,
+          label: 'Member Billing',
+          color: AppColors.info,
+          route: RouteNames.adminBilling,
+        ),
       // Issue 6: quick access to archived groups (restore / permanent delete).
       const _ActionItem(
         icon: Icons.inventory_2_rounded,

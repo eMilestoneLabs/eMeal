@@ -260,6 +260,7 @@ class MealScheduleModel {
     required this.days,
     this.isPublished = false,
     this.publishedAt,
+    this.requiresRepublish = false,
     this.createdAt,
   });
 
@@ -269,6 +270,11 @@ class MealScheduleModel {
   final List<DaySchedule> days;
   final bool isPublished;
   final DateTime? publishedAt;
+
+  /// P-01: this published schedule predates full snapshotting, so its published
+  /// preference configuration was never frozen server-side. Publishing once
+  /// locks it. Defaults false, so older builds/servers behave unchanged.
+  final bool requiresRepublish;
   final DateTime? createdAt;
 
   DaySchedule? forDay(DayOfWeek day) =>
@@ -289,6 +295,7 @@ class MealScheduleModel {
         publishedAt: j['publishedAt'] != null
             ? DateTime.parse(j['publishedAt'])
             : null,
+        requiresRepublish: j['requiresRepublish'] ?? false,
         createdAt:
             j['createdAt'] != null ? DateTime.parse(j['createdAt']) : null,
       );
@@ -300,6 +307,7 @@ class MealScheduleModel {
         'days': days.map((d) => d.toJson()).toList(),
         'isPublished': isPublished,
         'publishedAt': publishedAt?.toIso8601String(),
+        'requiresRepublish': requiresRepublish,
         'createdAt': createdAt?.toIso8601String(),
       };
 
@@ -311,6 +319,7 @@ class MealScheduleModel {
         days: days,
         isPublished: isPublished ?? this.isPublished,
         publishedAt: publishedAt ?? this.publishedAt,
+        requiresRepublish: requiresRepublish,
         createdAt: createdAt,
       );
 }

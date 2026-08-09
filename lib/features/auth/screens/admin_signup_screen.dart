@@ -147,15 +147,25 @@ class _AdminSignupScreenState extends State<AdminSignupScreen> {
     final identifier = _loginPref == LoginPreference.email
         ? _emailCtrl.text.trim()
         : _mobileCtrl.text.trim();
+    // Live-Test-15 ISSUE-5 (RC-A): capture the router BEFORE any await.
+    //
+    // `signup()` establishes the session and notifies listeners; GoRouter's
+    // refreshListenable then redirects this (auth-route) screen to the
+    // dashboard. Across the two AuthStorageService awaits below that redirect
+    // usually lands FIRST, so the old `if (!mounted) return;` fired and the
+    // push to the OTP screen was silently skipped — the brand-new account went
+    // straight to the dashboard, unverified, having never been offered
+    // verification. Holding the router lets the navigation survive the unmount;
+    // the writes are best-effort preferences, so they no longer gate it.
+    final router = GoRouter.of(context);
     await AuthStorageService.instance.saveLoginPreference(_loginPref);
     await AuthStorageService.instance.saveRememberedIdentifier(identifier);
-    if (!mounted) return;
 
     // AUTH-031/036/041: verify the emailed OTP, then continue to the dashboard
     // / group creation.
     final email = _emailCtrl.text.trim();
     if (email.isNotEmpty) {
-      context.push(
+      router.push(
         RouteNames.otp,
         extra: OtpRouteExtra(
           identifier: email,
@@ -165,7 +175,7 @@ class _AdminSignupScreenState extends State<AdminSignupScreen> {
         ),
       );
     } else {
-      context.go(RouteNames.adminDashboard);
+      router.go(RouteNames.adminDashboard);
     }
   }
 

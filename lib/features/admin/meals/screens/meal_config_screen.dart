@@ -38,6 +38,28 @@ class _MealConfigScreenState extends State<MealConfigScreen> {
   bool get _pricingLocked =>
       _provider.selectedGroup?.mealConfig.mealPricingLocked ?? false;
 
+  /// Live-Test-15 ISSUE-1 (§2/§17): Weekly Meal Mode and Day-Wise Meal Mode are
+  /// mutually exclusive, so the planner is Day-Wise exactly when the group says
+  /// so. Single source of truth for BOTH planner entry points on this screen.
+  bool get _plannerIsDayWise =>
+      _provider.selectedGroup?.mealConfig.dayWiseMealsEnabled ?? false;
+
+  /// The ONE place that resolves where a "Schedule / Daily Plan" tap goes.
+  ///
+  /// The Schedule action must never be hard-wired to the Weekly Planner — it
+  /// resolves the group's CURRENTLY ACTIVE planner mode. Previously the AppBar
+  /// action resolved the mode correctly while the "Configured Meals → Schedule →"
+  /// action always opened Weekly, so a Day-Wise group showed "Daily Plan" at the
+  /// top and still landed on the Weekly Planner. Both call this getter now, so
+  /// the two can never drift apart again.
+  String? get _plannerRoute {
+    final group = _provider.selectedGroup;
+    if (group == null) return null;
+    return _plannerIsDayWise
+        ? '${RouteNames.adminMealSchedule}?groupId=${group.id}&mode=daywise'
+        : '${RouteNames.adminMealSchedule}?groupId=${group.id}';
+  }
+
   @override
   void initState() {
     super.initState();
@@ -142,22 +164,16 @@ class _MealConfigScreenState extends State<MealConfigScreen> {
               // group is in Day-Wise mode the weekly planner is hidden and the
               // admin instead opens the Today/Tomorrow daily planner. Weekly
               // mode behaviour is unchanged (mode param absent).
-              final dayWise =
-                  _provider.selectedGroup!.mealConfig.dayWiseMealsEnabled;
-              final id = _provider.selectedGroup!.id;
+              final route = _plannerRoute;
               return TextButton.icon(
-                onPressed: () => context.push(
-                  dayWise
-                      ? '${RouteNames.adminMealSchedule}?groupId=$id&mode=daywise'
-                      : '${RouteNames.adminMealSchedule}?groupId=$id',
-                ),
+                onPressed: route == null ? null : () => context.push(route),
                 icon: Icon(
-                  dayWise
+                  _plannerIsDayWise
                       ? Icons.today_rounded
                       : Icons.calendar_month_rounded,
                   size: 16,
                 ),
-                label: Text(dayWise ? 'Daily Plan' : 'Schedule'),
+                label: Text(_plannerIsDayWise ? 'Daily Plan' : 'Schedule'),
               );
             }),
         ],
@@ -488,8 +504,19 @@ class _MealConfigScreenState extends State<MealConfigScreen> {
                     // control is hidden rather than disabled, and any value a
                     // legacy AO group already stored is PRESERVED untouched
                     // (hiding a control must never clear data).
+                    // Live-Test-15 ISSUE-3 (user-locked truth table): the
+                    // Billing Cycle Start Day is a FINANCIAL configuration and
+                    // exists ONLY when Meal Pricing is enabled — in EVERY
+                    // phase. This supersedes the former draft-phase exception
+                    // (Live-Test-16 §5/§10), which also showed the picker to a
+                    // meals-ON group whose pricing was OFF. Retention for a
+                    // non-priced group follows the calendar-month boundary, so
+                    // the cycle anchors nothing there. Flipping Meal Pricing ON
+                    // before the first publish makes it reappear immediately,
+                    // still editable until the first publish locks it. Hidden,
+                    // never cleared: a stored legacy value is preserved.
                     if (_provider.mealsEnabled &&
-                        (_provider.mealPricingEnabled || !_pricingLocked)) ...[
+                        _provider.mealPricingEnabled) ...[
                       _BillingCycleTile(
                         day: _provider.selectedGroup?.mealConfig
                             .billingCycleStartDay,
@@ -512,9 +539,15 @@ class _MealConfigScreenState extends State<MealConfigScreen> {
                     AppSectionTitle(
                       title: 'Configured Meals',
                       subtitle: '${_provider.meals.length} meals',
-                      actionLabel: 'Schedule →',
-                      onActionTap: () =>
-                          context.push('${RouteNames.adminMealSchedule}?groupId=${_provider.selectedGroup!.id}'),
+                      // Live-Test-15 ISSUE-1 (§2): resolves the group's ACTIVE
+                      // planner mode — this action used to always open the
+                      // Weekly Planner, even for a Day-Wise group.
+                      actionLabel:
+                          _plannerIsDayWise ? 'Daily Plan →' : 'Schedule →',
+                      onActionTap: () {
+                        final route = _plannerRoute;
+                        if (route != null) context.push(route);
+                      },
                     ),
                     const SizedBox(height: 12),
                     if (_provider.meals.isEmpty)

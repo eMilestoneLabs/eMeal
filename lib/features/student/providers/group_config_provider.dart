@@ -18,6 +18,12 @@ class GroupConfigProvider extends ChangeNotifier {
   bool get weeklyMenuEnabled => _config.weeklyMenuEnabled;
   bool get dayWiseMealsEnabled => _config.dayWiseMealsEnabled;
   bool get preferencesEnabled => _config.preferencesEnabled;
+
+  /// Live-Test-15 ISSUE-2: Meal Pricing is the MASTER GATE for meal billing.
+  /// When it is OFF the group has no financial subsystem at all, so every
+  /// billing surface must be hidden — not rendered as ₹0. Read from the config
+  /// the shell already holds, so gating costs ZERO extra network calls.
+  bool get mealPricingEnabled => _config.mealPricingEnabled;
   List<MealPreferenceOption> get enabledPreferences =>
       _config.enabledPreferences;
 

@@ -14,7 +14,7 @@ import 'package:smart_meal_management/core/theme/app_typography.dart';
 ///    reflects another user's status — the viewer can't verify on their behalf.
 ///  - **Inline** (`iconOnly: true`): a tiny tinted dot+icon (with tooltip) to sit
 ///    next to a name in dense rows.
-class EmailVerificationBadge extends StatelessWidget {
+class EmailVerificationBadge extends StatefulWidget {
   const EmailVerificationBadge({
     super.key,
     required this.verified,
@@ -42,27 +42,55 @@ class EmailVerificationBadge extends StatelessWidget {
   /// Renders a minimal icon-only indicator for inline use after a name.
   final bool iconOnly;
 
+  @override
+  State<EmailVerificationBadge> createState() =>
+      _EmailVerificationBadgeState();
+}
+
+class _EmailVerificationBadgeState extends State<EmailVerificationBadge> {
   static const _green = Color(0xFF16A34A);
   static const _amber = Color(0xFFD97706);
 
-  bool get _canVerify => interactive && !verified && email.trim().isNotEmpty;
+  /// Live-Test-15 ISSUE-5 (RC-C): in-flight guard.
+  ///
+  /// Each entry into the OTP screen auto-requests a fresh code, and the backend
+  /// keeps exactly ONE active OTP per (identifier, purpose) — issuing a new one
+  /// invalidates the previous (UNI-013). So a double tap used to stack two OTP
+  /// screens AND silently kill the code the user was already reading, which
+  /// then failed as "Invalid OTP". One verification screen at a time.
+  bool _navigating = false;
 
-  void _startVerification(BuildContext context) {
-    context.push(
-      RouteNames.otp,
-      extra: OtpRouteExtra(
-        identifier: email.trim(),
-        roleContext: roleContext,
-        purpose: 'signup',
-        isSignup: true,
-        autoRequest: true, // request a fresh verification code on entry
-        popOnSuccess: true, // return to profile + refresh the badge (Issue 6)
-      ),
-    );
+  bool get _canVerify =>
+      widget.interactive &&
+      !widget.verified &&
+      widget.email.trim().isNotEmpty &&
+      !_navigating;
+
+  Future<void> _startVerification() async {
+    if (_navigating) return;
+    setState(() => _navigating = true);
+    try {
+      await context.push(
+        RouteNames.otp,
+        extra: OtpRouteExtra(
+          identifier: widget.email.trim(),
+          roleContext: widget.roleContext,
+          purpose: 'signup',
+          isSignup: true,
+          autoRequest: true, // request a fresh verification code on entry
+          popOnSuccess: true, // return to profile + refresh the badge (Issue 6)
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _navigating = false);
+    }
   }
 
   @override
   Widget build(BuildContext context) {
+    final verified = widget.verified;
+    final compact = widget.compact;
+    final iconOnly = widget.iconOnly;
     final color = verified ? _green : _amber;
     final icon = verified ? Icons.verified_rounded : Icons.error_outline_rounded;
     final tip = verified ? 'Email verified' : 'Email not verified';
@@ -132,7 +160,7 @@ class EmailVerificationBadge extends StatelessWidget {
       label: 'Email not verified. Tap to verify now.',
       child: InkWell(
         borderRadius: BorderRadius.circular(50),
-        onTap: () => _startVerification(context),
+        onTap: _startVerification,
         child: pill,
       ),
     );

@@ -12,6 +12,17 @@ import 'package:smart_meal_management/core/errors/failure.dart';
 class VerificationGate {
   VerificationGate._();
 
+  /// Live-Test-15 ISSUE-5 (RC-C): one guided verification at a time.
+  ///
+  /// The gate fires from provider error strings, so several failing writes (or
+  /// one impatient double tap) could stack multiple dialogs and, worse, several
+  /// OTP screens. Each entry auto-requests a code and the backend keeps exactly
+  /// ONE active OTP per (identifier, purpose) — UNI-013 — so the extra requests
+  /// invalidate the code the user is already reading. Static because the gate
+  /// is invoked from many unrelated screens; reset in a `finally` so a thrown
+  /// dialog can never wedge it shut.
+  static bool _inFlight = false;
+
   /// Matches the backend EmailVerifiedGuard message contract.
   static bool isVerificationRequired(Failure f) =>
       messageRequiresVerification(f.message);
@@ -44,7 +55,10 @@ class VerificationGate {
   }) async {
     if (!messageRequiresVerification(message)) return false;
     if (!context.mounted) return true;
-
+    // Already guiding the user through verification — swallow the duplicate.
+    if (_inFlight) return true;
+    _inFlight = true;
+    try {
     final verifyNow = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -68,7 +82,7 @@ class VerificationGate {
     );
 
     if (verifyNow == true && context.mounted && email.trim().isNotEmpty) {
-      context.push(
+      await context.push(
         RouteNames.otp,
         extra: OtpRouteExtra(
           identifier: email.trim(),
@@ -81,5 +95,8 @@ class VerificationGate {
       );
     }
     return true;
+    } finally {
+      _inFlight = false;
+    }
   }
 }

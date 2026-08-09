@@ -93,9 +93,22 @@ class _PreferenceGroupsScreenState extends State<PreferenceGroupsScreen> {
   /// Live-Test-8 ISSUE-001 mutual exclusivity, NON-DESTRUCTIVE: activating
   /// Standalone SUSPENDS the meal's preference groups (one server call —
   /// nothing is deleted). Switching back to Groups restores them exactly.
+  /// Live-Test-15 ISSUE-4 — the mode switch cost THREE BLOCKING waves.
+  ///
+  /// It ran `setMealBindingsActive` → `updateMeal` → `_load()` strictly in
+  /// sequence, each holding `_saving` (which disables the control), so the
+  /// admin stared at a dead switch for three round-trips. On a high-RTT link
+  /// that reads as a hang.
+  ///
+  /// The first two calls are INDEPENDENT — one suspends the meal's preference
+  /// groups, the other writes the standalone tag list — so they now ride ONE
+  /// parallel wave. The third is only a reconcile, so the control is released
+  /// BEFORE it runs and the screen stays interactive throughout. Same server
+  /// calls, same endpoints, same business rules; two fewer blocking waves.
   Future<void> _activateStandalone() async {
     if (_standaloneActive || _saving) return;
-    if (_groups.isNotEmpty) {
+    final hadGroups = _groups.isNotEmpty;
+    if (hadGroups) {
       final ok = await _confirm(
         'Switch to Standalone?',
         '${_groups.length} preference group(s) will be SAVED — not deleted. '
@@ -104,20 +117,46 @@ class _PreferenceGroupsScreenState extends State<PreferenceGroupsScreen> {
         confirmLabel: 'Switch',
       );
       if (ok != true) return;
-      setState(() => _saving = true);
-      final res = await _repo.setMealBindingsActive(_meal.id, active: false);
-      if (!mounted) return;
-      setState(() => _saving = false);
-      if (res case Err(:final failure)) {
-        _toast(failure.message);
-        return;
-      }
     }
     // Seed a valid minimum set when the meal has fewer than 2 stored tags.
     final tags = _meal.enabledPreferences.length >= _minStandalone
         ? _meal.enabledPreferences.take(_maxStandalone).toList()
         : <String>['Veg', 'Non-Veg'];
-    if (await _patchStandalone(tags: tags)) await _load();
+
+    setState(() => _saving = true);
+    // Both futures are created BEFORE either is awaited — one wave, not two.
+    final bindingsF = hadGroups
+        ? _repo.setMealBindingsActive(_meal.id, active: false)
+        : null;
+    final mealF = _mealRepo.updateMeal(
+      organizationId: _meal.organizationId,
+      groupId: _meal.groupId,
+      mealId: _meal.id,
+      availablePreferences: tags,
+    );
+    final bindingsRes = bindingsF == null ? null : await bindingsF;
+    final mealRes = await mealF;
+    if (!mounted) return;
+
+    if (bindingsRes case Err(:final failure)) {
+      setState(() => _saving = false);
+      _toast(failure.message);
+      return;
+    }
+    switch (mealRes) {
+      case Ok(:final value):
+        // Release the control first: the switch is now interactive while the
+        // reconcile below refreshes the group lists in the background.
+        setState(() {
+          _meal = value;
+          _saving = false;
+        });
+      case Err(:final failure):
+        setState(() => _saving = false);
+        _toast(failure.message);
+        return;
+    }
+    await _load();
   }
 
   /// Live-Test-8 ISSUE-001 mutual exclusivity: activating Groups silently
@@ -126,21 +165,48 @@ class _PreferenceGroupsScreenState extends State<PreferenceGroupsScreen> {
   /// no saved groups to restore.
   Future<void> _activateGroups() async {
     if (_saving) return;
-    if (_meal.preferencesEnabled) {
-      if (!await _patchStandalone(tags: const [])) return;
-    }
-    if (_suspendedGroups.isNotEmpty) {
+    // Live-Test-15 ISSUE-4: mirror image of _activateStandalone — clearing the
+    // standalone tag list and restoring the suspended bindings are independent
+    // writes, so they ride ONE wave instead of two sequential ones.
+    final clearsStandalone = _meal.preferencesEnabled;
+    final restoresGroups = _suspendedGroups.isNotEmpty;
+    if (clearsStandalone || restoresGroups) {
+      final restoredCount = _suspendedGroups.length;
       setState(() => _saving = true);
-      final res = await _repo.setMealBindingsActive(_meal.id, active: true);
+      final mealF = clearsStandalone
+          ? _mealRepo.updateMeal(
+              organizationId: _meal.organizationId,
+              groupId: _meal.groupId,
+              mealId: _meal.id,
+              availablePreferences: const <String>[],
+            )
+          : null;
+      final bindingsF = restoresGroups
+          ? _repo.setMealBindingsActive(_meal.id, active: true)
+          : null;
+      final mealRes = mealF == null ? null : await mealF;
+      final bindingsRes = bindingsF == null ? null : await bindingsF;
       if (!mounted) return;
-      setState(() => _saving = false);
-      if (res case Err(:final failure)) {
+
+      if (mealRes case Err(:final failure)) {
+        setState(() => _saving = false);
         _toast(failure.message);
         return;
       }
-      _toast('${_suspendedGroups.length} saved group(s) restored');
-      await _load();
-      return;
+      if (bindingsRes case Err(:final failure)) {
+        setState(() => _saving = false);
+        _toast(failure.message);
+        return;
+      }
+      setState(() {
+        if (mealRes case Ok(:final value)) _meal = value;
+        _saving = false;
+      });
+      if (restoresGroups) {
+        _toast('$restoredCount saved group(s) restored');
+        await _load();
+        return;
+      }
     }
     if (_groups.isNotEmpty) {
       // Already in Groups mode with live groups — nothing to create.
