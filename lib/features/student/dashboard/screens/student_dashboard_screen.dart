@@ -143,10 +143,15 @@ class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
     if (p == null) return;
 
     final wasVacation = p.isVacationMode;
-    p.setVacationMode(user.isVacationMode);
+    // Hand over the USER, not `user.isVacationMode`: the provider resolves
+    // vacation FOR THE CURRENT GROUP. Passing the raw account-level bit here
+    // would overwrite that resolution and mark the member on vacation in every
+    // group they belong to.
+    p.syncVacationFromUser(user);
+    final nowVacation = p.isVacationMode;
 
     // Reschedule reminders immediately when vacation ends.
-    if (wasVacation && !user.isVacationMode && p.remindersEnabled && p.todayMeals.isNotEmpty) {
+    if (wasVacation && !nowVacation && p.remindersEnabled && p.todayMeals.isNotEmpty) {
       NotificationService.instance.syncReminders(
         p.todayMeals,
         isVacationMode: false,
@@ -388,7 +393,10 @@ class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
                             ? provider.functionalRole
                             : null,
                         streakDays: provider.streakDays,
-                        isVacationMode: currentUser.isVacationMode,
+                        // Resolved FOR THIS GROUP (provider), not the raw
+                        // account-level bit — a member on leave in another
+                        // group is not on vacation here.
+                        isVacationMode: provider.isVacationMode,
                         attendanceRate:
                             provider.summary?.attendanceRate ?? 0.0,
                         isDefaultAttendance: currentUser.isDefaultAttendance,
@@ -422,9 +430,11 @@ class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
                         child: SizedBox(height: AppConstants.space16)),
 
                   // ── Vacation mode banner ─────────────────────────────────
-                  // Always read from the live user model (reflects settings
-                  // changes immediately via the InheritedNotifier rebuild).
-                  if (currentUser.isVacationMode)
+                  // Resolved FOR THIS GROUP. Still live: the auth listener
+                  // above re-syncs the provider from the fresh user model, so
+                  // a settings change or an admin approval still repaints
+                  // immediately via the InheritedNotifier rebuild.
+                  if (provider.isVacationMode)
                     SliverToBoxAdapter(
                       child: Padding(
                         padding: const EdgeInsets.symmetric(
@@ -444,7 +454,7 @@ class _StudentDashboardScreenState extends State<StudentDashboardScreen> {
                       ),
                     ),
 
-                  if (currentUser.isVacationMode)
+                  if (provider.isVacationMode)
                     const SliverToBoxAdapter(
                         child: SizedBox(height: AppConstants.space16)),
 

@@ -34,7 +34,18 @@ class StudentProfileProvider extends ChangeNotifier {
       user?.avatarUrl != null && user!.avatarUrl!.isNotEmpty;
   String? get avatarUrl => user?.avatarUrl;
 
-  bool get isVacationMode => user?.isVacationMode ?? false;
+  /// Is the member on vacation ANYWHERE? — the profile is an ACCOUNT view with
+  /// no group context, so its chip has always meant "on vacation", not "on
+  /// vacation in the group you happen to be looking at".
+  ///
+  /// `isVacationMode` alone would silently narrow that to ORG-WIDE leave only,
+  /// because a group-scoped approved request now lives on the membership row
+  /// instead of the account flag — so a member on group-A leave would lose the
+  /// chip they used to see. `vacationScopedGroupIds` (already on the session,
+  /// no extra call) restores the original meaning exactly.
+  bool get isVacationMode =>
+      (user?.isVacationMode ?? false) ||
+      (user?.vacationScopedGroupIds?.isNotEmpty ?? false);
   bool get isDefaultAttendance => user?.isDefaultAttendance ?? false;
 
   int get groupCount => user?.groupIds.length ?? 0;

@@ -43,6 +43,7 @@ class UserModel extends Equatable {
     this.isActive = true,
     this.isVacationMode = false,
     this.isDefaultAttendance = false,
+    this.vacationScopedGroupIds,
     this.remindersEnabled = true,
     this.emailVerified = false,
     this.loginPreference = 'email',
@@ -75,6 +76,20 @@ class UserModel extends Equatable {
   final bool isActive;
   final bool isVacationMode;
   final bool isDefaultAttendance;
+
+  /// Which groups [isVacationMode] actually applies to.
+  ///
+  /// The flag is ONE user-level bit, but an approved vacation request may be
+  /// scoped to a single group — and the server sets the bit from any covering
+  /// request. Without this, `override ?? isVacationMode` reports "on vacation"
+  /// in a group the member never requested leave from.
+  ///
+  ///   null      → governs EVERY group. Both a pure self-service toggle and an
+  ///               ORG-LEVEL request land here, and an older server that does
+  ///               not send the field also does — so this is exactly the
+  ///               previous behaviour and nothing regresses.
+  ///   [ids]     → only these groups; the member is NOT on vacation elsewhere.
+  final List<String>? vacationScopedGroupIds;
 
   /// Whether attendance-window reminders are enabled for this user.
   ///
@@ -154,6 +169,11 @@ class UserModel extends Equatable {
         isActive: j['isActive'] ?? true,
         isVacationMode: j['isVacationMode'] ?? false,
         isDefaultAttendance: j['isDefaultAttendance'] ?? false,
+        // Absent (older server, or a cached session written before this
+        // field existed) stays null = "governs every group" = old behaviour.
+        vacationScopedGroupIds: (j['vacationScopedGroupIds'] as List?)
+            ?.map((e) => e as String)
+            .toList(),
         remindersEnabled: j['remindersEnabled'] ?? true,
         emailVerified: j['emailVerified'] ?? false,
         loginPreference: j['loginPreference'] ?? 'email',
@@ -182,6 +202,7 @@ class UserModel extends Equatable {
         'isActive': isActive,
         'isVacationMode': isVacationMode,
         'isDefaultAttendance': isDefaultAttendance,
+        'vacationScopedGroupIds': vacationScopedGroupIds,
         'remindersEnabled': remindersEnabled,
         'emailVerified': emailVerified,
         'loginPreference': loginPreference,
@@ -230,6 +251,7 @@ class UserModel extends Equatable {
     bool? isActive,
     bool? isVacationMode,
     bool? isDefaultAttendance,
+    List<String>? vacationScopedGroupIds,
     bool? remindersEnabled,
     bool? emailVerified,
     String? loginPreference,
@@ -260,6 +282,8 @@ class UserModel extends Equatable {
         isActive: isActive ?? this.isActive,
         isVacationMode: isVacationMode ?? this.isVacationMode,
         isDefaultAttendance: isDefaultAttendance ?? this.isDefaultAttendance,
+        vacationScopedGroupIds:
+            vacationScopedGroupIds ?? this.vacationScopedGroupIds,
         remindersEnabled: remindersEnabled ?? this.remindersEnabled,
         emailVerified: emailVerified ?? this.emailVerified,
         loginPreference: loginPreference ?? this.loginPreference,
@@ -293,6 +317,10 @@ class UserModel extends Equatable {
         groupIds,
         isVacationMode,
         isDefaultAttendance,
+        // Part of equality: the flag alone is unchanged when a vacation's
+        // SCOPE changes (approval landing on one group), and the Settings
+        // toggle must repaint for that.
+        vacationScopedGroupIds,
         remindersEnabled,
         emailVerified,
         loginPreference,

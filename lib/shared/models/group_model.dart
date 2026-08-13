@@ -1,6 +1,76 @@
 import 'package:equatable/equatable.dart';
 import 'package:smart_meal_management/shared/enums/user_role.dart';
 
+// ── MemberSettingOverrides ─────────────────────────────────────────────────────
+
+/// A member's RAW per-group overrides for vacation / auto-attendance.
+///
+/// `null` on a field means "inherit the user-level flag" — the value the
+/// session already carries. Keeping the raw override (rather than a
+/// pre-resolved boolean) is deliberate: it lets the client distinguish
+/// "explicitly off for this group" from "never set", which is exactly the
+/// distinction that stops one group's setting governing another.
+class MemberSettingOverrides extends Equatable {
+  const MemberSettingOverrides({this.isVacationMode, this.isDefaultAttendance});
+
+  final bool? isVacationMode;
+  final bool? isDefaultAttendance;
+
+  static MemberSettingOverrides? fromJson(Map<String, dynamic>? j) =>
+      j == null
+          ? null
+          : MemberSettingOverrides(
+              isVacationMode: j['isVacationMode'] as bool?,
+              isDefaultAttendance: j['isDefaultAttendance'] as bool?,
+            );
+
+  Map<String, dynamic> toJson() => {
+        'isVacationMode': isVacationMode,
+        'isDefaultAttendance': isDefaultAttendance,
+      };
+
+  /// `override ?? userFlag` — the single resolution rule, mirroring the
+  /// server's `resolveMemberFlag`. `??` (never `||`): an explicit per-group
+  /// `false` must beat an inherited `true`, or turning a setting off for one
+  /// group would silently fall back to the shared flag and re-enable it.
+  static bool resolve(bool? override, bool userFlag) => override ?? userFlag;
+
+  /// Vacation for ONE group — the same answer the server reaches in
+  /// `getVacationCoveredUserIds`, computed on the client with no extra call.
+  ///
+  /// `userFlag` is a single user-level bit that the server sets from ANY
+  /// covering approved request, including one scoped to a single group. So
+  /// `override ?? userFlag` alone reports "on vacation" in a group the member
+  /// never requested leave from. [scopedGroupIds] (from
+  /// `UserModel.vacationScopedGroupIds`) names the groups the flag applies to.
+  ///
+  ///   • an explicit per-group override always wins;
+  ///   • null scope → governs every group (pure toggle, ORG-LEVEL request, or
+  ///     an older server omitting the field) — the previous behaviour;
+  ///   • an unknown [groupId] falls back to the flag rather than guessing OFF,
+  ///     because Settings is reachable by deep-link before the group resolves;
+  ///   • otherwise the scope decides, WITHOUT consulting the flag: activation
+  ///     lag must never change what the member sees, which is the same reason
+  ///     the server ignores the flag once a request governs the date.
+  ///
+  /// Lives here, not in the provider, so the rule has exactly one definition —
+  /// a second hand-written copy is how the client and server drift apart.
+  static bool resolveVacationForGroup({
+    required bool? override,
+    required bool userFlag,
+    required List<String>? scopedGroupIds,
+    required String groupId,
+  }) {
+    if (override != null) return override;
+    if (scopedGroupIds == null) return userFlag;
+    if (groupId.isEmpty) return userFlag;
+    return scopedGroupIds.contains(groupId);
+  }
+
+  @override
+  List<Object?> get props => [isVacationMode, isDefaultAttendance];
+}
+
 // ── GroupType ──────────────────────────────────────────────────────────────────
 
 enum GroupType {
@@ -649,6 +719,7 @@ class GroupModel extends Equatable {
     this.joinCode,
     this.createdAt,
     this.functionalRole,
+    this.myMemberSettings,
     this.adminName,
     this.organizationName,
     // ── Module 02 (Organization & Group Management) — additive ───────────────
@@ -691,6 +762,14 @@ class GroupModel extends Equatable {
   /// The CURRENT user's functional role for THIS group (#8), e.g. hostelAdmin
   /// in one group, messManager in another. null -> use the global user role.
   final UserRole? functionalRole;
+
+  /// The signed-in member's RAW per-group setting overrides for THIS group.
+  ///
+  /// Vacation and auto-attendance are per group. A `null` field means "inherit
+  /// the user-level flag" (which the session already holds), so callers resolve
+  /// with [MemberSettingOverrides.resolve]. Null overall = not a member, or the
+  /// server did not populate it on this read.
+  final MemberSettingOverrides? myMemberSettings;
 
   /// ISSUE 2 (additive): read-only detail context, populated only by
   /// GET /groups/:id. null on list responses / when unavailable.
@@ -755,6 +834,9 @@ class GroupModel extends Equatable {
         createdAt:
             j['createdAt'] != null ? DateTime.parse(j['createdAt']) : null,
         functionalRole: UserRole.fromName(j['functionalRole'] as String?),
+        myMemberSettings: MemberSettingOverrides.fromJson(
+          j['myMemberSettings'] as Map<String, dynamic>?,
+        ),
         adminName: j['adminName'] as String?,
         organizationName: j['organizationName'] as String?,
         joinApprovalRequired: j['joinApprovalRequired'] ?? false,
@@ -792,6 +874,8 @@ class GroupModel extends Equatable {
         'joinCode': joinCode,
         'createdAt': createdAt?.toIso8601String(),
         'functionalRole': functionalRole?.name,
+        if (myMemberSettings != null)
+          'myMemberSettings': myMemberSettings!.toJson(),
         'adminName': adminName,
         'organizationName': organizationName,
         'joinApprovalRequired': joinApprovalRequired,
@@ -820,6 +904,7 @@ class GroupModel extends Equatable {
     bool? isActive,
     String? joinCode,
     UserRole? functionalRole,
+    MemberSettingOverrides? myMemberSettings,
     String? adminName,
     String? organizationName,
     bool? joinApprovalRequired,
@@ -843,6 +928,7 @@ class GroupModel extends Equatable {
         joinCode: joinCode ?? this.joinCode,
         createdAt: createdAt,
         functionalRole: functionalRole ?? this.functionalRole,
+        myMemberSettings: myMemberSettings ?? this.myMemberSettings,
         adminName: adminName ?? this.adminName,
         organizationName: organizationName ?? this.organizationName,
         // Module 02: preserve immutable metadata through copies; allow the
@@ -873,6 +959,9 @@ class GroupModel extends Equatable {
         blockedMemberIds,
         isActive,
         functionalRole,
+        // Equality must see the per-group overrides, or a provider comparing
+        // groups would treat a changed setting as "no change" and skip rebuild.
+        myMemberSettings,
         joinApprovalRequired,
         pendingCount,
         archivedAt,

@@ -251,7 +251,13 @@ class StudentDashboardProvider extends ChangeNotifier {
 
     // Immediately reflect vacation mode and reminders preference from the
     // user model so the UI updates before the async fetch completes.
-    _isVacationMode = user.isVacationMode;
+    //
+    // Vacation is PER GROUP. `user.isVacationMode` is one account-level bit
+    // that the server also sets from a GROUP-SCOPED approved request, so
+    // taking it raw marked the member "on vacation" in every group they
+    // belong to — which gates meal marking, Today's Meals, the banner and
+    // their billing view for a group they never requested leave from.
+    _isVacationMode = _resolveVacationForCurrentGroup(user);
     _remindersEnabled = user.remindersEnabled;
     notifyListeners();
 
@@ -348,9 +354,13 @@ class StudentDashboardProvider extends ChangeNotifier {
           final gc = cached['groupConfig'];
           if (gc is Map) {
             _groupConfig = GroupMealConfig.fromJson(gc.cast<String, dynamic>());
+            // Cache-first paint: the group id is known, the member settings
+            // are not cached — they arrive with the live load a moment later
+            // (same stale-then-truth pattern as every other value here).
             _groupConfigProvider?.update(
               config: _groupConfig,
               groupName: _groupName,
+              groupId: groupId,
             );
           }
           paintedFromCache = true;
@@ -439,11 +449,20 @@ class StudentDashboardProvider extends ChangeNotifier {
         // #2: the requester's per-group display role (backend computes this
         // from their GroupMember.functionalRole). Empty = fall back to nothing.
         _functionalRole = group.functionalRole?.label ?? '';
-        // Push config to shell so nav tabs update immediately.
+        // Push config to shell so nav tabs update immediately. The per-group
+        // member settings ride along on the SAME group payload (server adds
+        // them to the member include it already fetches), so the Settings tab
+        // can show THIS group's vacation / auto-attendance state instead of
+        // the shared user-level flag — with no extra request.
         _groupConfigProvider?.update(
           config: _groupConfig,
           groupName: _groupName,
+          groupId: group.id,
         );
+        // Published SEPARATELY and only from this LIVE path: the cache-first
+        // paint above has no settings to give, and letting it pass "absent"
+        // through the same call would wipe a value the member just set.
+        _groupConfigProvider?.setMemberSettings(group.myMemberSettings);
       }
     } else if (results[3] case Err()) {
       // 403 GROUP_ARCHIVED / revoked access / 404 all land here.
@@ -680,6 +699,38 @@ class StudentDashboardProvider extends ChangeNotifier {
         markedMealIds: markedMealIds,
       );
     }
+    notifyListeners();
+  }
+
+  /// Vacation for the group this dashboard is showing.
+  ///
+  /// THE single resolution point for the whole student shell: `isVacationMode`
+  /// here is what Attendance, Today's Meals, the greeting banner, reminders
+  /// and the billing screen all read, so resolving once here keeps them from
+  /// disagreeing. Delegates to the shared rule — the same one the server
+  /// applies in getVacationCoveredUserIds — so client and server cannot drift.
+  ///
+  /// All three inputs are already in memory: the session user, the scope the
+  /// server published on it, and this group's override from the shell scope.
+  /// No request, no extra wave.
+  bool _resolveVacationForCurrentGroup(UserModel user) =>
+      MemberSettingOverrides.resolveVacationForGroup(
+        override: _groupConfigProvider?.myMemberSettings?.isVacationMode,
+        userFlag: user.isVacationMode,
+        scopedGroupIds: user.vacationScopedGroupIds,
+        groupId: _groupConfigProvider?.groupId ?? '',
+      );
+
+  /// Re-sync from a fresh user model (an admin approving leave flips the flag
+  /// server-side, and the shell pushes the new user in without a reload).
+  ///
+  /// Takes the USER, never a pre-computed bool: a caller passing
+  /// `user.isVacationMode` straight through would re-introduce the raw
+  /// account-level bit and silently undo the resolution above.
+  void syncVacationFromUser(UserModel user) {
+    final resolved = _resolveVacationForCurrentGroup(user);
+    if (_isVacationMode == resolved) return;
+    _isVacationMode = resolved;
     notifyListeners();
   }
 

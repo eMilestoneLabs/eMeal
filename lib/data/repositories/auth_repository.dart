@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:smart_meal_management/core/constants/api_endpoints.dart';
 import 'package:smart_meal_management/core/errors/failure.dart';
 import 'package:smart_meal_management/data/contracts/i_auth_repository.dart';
 import 'package:smart_meal_management/data/services/dio_api_service.dart';
@@ -368,6 +369,54 @@ class AuthRepository implements IAuthRepository {
           await _storage.saveSession(_session!);
         }
         return Ok(updated);
+    }
+  }
+
+  // ── Per-group member settings ───────────────────────────────────────────
+  //
+  // These use the DEDICATED toggle endpoints rather than PATCH /users/me,
+  // because only they accept a `groupId`. That is the whole point: the
+  // user-level flags on /users/me govern EVERY group at once, which is what
+  // let a vacation in one group suppress attendance and billing in another.
+  // The session user is deliberately NOT rewritten here — the user-level flag
+  // is still the inherited default for the member's other groups, so the
+  // per-group value is returned to the caller instead of cached globally.
+
+  @override
+  Future<Result<bool>> setGroupVacationMode({
+    required String userId,
+    required String groupId,
+    required bool enabled,
+  }) async {
+    final result = await DioApiService.instance.patch<Map<String, dynamic>>(
+      ApiEndpoints.buildPath(ApiEndpoints.users.vacationMode, {'userId': userId}),
+      body: {'enabled': enabled, 'groupId': groupId},
+    );
+    switch (result) {
+      case Err(:final failure):
+        return Err(failure);
+      case Ok(:final value):
+        // Trust the server's echo — it applied the approval gate and the
+        // membership check, so it is the authority on the resulting state.
+        return Ok(value['isVacationMode'] as bool? ?? enabled);
+    }
+  }
+
+  @override
+  Future<Result<bool>> setGroupDefaultAttendance({
+    required String userId,
+    required String groupId,
+    required bool enabled,
+  }) async {
+    final result = await DioApiService.instance.patch<Map<String, dynamic>>(
+      ApiEndpoints.buildPath(ApiEndpoints.users.defaultAttendance, {'userId': userId}),
+      body: {'enabled': enabled, 'groupId': groupId},
+    );
+    switch (result) {
+      case Err(:final failure):
+        return Err(failure);
+      case Ok(:final value):
+        return Ok(value['isDefaultAttendance'] as bool? ?? enabled);
     }
   }
 

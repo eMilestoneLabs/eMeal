@@ -37,6 +37,28 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   late final AdminDashboardProvider _provider;
   bool _initialized = false;
 
+  /// Live-Test-15 ISSUE-2: is meal billing applicable to the group on screen?
+  ///
+  /// Meal Pricing is the master gate for the whole Billing feature, and the
+  /// requirement scopes visibility to the EFFECTIVE GROUP state — so this
+  /// follows the selected group, exactly like the member/attendance stats
+  /// above it.
+  ///
+  /// `selectedGroup == null` is TWO states and the org-wide `any()` is the
+  /// right answer for both: the admin explicitly picked "All groups" (the
+  /// aggregate mode the KPI tiles above also fall back to — no single group
+  /// applies, so the tile follows the organisation), and the brief first
+  /// paint before a selection resolves (never withhold the tile for the
+  /// wrong reason).
+  bool get _billingTileVisible {
+    bool billable(GroupModel g) =>
+        g.mealConfig.mealsEnabled && g.mealConfig.mealPricingEnabled;
+    final selected = _provider.selectedGroup;
+    return selected != null
+        ? billable(selected)
+        : _provider.groups.any(billable);
+  }
+
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
@@ -247,14 +269,20 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                 // FR-ADM-050 (ISSUE-15): "Publish Notice" + corrections queue
                 // are first-class dashboard actions, not buried in sub-screens.
                 QuickActionGrid(
-                  // Live-Test-15 ISSUE-2: this tile is org-wide, not
-                  // group-scoped, so it stays available while ANY group has a
-                  // financial subsystem and disappears only when none does.
-                  billingEnabled: _provider.groups.any(
-                    (g) =>
-                        g.mealConfig.mealsEnabled &&
-                        g.mealConfig.mealPricingEnabled,
-                  ),
+                  // Live-Test-15 ISSUE-2: "visibility from the effective GROUP
+                  // Meal Pricing state". This dashboard is already group-scoped
+                  // (the member/attendance tiles above read the SELECTED group),
+                  // so the Member Billing tile follows the same group.
+                  //
+                  // An org-wide `any()` was wrong: with one priced group
+                  // anywhere in the org the tile stayed visible for EVERY group,
+                  // so opening it on a pricing-OFF group hit
+                  // "Meal Pricing is disabled for this group" — the tile showed
+                  // a feature that could not work for the group on screen.
+                  //
+                  // No selection yet (first paint) falls back to the org-wide
+                  // check so an admin is never locked out before a group loads.
+                  billingEnabled: _billingTileVisible,
                   onPublishNotice: () => _publishNotice(auth),
                   onReviewCorrections: () => Navigator.of(context).push(
                     MaterialPageRoute(

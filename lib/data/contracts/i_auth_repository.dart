@@ -94,6 +94,25 @@ abstract interface class IAuthRepository {
   /// Persist updated profile fields to the backend.
   Future<Result<UserModel>> updateProfile({required UserModel user});
 
+  /// Set Vacation Mode for ONE group (PATCH /users/{id}/vacation-mode).
+  ///
+  /// Vacation is per group: a member on leave in one group must stay active in
+  /// the others. Return Early therefore ends only [groupId]'s covering
+  /// requests. Returns the effective value the server applied.
+  Future<Result<bool>> setGroupVacationMode({
+    required String userId,
+    required String groupId,
+    required bool enabled,
+  });
+
+  /// Set Personal Auto-Attendance for ONE group
+  /// (PATCH /users/{id}/default-attendance). Same per-group contract.
+  Future<Result<bool>> setGroupDefaultAttendance({
+    required String userId,
+    required String groupId,
+    required bool enabled,
+  });
+
   /// Attempt to restore a persisted session from secure storage.
   /// Returns [Ok(null)] when no session is stored.
   Future<Result<AuthSession?>> restoreSession();

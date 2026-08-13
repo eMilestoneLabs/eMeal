@@ -568,6 +568,62 @@ class AuthProvider extends ChangeNotifier {
     }
   }
 
+  // ── Per-group member settings ───────────────────────────────────────────
+  //
+  // Same failure contract as [updateProfile]: true on success, false with the
+  // reason parked in [lastProfileError]. Deliberately NOT written into the
+  // session — the session carries the USER-level flags, which remain the
+  // inherited default for the member's other groups. Writing a per-group value
+  // there would recreate exactly the cross-group bleed this scoping removes.
+
+  Future<bool> setGroupVacationMode({
+    required String groupId,
+    required bool enabled,
+  }) async {
+    final userId = _session?.user.id;
+    if (userId == null) {
+      _lastProfileError = 'Not signed in';
+      return false;
+    }
+    final result = await _repo.setGroupVacationMode(
+      userId: userId,
+      groupId: groupId,
+      enabled: enabled,
+    );
+    switch (result) {
+      case Ok():
+        _lastProfileError = null;
+        return true;
+      case Err(:final failure):
+        _lastProfileError = failure.message;
+        return false;
+    }
+  }
+
+  Future<bool> setGroupDefaultAttendance({
+    required String groupId,
+    required bool enabled,
+  }) async {
+    final userId = _session?.user.id;
+    if (userId == null) {
+      _lastProfileError = 'Not signed in';
+      return false;
+    }
+    final result = await _repo.setGroupDefaultAttendance(
+      userId: userId,
+      groupId: groupId,
+      enabled: enabled,
+    );
+    switch (result) {
+      case Ok():
+        _lastProfileError = null;
+        return true;
+      case Err(:final failure):
+        _lastProfileError = failure.message;
+        return false;
+    }
+  }
+
   // ── In-memory user refresh ─────────────────────────────────────────────────
 
   /// Updates the in-memory user model without a network call.

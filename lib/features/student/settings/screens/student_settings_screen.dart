@@ -5,6 +5,7 @@ import 'package:smart_meal_management/core/constants/app_constants.dart';
 import 'package:smart_meal_management/core/theme/app_colors.dart';
 import 'package:smart_meal_management/core/theme/app_typography.dart';
 import 'package:smart_meal_management/features/auth/providers/auth_provider.dart';
+import 'package:smart_meal_management/features/student/providers/group_config_provider.dart';
 import 'package:smart_meal_management/features/student/settings/providers/student_settings_provider.dart';
 import 'package:smart_meal_management/features/student/settings/screens/student_vacation_request_screen.dart';
 import 'package:smart_meal_management/shared/providers/theme_provider.dart';
@@ -48,6 +49,14 @@ class _StudentSettingsScreenState extends State<StudentSettingsScreen> {
       // app restart. The settings provider reads auth.currentUser live + listens
       // for changes, so this updates the toggle as soon as it returns.
       auth.refreshCurrentUser();
+    }
+    // Bind the toggles to the group the shell is currently showing, so each
+    // one writes THIS group only. Re-run on every dependency change (a group
+    // switch rebuilds the scope), and no-op when nothing changed. The scope is
+    // already in memory — this costs no request.
+    final groupConfig = GroupConfigScope.maybeWatch(context);
+    if (groupConfig != null) {
+      _provider?.bindGroupScope(groupConfig);
     }
   }
 
@@ -194,7 +203,11 @@ class _StudentSettingsScreenState extends State<StudentSettingsScreen> {
                         // optional meal-granular boundary chips.
                         builder: (_) => StudentVacationRequestScreen(
                           organizationId: provider.organizationId,
-                          groupId: provider.activeGroupId,
+                          // Same resolution the toggles use, so this screen
+                          // never targets a different group than the status it
+                          // is showing (a group switch updates the session id
+                          // before the shell scope).
+                          groupId: provider.scopedGroupIdOrNull,
                         ),
                       ),
                     ),

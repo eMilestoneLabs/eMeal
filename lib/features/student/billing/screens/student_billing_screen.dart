@@ -11,6 +11,7 @@ import 'package:smart_meal_management/data/services/billing_service.dart';
 import 'package:smart_meal_management/data/services/export_service.dart';
 import 'package:smart_meal_management/features/auth/providers/auth_provider.dart';
 import 'package:smart_meal_management/shared/models/attendance_model.dart';
+import 'package:smart_meal_management/shared/models/group_model.dart';
 import 'package:smart_meal_management/shared/models/meal_model.dart';
 import 'package:smart_meal_management/shared/models/my_billing.dart';
 import 'package:smart_meal_management/shared/models/paginated_response.dart';
@@ -77,6 +78,9 @@ class _StudentBillingScreenState extends State<StudentBillingScreen> {
   String _orgId = '';
   String _userId = '';
   String _groupId = '';
+  /// This group's per-group member overrides, from the group payload the
+  /// screen already loads. Null = inherit the account-level flag.
+  MemberSettingOverrides? _groupMemberSettings;
 
   @override
   void initState() {
@@ -159,14 +163,29 @@ class _StudentBillingScreenState extends State<StudentBillingScreen> {
     List<MealModel> todayMeals = [];
     if (todayRes case Ok(:final value)) todayMeals = value;
     if (groupRes case Ok(:final value)) {
+      // Rides the group payload already fetched — the server publishes the
+      // requester's own per-group overrides on the detail read.
+      _groupMemberSettings = value.myMemberSettings;
       _pricingEnabled = value.mealConfig.mealPricingEnabled;
       _billSkippedMeals = value.mealConfig.billSkippedMeals;
       _billAbsentMeals = value.mealConfig.billAbsentMeals;
       _groupName = value.name;
     }
 
+    // Vacation is PER GROUP, and this screen bills ONE group. The raw
+    // account-level bit marks the member on vacation everywhere, which
+    // suppresses the virtual auto-skip rows below and under-states this
+    // group's charges when the leave belongs to a different group.
+    // `groupRes` above already carried this group's override — no extra call.
     final vacationIds = <String>{};
-    if (user.isVacationMode) vacationIds.add(_userId);
+    if (MemberSettingOverrides.resolveVacationForGroup(
+      override: _groupMemberSettings?.isVacationMode,
+      userFlag: user.isVacationMode,
+      scopedGroupIds: user.vacationScopedGroupIds,
+      groupId: _groupId,
+    )) {
+      vacationIds.add(_userId);
+    }
 
     final rows = BillingService.buildRows(
       records: records,
