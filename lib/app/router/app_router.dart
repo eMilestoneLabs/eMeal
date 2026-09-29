@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:smart_meal_management/app/router/route_names.dart';
+import 'package:smart_meal_management/app/router/events_gate.dart';
+import 'package:smart_meal_management/features/events/screens/events_coming_soon_screen.dart';
 import 'package:smart_meal_management/app/router/route_extras.dart';
 import 'package:smart_meal_management/features/admin/admin_shell.dart';
 import 'package:smart_meal_management/features/admin/attendance/screens/admin_attendance_screen.dart';
@@ -98,6 +100,12 @@ GoRouter buildRouter(AuthProvider auth) {
     redirect: (context, state) {
       final location = state.matchedLocation;
 
+      // Events switched off: every Events route opens the Coming-soon
+      // preview. Runs before any auth logic so taps, QR codes, deep links
+      // and event accounts all land on the same screen.
+      final eventsGate = eventsRedirect(location);
+      if (eventsGate != null) return eventsGate;
+
       if (auth.state is AuthUnknown) return null;
 
       final authenticated = auth.isAuthenticated;
@@ -149,6 +157,12 @@ GoRouter buildRouter(AuthProvider auth) {
       GoRoute(
         path: RouteNames.roleSelect,
         builder: (context, state) => const RoleSelectScreen(),
+      ),
+
+      // Events preview (Coming soon) while the Events module is switched off.
+      GoRoute(
+        path: RouteNames.eventsComingSoon,
+        builder: (context, state) => const EventsComingSoonScreen(),
       ),
 
       // Event entry selection (Admin vs Guest)

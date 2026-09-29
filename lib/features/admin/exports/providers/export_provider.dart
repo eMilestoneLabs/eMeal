@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart';
+import 'package:smart_meal_management/core/errors/app_exception.dart';
 import 'package:smart_meal_management/data/services/billing_service.dart';
 import 'package:smart_meal_management/data/services/export_service.dart';
 import 'package:smart_meal_management/shared/models/attendance_model.dart';
@@ -108,7 +109,7 @@ class ExportProvider extends ChangeNotifier {
       }
       _exportSuccess = true;
     } catch (e) {
-      _error = 'Export failed: $e';
+      _error = userFacingMessage(e, fallback: 'Couldn\'t export. Please try again.');
     } finally {
       _isExporting = false;
       notifyListeners();

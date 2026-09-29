@@ -142,8 +142,7 @@ class _BillingAdjustmentsSheetState extends State<BillingAdjustmentsSheet> {
               behavior: SnackBarBehavior.floating,
               backgroundColor: AppColors.present,
               content: Text(_type == 'debit'
-                  ? 'Charge of ${_rs((rupees * 100).round())} proposed — '
-                      'waiting for member approval'
+                  ? 'Charge of ${_rs((rupees * 100).round())} sent for approval'
                   : '${_type == 'refund' ? 'Refund' : 'Credit'} '
                       'of ${_rs((rupees * 100).round())} posted'),
             ),
@@ -256,9 +255,7 @@ class _BillingAdjustmentsSheetState extends State<BillingAdjustmentsSheet> {
             ),
             const SizedBox(height: 12),
             Text(
-              'Every correction is a new immutable entry — charges are never '
-              'edited or deleted. Bill increases need the member\'s approved '
-              'correction request.',
+              'Entries are never edited or deleted. Extra charges need member approval.',
               style: AppTypography.bodySmall.copyWith(color: textSecondary),
             ),
             const SizedBox(height: 18),
@@ -512,13 +509,10 @@ class _BillingAdjustmentsSheetState extends State<BillingAdjustmentsSheet> {
             // REF-001: a refund returns money and CONSUMES the member's
             // credit — the outstanding bill goes UP, never down.
             'refund' =>
-              'Cash returned to the member — consumes their credit '
-                  '(cannot exceed the available credit).',
+              'Cash returned to the member, up to their credit.',
             'debit' =>
-              'Proposed extra charge — the member gets a bell notification '
-                  'and it bills only after they approve.',
-            _ => 'Money received from the member (advance/goodwill) — '
-                'reduces the bill.',
+              'Extra charge. Billed only after the member approves.',
+            _ => 'Payment received. Lowers the bill.',
           },
           style: AppTypography.labelSmall.copyWith(color: textSecondary),
         ),
@@ -560,7 +554,7 @@ class _BillingAdjustmentsSheetState extends State<BillingAdjustmentsSheet> {
       style: AppTypography.bodyMedium.copyWith(color: textPrimary),
       decoration: _inputDecoration(
         isDark,
-        hint: 'Required — visible in the audit trail',
+        hint: 'Required. Saved in history',
       ),
     );
   }
@@ -726,7 +720,7 @@ class _BillingAdjustmentsSheetState extends State<BillingAdjustmentsSheet> {
                       color: (isDark ? AppColors.borderDark : AppColors.border)
                           .withValues(alpha: 0.6)),
                   const SizedBox(height: 10),
-                  _detailRow('Reason', (e['reason'] ?? '—').toString(),
+                  _detailRow('Reason', (e['reason'] ?? '-').toString(),
                       textPrimary, textSecondary),
                   _detailRow(
                       'Posted by',
@@ -748,8 +742,8 @@ class _BillingAdjustmentsSheetState extends State<BillingAdjustmentsSheet> {
                     _detailRow(
                         'Status',
                         status == 'pending'
-                            ? 'Awaiting member approval — not billed yet'
-                            : 'Declined by member — never billed',
+                            ? 'Awaiting member approval'
+                            : 'Declined by member',
                         textPrimary,
                         textSecondary),
                 ],
@@ -768,7 +762,7 @@ class _BillingAdjustmentsSheetState extends State<BillingAdjustmentsSheet> {
           borderRadius: BorderRadius.circular(6),
         ),
         child: Text(
-          type.isEmpty ? '—' : '${type[0].toUpperCase()}${type.substring(1)}',
+          type.isEmpty ? '-' : '${type[0].toUpperCase()}${type.substring(1)}',
           style: AppTypography.labelSmall
               .copyWith(color: accent, fontWeight: FontWeight.w700),
         ),

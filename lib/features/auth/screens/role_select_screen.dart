@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:smart_meal_management/app/router/route_names.dart';
+import 'package:smart_meal_management/core/config/feature_flags.dart';
 import 'package:smart_meal_management/app/router/route_extras.dart';
 
 import 'package:smart_meal_management/core/theme/app_colors.dart';
@@ -179,10 +180,13 @@ class _RoleSelectScreenState extends State<RoleSelectScreen>
                                 Color(0xFFEC4899), // hot pink
                               ],
                               title: 'Event',
-                              subtitle:
-                                  'Create an event or join as a guest',
+                              subtitle: FeatureFlags.eventsEnabled
+                                  ? 'Create an event or join as a guest'
+                                  : 'Weddings, parties and functions',
                               accentColor: const Color(0xFFEA580C),
-                              badge: 'Quick Join',
+                              badge: FeatureFlags.eventsEnabled
+                                  ? 'Quick Join'
+                                  : 'Coming soon',
                               onTap: _onEventTap,
                             ),
                           ),

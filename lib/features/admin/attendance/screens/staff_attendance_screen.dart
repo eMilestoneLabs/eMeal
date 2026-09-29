@@ -466,8 +466,8 @@ class _StaffAttendanceScreenState extends State<StaffAttendanceScreen> {
       SnackBar(
         behavior: SnackBarBehavior.floating,
         content: Text(created.isApproved
-            ? 'Applied — your record has been corrected.'
-            : 'Request sent — awaiting review.'),
+            ? 'Record updated'
+            : 'Request sent for review'),
       ),
     );
     // An applied correction changed today's record — repaint from the server.
@@ -891,9 +891,7 @@ class _StaffAttendanceScreenState extends State<StaffAttendanceScreen> {
               Padding(
                 padding: const EdgeInsets.only(top: 8),
                 child: Text(
-                  'The window has closed. Corrections are allowed for today '
-                  'only and, as an admin, yours apply immediately — no '
-                  'approval needed.',
+                  'Window closed. You can still correct today, and it applies instantly.',
                   style: AppTypography.labelSmall.copyWith(
                     height: 1.4,
                     color: isDark

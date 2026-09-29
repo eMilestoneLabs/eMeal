@@ -158,7 +158,7 @@ class _GuestConfigSheetState extends State<_GuestConfigSheet> {
                         child: _numField(
                           _perMeal,
                           label: 'Guests / meal',
-                          hint: '1–${AppConstants.guestMaxPerMeal}',
+                          hint: '1-${AppConstants.guestMaxPerMeal}',
                           helper: 'Max ${AppConstants.guestMaxPerMeal}',
                         ),
                       ),
@@ -258,7 +258,7 @@ class _GuestConfigSheetState extends State<_GuestConfigSheet> {
                             ? 'Surcharge per guest (%)'
                             : 'Surcharge per guest (₹)',
                         hint: _cfg.guestSurchargeType == 'percent'
-                            ? '0–100, applied on final member price'
+                            ? '0-100% of the member price'
                             : 'Required',
                       ),
                     ],
@@ -266,7 +266,7 @@ class _GuestConfigSheetState extends State<_GuestConfigSheet> {
                   const SizedBox(height: AppConstants.space8),
                   _toggle(
                     'Require admin approval',
-                    'Member bookings park as pending until you approve',
+                    'Member bookings wait for your approval',
                     _cfg.guestRequiresApproval,
                     (v) => setState(
                         () => _cfg = _cfg.copyWith(guestRequiresApproval: v)),
@@ -287,7 +287,7 @@ class _GuestConfigSheetState extends State<_GuestConfigSheet> {
                   ),
                   _toggle(
                     'Bill no-show guests',
-                    'Booked guests are billed even if unconsumed (LOOP-013)',
+                    'Booked guests are billed even if they don\'t come',
                     _cfg.billNoShowGuests,
                     (v) => setState(
                         () => _cfg = _cfg.copyWith(billNoShowGuests: v)),

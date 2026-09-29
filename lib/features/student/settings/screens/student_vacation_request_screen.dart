@@ -316,7 +316,7 @@ class _StudentVacationRequestScreenState
           : t.blockedSlotKeys.contains(_startSlot);
       if (invalid) {
         setState(() => _error =
-            'Vacation can only start from an upcoming meal today.');
+            'Start from an upcoming meal today.');
         return;
       }
     }
@@ -393,7 +393,7 @@ class _StudentVacationRequestScreenState
             _slotPicker(
               'First covered meal on the start day',
               _isToday(_start) && _today != null && !_today!.wholeDayTodayAllowed
-                  ? 'Meals already taken or closed today are hidden'
+                  ? 'Past meals today are hidden'
                   : 'e.g. leaving after lunch → pick Dinner',
               _startSlot,
               (v) => setState(() => _startSlot = v),
@@ -525,7 +525,7 @@ class _StudentVacationRequestScreenState
           Text(
             single
                 ? 'Applies to this group only.'
-                : 'Applies to the selected group only — request each group separately.',
+                : 'Request each group separately.',
             style: AppTypography.labelSmall
                 .copyWith(color: AppColors.textSecondary),
           ),
@@ -907,9 +907,7 @@ class _VacationRequestConfirmDialog extends StatelessWidget {
             ),
             const SizedBox(height: AppConstants.space8),
             Text(
-              'Once your admin approves, attendance tracking and all meal '
-              'reminders will be paused for the selected dates. You can turn it '
-              'off early if you return.',
+              'Once approved, attendance and reminders pause for these dates.',
               style: AppTypography.bodySmall.copyWith(
                 color: isDark
                     ? AppColors.textSecondaryDark

@@ -151,7 +151,7 @@ class StudentSettingsProvider extends ChangeNotifier {
         isVacationMode: v,
         isDefaultAttendance: _overrides?.isDefaultAttendance,
       ),
-      fallbackMessage: 'Could not update vacation mode — please try again',
+      fallbackMessage: 'Couldn\'t update vacation mode. Try again.',
     );
     if (error != null) return error;
     // Cancel meal reminders when vacation starts (notepad reminders are
@@ -188,7 +188,7 @@ class StudentSettingsProvider extends ChangeNotifier {
         isVacationMode: _overrides?.isVacationMode,
         isDefaultAttendance: v,
       ),
-      fallbackMessage: 'Could not update auto-attendance — please try again',
+      fallbackMessage: 'Couldn\'t update auto-attendance. Try again.',
     );
   }
 

@@ -369,7 +369,7 @@ class _MealWindowAlertCard extends StatelessWidget {
     if (closing == null) return const SizedBox.shrink();
 
     final label = closing.minutesLeft <= 10
-        ? 'Last chance — ${closing.meal.name} window closes in '
+        ? 'Last chance: ${closing.meal.name} closes in '
             '${closing.minutesLeft} min!'
         : '${closing.meal.name} attendance window closes in '
             '${closing.minutesLeft} min.';
@@ -915,8 +915,7 @@ class _ServePanel extends StatelessWidget {
                 ),
                 const SizedBox(height: 2),
                 Text(
-                  'Members $members · Guests $guests — kitchen '
-                  'preparation count',
+                  'Members $members · Guests $guests · Kitchen count',
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                   style: AppTypography.labelSmall.copyWith(
@@ -1194,9 +1193,8 @@ class _PrefSection extends StatelessWidget {
                 // ISSUE-004: the check compares people who ANSWERED (1 member
                 // = 1, regardless of picks/quantities) against Present +
                 // approved guests — plate totals may legitimately be larger.
-                '⚠ Dashboard Data Mismatch — $headcount answered but only '
-                '$expectedTotal attending. A selection exists for someone who '
-                'is not Present; investigate this meal\'s records.',
+                '⚠ Counts don\'t match: $headcount choices, $expectedTotal attending. '
+                'Check this meal\'s records.',
                 style: AppTypography.labelSmall.copyWith(
                   color: AppColors.absent,
                   fontWeight: FontWeight.w700,

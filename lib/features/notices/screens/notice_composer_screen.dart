@@ -171,7 +171,7 @@ class _NoticeComposerScreenState extends State<NoticeComposerScreen> {
     // bring under the limit (practically: an undecodable codec) is rejected
     // here with the exact SRS message instead of being uploaded oversized.
     setState(() => _error =
-        'Unable to upload image. Please select an image smaller than 100 KB.');
+        'Image must be under 100 KB');
   }
 
   /// NTC-013 + ISSUE-001: pick a PDF/DOC/DOCX/TXT document. PDFs above 50 KB
@@ -207,7 +207,7 @@ class _NoticeComposerScreenState extends State<NoticeComposerScreen> {
         compressed = await compressPdfToBudget(bytes, _docMaxBytes);
       } on PdfUnreadableException {
         failure =
-            'This PDF is password-protected or damaged. Please choose another file.';
+            'This PDF is locked or damaged.';
       }
       if (!mounted) return;
       setState(() => _compressingDoc = false);
@@ -219,7 +219,7 @@ class _NoticeComposerScreenState extends State<NoticeComposerScreen> {
     }
     if (bytes == null || bytes.length > _docMaxBytes) {
       setState(() => _error =
-          'Unable to upload document. Please select a document smaller than 50 KB.');
+          'Document must be under 50 KB');
       return;
     }
     final ext = (file.extension ?? '').toLowerCase();
@@ -503,9 +503,7 @@ class _NoticeComposerScreenState extends State<NoticeComposerScreen> {
             ),
           const SizedBox(height: 4),
           Text(
-            'One image (JPG/PNG/WEBP — large files are compressed '
-            'automatically) and one document (PDF auto-compressed when '
-            'possible; DOC/DOCX/TXT up to 50 KB).',
+            'Add 1 image and 1 document. Images and PDFs are compressed automatically.',
             style:
                 AppTypography.labelSmall.copyWith(color: AppColors.textTertiary),
           ),
@@ -513,7 +511,7 @@ class _NoticeComposerScreenState extends State<NoticeComposerScreen> {
           TextField(
             controller: _linkCtrl,
             maxLines: 2,
-            decoration: _dec('External links (optional) — https://...'),
+            decoration: _dec('Link (optional)'),
           ),
           const SizedBox(height: 12),
           _label('Send to'),
@@ -554,7 +552,7 @@ class _NoticeComposerScreenState extends State<NoticeComposerScreen> {
               const AppSheetSkeleton(rows: 2, rowHeight: 52, padding: EdgeInsets.symmetric(vertical: 8))
             else if (_groups.isEmpty)
               Text(
-                'No groups yet — create a group first.',
+                'Create a group first.',
                 style: AppTypography.bodySmall
                     .copyWith(color: AppColors.textTertiary),
               )

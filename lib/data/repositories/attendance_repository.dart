@@ -179,7 +179,7 @@ class AttendanceRepository implements IAttendanceRepository {
       chunkSize: AppConstants.historyFetchChunkSize,
       parallelism: AppConstants.historyFetchParallelism,
       truncatedMessage:
-          'Some records could not be loaded. Please try again.',
+          'Some records didn\'t load. Try again.',
     );
   }
 
@@ -283,7 +283,7 @@ class AttendanceRepository implements IAttendanceRepository {
       Ok(:final value) when value['requiresMemberConsent'] == true => Err(
           ValidationFailure(
             message: (value['message'] ??
-                    'Member consent required — a confirmation request was sent to the member.')
+                    'Sent to the member to confirm.')
                 .toString(),
           ),
         ),

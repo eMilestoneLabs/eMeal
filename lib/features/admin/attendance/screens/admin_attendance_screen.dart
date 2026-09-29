@@ -232,11 +232,7 @@ class _AdminAttendanceScreenState extends State<AdminAttendanceScreen> {
       builder: (ctx) => AlertDialog(
         title: const Text('Attendance belongs to the member'),
         content: Text(
-          'Admins cannot mark or edit member attendance for $name. '
-          'If a change is needed, the member submits an Attendance '
-          'Correction Request (Present or Absent + their meal preferences) '
-          'and you approve or reject it — the system applies the change '
-          'automatically on approval.',
+          'Only $name can change their attendance. Approve their correction request to update it.',
         ),
         actions: [
           TextButton(

@@ -309,7 +309,7 @@ class ExportService {
     await _shareBytes(
       bytes,
       'attendance_${_safe(groupName)}_${_stamp()}.pdf',
-      'Attendance Report — $groupName',
+      'Attendance Report · $groupName',
     );
   }
 
@@ -830,7 +830,7 @@ class ExportService {
     await _shareBytes(
       bytes,
       'attendance_${_safe(groupName)}_${_stamp()}.xlsx',
-      'Attendance Export — $groupName',
+      'Attendance Export · $groupName',
     );
   }
 

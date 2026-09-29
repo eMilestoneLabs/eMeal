@@ -125,7 +125,7 @@ class AdminMoreScreen extends StatelessWidget {
           _NavTile(
             icon: Icons.settings_rounded,
             label: 'Settings',
-            subtitle: 'App preferences and meal config',
+            subtitle: 'App and meal settings',
             color: isDark ? AppColors.textSecondaryDark : AppColors.textSecondary,
             onTap: () => context.push(RouteNames.adminSettings),
           ),

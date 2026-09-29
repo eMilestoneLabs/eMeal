@@ -261,8 +261,7 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
                 // email has no account no code arrives — tell the user how to recover
                 // without revealing whether the account exists.
                 Text(
-                  "Didn't get a code? Make sure you entered the email you "
-                  'registered with, then resend.',
+                  'No code? Check your email address and resend.',
                   style: AppTypography.labelSmall.copyWith(
                     color: isDark
                         ? AppColors.textSecondaryDark
@@ -539,8 +538,7 @@ class _SuccessView extends StatelessWidget {
               ),
               const SizedBox(height: AppConstants.space12),
               Text(
-                'Your password has been reset successfully. '
-                'You can now log in with your new password.',
+                'Password reset. Sign in with your new password.',
                 style: AppTypography.bodyMedium.copyWith(
                   color: isDark
                       ? AppColors.textSecondaryDark
@@ -568,7 +566,7 @@ class _SuccessView extends StatelessWidget {
                     ),
                   ),
                   child: Text(
-                    'Back to Login',
+                    'Back to sign in',
                     style: AppTypography.labelLarge.copyWith(
                       color: Colors.white,
                       fontWeight: FontWeight.w700,

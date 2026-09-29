@@ -220,8 +220,8 @@ class _GuestSheetState extends State<_GuestSheet> {
         final pending = value.pendingApproval > 0;
         _snack(pending
             ? (widget.asAdmin
-                ? 'Proposed — the member must confirm the guest charge.'
-                : 'Requested — awaiting admin approval.')
+                ? 'Sent to the member to confirm'
+                : 'Requested. Awaiting approval.')
             : 'Guests added for ${widget.mealName}.');
         setState(() => _loading = true);
         await _load();
@@ -363,7 +363,7 @@ class _GuestSheetState extends State<_GuestSheet> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'Guests — ${widget.mealName}',
+                  'Guests · ${widget.mealName}',
                   style: AppTypography.titleMedium.copyWith(
                     color: isDark
                         ? AppColors.textPrimaryDark
@@ -458,7 +458,7 @@ class _GuestSheetState extends State<_GuestSheet> {
                 _guestLine(g, isDark),
                 const SizedBox(height: 4),
                 Text(
-                  'Added by your admin — confirming accepts the charge.',
+                  'Added by your admin. Confirm to accept the charge.',
                   style: AppTypography.labelSmall.copyWith(
                     color: isDark
                         ? AppColors.textSecondaryDark
@@ -514,7 +514,7 @@ class _GuestSheetState extends State<_GuestSheet> {
         Padding(
           padding: const EdgeInsets.only(bottom: AppConstants.space8),
           child: Text(
-            'No guests yet — add one below. Guest meals are billed to the host.',
+            'No guests yet',
             style: AppTypography.bodySmall.copyWith(
               color: isDark
                   ? AppColors.textSecondaryDark
@@ -701,7 +701,7 @@ class _GuestSheetState extends State<_GuestSheet> {
   Widget _costPreview(bool isDark) {
     if (!widget.pricingEnabled) {
       return Text(
-        'Headcount only — guest meals are not billed in this group.',
+        'Headcount only. Guests aren\'t billed.',
         style: AppTypography.labelSmall.copyWith(
           color: isDark ? AppColors.textSecondaryDark : AppColors.textSecondary,
         ),

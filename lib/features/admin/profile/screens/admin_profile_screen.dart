@@ -230,7 +230,7 @@ class _AdminProfileScreenState extends State<AdminProfileScreen> {
         content: Text(saved
             ? 'Profile updated'
             : (auth.session == null
-                ? 'Session expired — please sign in again'
+                ? 'Session expired. Please sign in again.'
                 : 'Could not update profile. Please try again.')),
         behavior: SnackBarBehavior.floating,
       ),
@@ -720,8 +720,7 @@ class _LogoutConfirmSheet extends StatelessWidget {
             ),
             const SizedBox(height: 8),
             Text(
-              'You will be returned to the role selection screen. Your data '
-              'stays safe and you can sign back in anytime.',
+              'You can sign back in anytime.',
               textAlign: TextAlign.center,
               style: AppTypography.bodySmall.copyWith(color: subColor),
             ),

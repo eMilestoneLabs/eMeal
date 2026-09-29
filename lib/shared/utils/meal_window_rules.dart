@@ -68,12 +68,10 @@ String? validateMealWindows(List<MealWindowRef> windows) {
     final open = parseHHmm(w.openTime);
     final close = parseHHmm(w.closeTime);
     if (open == null || close == null) {
-      return '"${w.label}" needs an attendance window — set both an opening '
-          'and a closing time.';
+      return '"${w.label}" needs an opening and closing time.';
     }
     if (close <= open) {
-      return '"${w.label}" must open and close on the same day — the closing '
-          'time has to be later than the opening time.';
+      return '"${w.label}" must close after it opens, on the same day.';
     }
   }
   return null;

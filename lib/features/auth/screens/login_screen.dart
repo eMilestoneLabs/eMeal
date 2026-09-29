@@ -283,7 +283,7 @@ class _LoginScreenState extends State<LoginScreen> with TickerProviderStateMixin
     final isEmail = RegExp(r'^[^@]+@[^@]+\.[^@]+$').hasMatch(id);
     if (!isEmail) {
       setState(() => _identifierError =
-          'Mobile OTP is coming soon. Use email OTP or sign in with your password.');
+          'Mobile OTP is coming soon. Use your email instead.');
       return;
     }
     context.push(

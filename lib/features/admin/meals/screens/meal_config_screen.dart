@@ -266,9 +266,7 @@ class _MealConfigScreenState extends State<MealConfigScreen> {
                   const AppSectionTitle(
                     title: 'Meal System',
                     subtitle:
-                        'Define this group\'s meals once here — the weekly '
-                        'planner, daily plans and member menus all build from '
-                        'this master list',
+                        'Your master meal list. All menus are built from it.',
                   ),
                   const SizedBox(height: 12),
                   _ToggleTile(
@@ -276,7 +274,7 @@ class _MealConfigScreenState extends State<MealConfigScreen> {
                     title: 'Meals Enabled',
                     subtitle: _provider.mealsEnabled
                         ? 'Members can view menus and mark meal attendance'
-                        : 'Attendance-only mode — meal UI hidden from members',
+                        : 'Attendance only. Members don\'t see meals.',
                     value: _provider.mealsEnabled,
                     onChanged: (v) => _provider.toggleMealSystem(
                               organizationId: _orgId,
@@ -298,12 +296,10 @@ class _MealConfigScreenState extends State<MealConfigScreen> {
                       title: 'Meal Preferences',
                       subtitle: (!_provider.preferencesEnabled &&
                               _provider.optOutAttendance)
-                          ? 'Unavailable while Auto-Present is ON — automatic '
-                              'attendance can\'t pick preferences for members. '
-                              'Turn off Auto-Present first.'
+                          ? 'Turn off Auto-Present to use preferences.'
                           : _provider.preferencesEnabled
-                              ? 'Members tag Veg/Chicken/Fish etc. before attendance'
-                              : 'No preference selection — just mark present/absent',
+                              ? 'Members pick a preference when marking'
+                              : 'No choices. Members just mark present or absent.',
                       value: _provider.preferencesEnabled,
                       onChanged: ((!_provider.preferencesEnabled &&
                                   _provider.optOutAttendance))
@@ -326,16 +322,13 @@ class _MealConfigScreenState extends State<MealConfigScreen> {
                     _ToggleTile(
                       icon: Icons.payments_rounded,
                       title: _pricingLocked
-                          ? 'Meal Pricing — ${_provider.mealPricingEnabled ? 'Enabled' : 'Disabled'} 🔒'
+                          ? 'Meal Pricing: ${_provider.mealPricingEnabled ? 'Enabled' : 'Disabled'} 🔒'
                           : 'Enable Meal Pricing',
                       subtitle: _pricingLocked
-                          ? 'Finalized when this group published its first meal '
-                              'schedule, so this ON/OFF setting can no longer be '
-                              'changed. Individual meal prices are NOT locked — '
-                              'they remain fully editable.'
+                          ? 'Locked after first publish. Meal prices stay editable.'
                           : _provider.mealPricingEnabled
-                              ? 'Meals carry a ₹ price — shown to members & used for billing'
-                              : 'No pricing — members see meals without a price',
+                              ? 'Meals have a price and are billed'
+                              : 'No prices. Nothing is billed.',
                       value: _provider.mealPricingEnabled,
                       onChanged: _pricingLocked
                           ? null
@@ -368,9 +361,8 @@ class _MealConfigScreenState extends State<MealConfigScreen> {
                         subtitle: (_provider.selectedGroup?.mealConfig
                                     .billSkippedMeals ??
                                 false)
-                            ? 'Unmarked (no-response) meals are billed at the '
-                                'scheduled price from the next meal onwards.'
-                            : 'Unmarked (no-response) meals are free.',
+                            ? 'Unmarked meals are billed from the next meal.'
+                            : 'Unmarked meals are free.',
                         value: _provider.selectedGroup?.mealConfig
                                 .billSkippedMeals ??
                             false,
@@ -390,9 +382,7 @@ class _MealConfigScreenState extends State<MealConfigScreen> {
                         subtitle: (_provider.selectedGroup?.mealConfig
                                     .billAbsentMeals ??
                                 false)
-                            ? 'Meals marked Absent are billed at the scheduled '
-                                'price from the next meal onwards. Past bills '
-                                'never change.'
+                            ? 'Absent meals are billed from the next meal. Past bills don\'t change.'
                             : 'Meals marked Absent are free.',
                         value: _provider.selectedGroup?.mealConfig
                                 .billAbsentMeals ??
@@ -416,15 +406,10 @@ class _MealConfigScreenState extends State<MealConfigScreen> {
                       title: 'Auto-Present Attendance',
                       subtitle: (!_provider.optOutAttendance &&
                               _provider.preferencesEnabled)
-                          ? 'Unavailable while Meal Preferences is ON — the '
-                              'system can\'t pick preferences for members. '
-                              'Turn off Meal Preferences first.'
+                          ? 'Turn off Meal Preferences to use this.'
                           : _provider.optOutAttendance
-                              ? 'Members who don\'t mark anything are automatically '
-                                  'marked Present when the window closes (they can '
-                                  'correct it). Tell your members about this policy.'
-                              : 'OFF (default): members mark themselves — no mark '
-                                  'means not counted and not billed',
+                              ? 'Unmarked members become Present at close. They can correct it.'
+                              : 'Off: members mark themselves. No mark, no bill.',
                       value: _provider.optOutAttendance,
                       onChanged: ((!_provider.optOutAttendance &&
                                   _provider.preferencesEnabled))
@@ -444,9 +429,7 @@ class _MealConfigScreenState extends State<MealConfigScreen> {
                       icon: Icons.group_add_rounded,
                       title: 'Guest Meals',
                       subtitle: _provider.guestConfig.guestAttendanceEnabled
-                          ? 'Members can bring guests to a meal — the extra plates '
-                              'are billed to the member who booked them. Tap '
-                              '"Guest settings" below for limits & pricing.'
+                          ? 'Guests are billed to the member who books them.'
                           : 'Members cannot add guests to their meals',
                       value: _provider.guestConfig.guestAttendanceEnabled,
                       onChanged: (v) => _provider.updateGuestConfig(
@@ -476,8 +459,7 @@ class _MealConfigScreenState extends State<MealConfigScreen> {
                       subtitle: (_provider.selectedGroup?.mealConfig
                                   .vacationRequiresApproval ??
                               false)
-                          ? 'Members submit a dated request you approve — the '
-                              'instant self-service toggle is disabled'
+                          ? 'Members request it and you approve'
                           : 'Members may also use the instant vacation toggle',
                       value: _provider.selectedGroup?.mealConfig
                               .vacationRequiresApproval ??
@@ -607,7 +589,7 @@ class _MealConfigScreenState extends State<MealConfigScreen> {
                           ),
                           const SizedBox(height: 6),
                           Text(
-                            'Meal menus and timelines are hidden. Members mark attendance in the windows below.',
+                            'Members mark attendance in the windows below.',
                             textAlign: TextAlign.center,
                             style: TextStyle(
                               fontSize: 13,
@@ -622,7 +604,7 @@ class _MealConfigScreenState extends State<MealConfigScreen> {
                     AppSectionTitle(
                       title: 'Attendance Windows',
                       subtitle:
-                          '${_windowMeals.length} of 5 — applied automatically every day',
+                          '${_windowMeals.length} of 5 · Repeats daily',
                     ),
                     const SizedBox(height: 12),
                     if (_windowMeals.isEmpty)
@@ -630,7 +612,7 @@ class _MealConfigScreenState extends State<MealConfigScreen> {
                         icon: Icons.schedule_rounded,
                         title: 'No attendance windows yet',
                         subtitle:
-                            'Tap + Add Window to create one (e.g. "Morning Attendance", 7:00–8:00 AM).',
+                            'Tap + Add Window to create one.',
                       )
                     else
                       ..._windowMeals.map(
@@ -643,7 +625,7 @@ class _MealConfigScreenState extends State<MealConfigScreen> {
                                 style: AppTypography.bodyMedium
                                     .copyWith(fontWeight: FontWeight.w700)),
                             subtitle: Text(
-                              '${TimeFormat.hm12(w.attendanceWindow.openTime)} – ${TimeFormat.hm12(w.attendanceWindow.closeTime)}'
+                              '${TimeFormat.hm12(w.attendanceWindow.openTime)} - ${TimeFormat.hm12(w.attendanceWindow.closeTime)}'
                               '${w.isActive ? '' : '  ·  Disabled'}',
                               style: AppTypography.labelSmall
                                   .copyWith(color: AppColors.textSecondary),
@@ -831,8 +813,7 @@ class _MealConfigScreenState extends State<MealConfigScreen> {
               RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
           title: const Text('Meal limit reached'),
           content: const Text(
-            'Maximum ${AppConstants.maxMasterMealsPerGroup} Master Meals are '
-            'allowed. Please delete an existing meal before creating a new one.',
+            'Limit of ${AppConstants.maxMasterMealsPerGroup} meals reached. Delete one to add another.',
           ),
           actions: [
             FilledButton(
@@ -1068,9 +1049,7 @@ class _MealConfigScreenState extends State<MealConfigScreen> {
         // "cannot be undone" — the meal leaves future plans, members keep the
         // currently published menu until re-publish, history stays intact.
         content: const Text(
-          'This meal is removed from upcoming plans and menus. Members keep '
-          'seeing the currently published menu until you publish again. Past '
-          'attendance and billing records are kept.',
+          'Removed from upcoming menus. Past records are kept.',
         ),
         actions: [
           TextButton(
@@ -1174,8 +1153,8 @@ class _BillingCycleTile extends StatelessWidget {
                 const SizedBox(height: 2),
                 Text(
                   changeUsed
-                      ? 'Locked — finalized at this group\'s first publish'
-                      : 'Draft — change it freely until the first schedule is published. Also sets the data-retention boundary.',
+                      ? 'Locked after first publish'
+                      : 'Editable until the first publish',
                   style: AppTypography.labelSmall.copyWith(
                     color: changeUsed
                         ? AppColors.textTertiary
@@ -1262,15 +1241,9 @@ class _FirstPublishNoticeBanner extends StatelessWidget {
           const SizedBox(width: 8),
           Expanded(
             child: Text(
-              'Meal Pricing Configuration — currently '
-              '${pricingEnabled ? 'ON' : 'OFF'}. You can enable or disable this '
-              'setting, and change the Billing Cycle, until this group\'s first '
-              'schedule is published. You will review and confirm both at that '
-              'first publish.\n\n'
-              'After the first successful publish, the Enable Meal Pricing '
-              'setting and the Billing Cycle are permanently locked for this '
-              'group. This does NOT lock individual meal prices — if Meal '
-              'Pricing is enabled, each meal\'s ₹ price stays fully editable.',
+              'Meal Pricing is ${pricingEnabled ? 'ON' : 'OFF'}. You can change '
+              'it and the Billing Cycle until the first publish. After that, '
+              'both are locked. Meal prices always stay editable.',
               style: AppTypography.bodySmall.copyWith(color: fg),
             ),
           ),

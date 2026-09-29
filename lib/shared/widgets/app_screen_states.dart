@@ -68,7 +68,7 @@ class AppErrorState extends StatelessWidget {
       iconColor: offline ? AppColors.textTertiary : AppColors.error,
       title: offline ? 'You\'re offline' : 'Something went wrong',
       subtitle: offline
-          ? 'Check your connection — we\'ll pick up right where you left off.'
+          ? 'Check your connection and try again.'
           : (message ?? failure?.message ?? 'Please try again.'),
       action: onRetry == null
           ? null

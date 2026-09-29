@@ -41,7 +41,7 @@ class TimeFormat {
   /// Formats an open–close window as a single 12-hour AM/PM range using an
   /// en-dash separator, e.g. `"7:00 AM – 11:00 AM"`.
   static String window12(String? open, String? close) =>
-      '${hm12(open)} – ${hm12(close)}';
+      '${hm12(open)} - ${hm12(close)}';
 
   static String _format(int hour24, int minute) {
     final period = hour24 >= 12 ? 'PM' : 'AM';

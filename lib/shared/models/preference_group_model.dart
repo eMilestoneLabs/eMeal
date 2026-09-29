@@ -87,7 +87,7 @@ class PreferenceGroupModel {
     if (!required) return 'Optional · up to $maxSelect';
     return minSelect == maxSelect
         ? 'Choose $minSelect'
-        : 'Choose $minSelect–$maxSelect';
+        : 'Choose $minSelect-$maxSelect';
   }
 }
 

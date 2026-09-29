@@ -216,7 +216,7 @@ class _MealScheduleScreenState extends State<MealScheduleScreen>
           publishedOk = published;
           // null = success; the message keeps the sheet open on failure so a
           // failed publish can never be mistaken for a locked-in one.
-          return published ? null : (_provider.error ?? 'Failed to publish');
+          return published ? null : (_provider.error ?? 'Couldn\'t publish');
         },
       );
       if (!mounted) return;
@@ -224,8 +224,7 @@ class _MealScheduleScreenState extends State<MealScheduleScreen>
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text(
-              'Published — members can see it now. Meal Pricing is now locked '
-              'for this group.',
+              'Published. Meal Pricing is now locked.',
             ),
             behavior: SnackBarBehavior.floating,
             backgroundColor: AppColors.present,
@@ -250,8 +249,8 @@ class _MealScheduleScreenState extends State<MealScheduleScreen>
         SnackBar(
           content: Text(
             ok
-                ? 'Schedule published — members can see it now'
-                : _provider.error ?? 'Failed to publish',
+                ? 'Schedule published'
+                : _provider.error ?? 'Couldn\'t publish',
           ),
           behavior: SnackBarBehavior.floating,
           backgroundColor: ok ? AppColors.present : AppColors.error,
@@ -278,8 +277,8 @@ class _MealScheduleScreenState extends State<MealScheduleScreen>
         SnackBar(
           content: Text(
             ok
-                ? 'Reverted to draft — edit each day, then publish again'
-                : _provider.error ?? 'Failed to revert',
+                ? 'Back to draft'
+                : _provider.error ?? 'Couldn\'t switch to draft',
           ),
           behavior: SnackBarBehavior.floating,
           backgroundColor: ok ? AppColors.warning : AppColors.error,
@@ -304,8 +303,7 @@ class _MealScheduleScreenState extends State<MealScheduleScreen>
       builder: (dialogCtx) => AlertDialog(
         title: const Text('Unpublish this week?'),
         content: const Text(
-          'Students will no longer see this week\'s menu. Your draft is kept '
-          'and you can publish again anytime to restore it.',
+          'Members won\'t see this week\'s menu. Your draft is kept.',
         ),
         actions: [
           TextButton(
@@ -333,8 +331,8 @@ class _MealScheduleScreenState extends State<MealScheduleScreen>
         SnackBar(
           content: Text(
             ok
-                ? 'Unpublished — hidden from students. Publish again to restore.'
-                : _provider.error ?? 'Failed to unpublish',
+                ? 'Unpublished. Hidden from members.'
+                : _provider.error ?? 'Couldn\'t unpublish',
           ),
           behavior: SnackBarBehavior.floating,
           backgroundColor: ok ? AppColors.warning : AppColors.error,
@@ -584,7 +582,7 @@ class _MealScheduleScreenState extends State<MealScheduleScreen>
                   icon: Icons.calendar_month_outlined,
                   title: 'No schedule yet',
                   subtitle: _dayWiseMode
-                      ? 'Add meals in Master Meal Template first — they become the daily template for Today and Tomorrow.'
+                      ? 'Add meals in the Master Meal Template first.'
                       : 'Configure meals first, then build your weekly schedule here.',
                 )
               : Column(
@@ -663,14 +661,14 @@ class _StatusBanner extends StatelessWidget {
       return const _BannerStrip(
         color: AppColors.info,
         icon: Icons.sync_rounded,
-        message: 'Showing your last saved plan — syncing the latest…',
+        message: 'Showing saved plan. Syncing…',
       );
     }
     if (isPreview) {
       return const _BannerStrip(
         color: AppColors.info,
         icon: Icons.visibility_rounded,
-        message: 'Student view — tap ✏️ to return to edit mode.',
+        message: 'Member view. Tap ✏️ to edit.',
       );
     }
     if (isPublished && requiresRepublish) {
@@ -678,21 +676,20 @@ class _StatusBanner extends StatelessWidget {
         color: AppColors.warning,
         icon: Icons.lock_open_rounded,
         message:
-            'Published earlier — publish once to lock this schedule so master '
-            'edits no longer affect students.',
+            'Publish once to lock this schedule.',
       );
     }
     if (isPublished) {
       return const _BannerStrip(
         color: AppColors.present,
         icon: Icons.check_circle_rounded,
-        message: 'Published — students can see this schedule.',
+        message: 'Published. Visible to members.',
       );
     }
     return const _BannerStrip(
       color: AppColors.warning,
       icon: Icons.edit_note_rounded,
-      message: 'Draft — edit each day independently, then publish.',
+      message: 'Draft. Edit each day, then publish.',
     );
   }
 }
@@ -1337,10 +1334,8 @@ class _MultiPrefGroupsCard extends StatelessWidget {
           const SizedBox(height: 4),
           Text(
             enabled
-                ? 'Tick the groups that apply THIS day (defined in Master Meal '
-                    'Template). Unticked groups are hidden for this day only.'
-                : "Preferences are OFF for this day — members won't pick any "
-                    'option. Turn the toggle on to use these groups.',
+                ? 'Tick the groups for this day. Others are hidden today only.'
+                : 'Preferences are off for this day.',
             style: AppTypography.bodySmall.copyWith(
               color: isDark
                   ? AppColors.textSecondaryDark
@@ -1782,7 +1777,7 @@ class _DayMealEditSheetState extends State<_DayMealEditSheet> {
                       ),
                       const SizedBox(height: 2),
                       Text(
-                        'Changes affect only ${widget.day.fullLabel} — other days unchanged.',
+                        'Only ${widget.day.fullLabel} changes.',
                         style: AppTypography.bodySmall.copyWith(
                           color: AppColors.info,
                           fontWeight: FontWeight.w500,
@@ -1874,7 +1869,7 @@ class _DayMealEditSheetState extends State<_DayMealEditSheet> {
               decoration: InputDecoration(
                 hintText: widget.templateDescription?.isNotEmpty == true
                     ? widget.templateDescription
-                    : 'Optional — describe this day’s meal',
+                    : 'Optional note for this day',
                 helperText: 'Leave blank to inherit the master description.',
                 border: OutlineInputBorder(
                   borderRadius:
@@ -2089,7 +2084,7 @@ class _DayMealEditSheetState extends State<_DayMealEditSheet> {
                       ? 'Default ₹${widget.templatePrice}'
                       : 'e.g. 40',
                   helperText: _priceLocked
-                      ? 'Price locked while attendance is open. Editable once the window closes.'
+                      ? 'Price locked until attendance closes'
                       : 'Leave blank to inherit the master meal price.',
                   helperStyle: _priceLocked
                       ? const TextStyle(color: AppColors.warning)
@@ -2148,7 +2143,7 @@ class _DayMealEditSheetState extends State<_DayMealEditSheet> {
                     const SizedBox(width: 6),
                     Expanded(
                       child: Text(
-                        'Please enable Global Meal Preference from Master Template.',
+                        'Turn on Meal Preferences in Master Template first.',
                         style: AppTypography.labelSmall.copyWith(
                           color: AppColors.warning,
                           fontWeight: FontWeight.w600,

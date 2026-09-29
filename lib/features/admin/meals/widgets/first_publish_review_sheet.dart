@@ -170,10 +170,7 @@ class _FirstPublishReviewSheetState extends State<_FirstPublishReviewSheet> {
                       value: _ackPermanent,
                       onChanged: (v) => setState(() => _ackPermanent = v),
                       label:
-                          'I understand that the Billing Cycle and the Enable '
-                          'Meal Pricing setting will be locked after the first '
-                          'successful publish. Individual meal prices will '
-                          'remain editable.',
+                          'I understand Meal Pricing and the Billing Cycle lock after publishing.',
                       textColor: textPrimary,
                     ),
                     if (_error != null) ...[
@@ -325,12 +322,9 @@ class _FirstPublishReviewSheetState extends State<_FirstPublishReviewSheet> {
           const SizedBox(height: 8),
           Text(
             on
-                ? 'Meals carry a ₹ price. Members see prices and this group is '
-                    'billed. After publishing, Meal Pricing can never be turned '
-                    'off for this group — individual meal prices stay editable.'
-                : 'Meals have no price and nothing is billed. After publishing, '
-                    'Meal Pricing can never be turned on for this group — you '
-                    'would need to create a new group instead.',
+                ? 'Meals are priced and billed. This stays on after publishing. '
+                    'Meal prices remain editable.'
+                : 'Nothing is billed. This stays off after publishing.',
             style: AppTypography.bodySmall.copyWith(color: textSecondary),
           ),
         ],
@@ -370,9 +364,7 @@ class _FirstPublishReviewSheetState extends State<_FirstPublishReviewSheet> {
               // "publishing does not use up that change" — the exact opposite
               // of the rule this sheet now enforces. Publishing IS the event
               // that makes the cycle permanent.
-              'This boundary governs every billing period and the '
-              'data-retention window. You can still change it now — after this '
-              'first publish it is permanently locked for this group.',
+              'Sets billing periods and data retention. Locked after publishing.',
               style: AppTypography.bodySmall.copyWith(color: textSecondary),
             ),
           ],
@@ -410,15 +402,8 @@ class _FirstPublishReviewSheetState extends State<_FirstPublishReviewSheet> {
                       )),
                   const SizedBox(height: 4),
                   Text(
-                    'Publishing this first schedule finalises Meal Pricing as '
-                    '${pricingOn ? 'ENABLED' : 'DISABLED'} AND locks the Billing '
-                    'Cycle for the entire life of this group. The locks are '
-                    'enforced by the server, so they cannot be undone by '
-                    'reinstalling the app, clearing data, turning the meal '
-                    'system off and on again, or using another device.\n\n'
-                    'This does NOT lock individual meal prices. If Meal Pricing '
-                    'is enabled you can keep editing and customising each '
-                    'meal\'s ₹ price exactly as before.',
+                    'Publishing locks Meal Pricing (${pricingOn ? 'on' : 'off'}) and the '
+                    'Billing Cycle for good. Meal prices stay editable.',
                     style: AppTypography.bodySmall.copyWith(
                       color: isDark
                           ? AppColors.warning
@@ -487,7 +472,7 @@ class _FirstPublishReviewSheetState extends State<_FirstPublishReviewSheet> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('Publication failed — nothing was locked',
+                  Text('Publish failed. Nothing was locked.',
                       style: AppTypography.labelMedium.copyWith(
                         color: AppColors.error,
                         fontWeight: FontWeight.w800,

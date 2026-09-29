@@ -438,7 +438,7 @@ class _AttendanceActionCardState extends State<AttendanceActionCard> {
                         const SizedBox(width: 6),
                         Expanded(
                           child: Text(
-                            'Attendance closed — you can no longer change this meal.',
+                            'Attendance closed',
                             style: AppTypography.labelSmall.copyWith(
                               color: isDark
                                   ? AppColors.textSecondaryDark

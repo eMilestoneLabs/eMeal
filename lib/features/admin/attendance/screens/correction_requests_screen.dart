@@ -248,7 +248,7 @@ class _CorrectionRequestsScreenState extends State<CorrectionRequestsScreen> {
           if (r.isMemberConfirmation) ...[
             const SizedBox(height: 6),
             Text(
-              'Awaiting the member’s confirmation (admin-proposed increase)',
+              'Awaiting member confirmation',
               style: AppTypography.labelSmall
                   .copyWith(color: AppColors.warning),
             ),
@@ -298,13 +298,13 @@ class _CorrectionRequestsScreenState extends State<CorrectionRequestsScreen> {
       return [
         _btn('Approve', AppColors.present, () {
           _act(r, () => _repo.approve(r.id),
-              'Approved — the record has been updated.');
+              'Approved. Record updated.');
         }),
         const SizedBox(width: 8),
         _btn('Reject', AppColors.absent, () async {
           final note = await _askNote('Reject request');
           await _act(r, () => _repo.reject(r.id, note: note),
-              'Request rejected — nothing changed.');
+              'Request rejected');
         }, outlined: true),
       ];
     }

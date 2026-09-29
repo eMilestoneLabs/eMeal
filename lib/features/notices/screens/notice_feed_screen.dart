@@ -296,8 +296,7 @@ class _NoticeFeedScreenState extends State<NoticeFeedScreen> {
       builder: (ctx) => AlertDialog(
         title: const Text('Clear all notifications?'),
         content: const Text(
-          'This removes every notification from your bell. It does not affect '
-          'other members.',
+          'Clears all your notifications. Others aren\'t affected.',
         ),
         actions: [
           TextButton(
@@ -982,8 +981,7 @@ class _DeliveryStatusSheet extends StatelessWidget {
           Text('Notification delivery', style: AppTypography.titleMedium),
           const SizedBox(height: 4),
           Text(
-            'In-app notices always reach everyone. Push alerts also need a '
-            'registered device.',
+            'Push alerts need a registered device.',
             style:
                 AppTypography.bodySmall.copyWith(color: AppColors.textTertiary),
           ),
@@ -1018,7 +1016,7 @@ class _DeliveryStatusSheet extends StatelessWidget {
               color: last.failed == 0 ? AppColors.present : AppColors.warning,
               label: 'Last send',
               value:
-                  '"${last.title}" — ${last.successful}/${last.total} delivered'
+                  '"${last.title}" · ${last.successful}/${last.total} delivered'
                   '${last.at != null ? ' · ${_relativeTime(last.at!.toLocal())}' : ''}',
             )
           else

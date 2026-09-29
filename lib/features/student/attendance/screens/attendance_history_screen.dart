@@ -387,7 +387,7 @@ class _HistoryAppBar extends StatelessWidget implements PreferredSizeWidget {
                 ),
                 const SizedBox(width: 6),
                 Text(
-                  '${_fmt(startDate)} – ${_fmt(endDate)}',
+                  '${_fmt(startDate)} - ${_fmt(endDate)}',
                   style: AppTypography.labelSmall.copyWith(
                     color: AppColors.primary,
                     fontWeight: FontWeight.w600,

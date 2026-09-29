@@ -181,7 +181,7 @@ class _BillingScreenState extends State<BillingScreen> {
                   ),
                   const SizedBox(height: 6),
                   Text(
-                      '${_fmt(_provider.from)} – ${_fmt(_provider.to)}'
+                      '${_fmt(_provider.from)} - ${_fmt(_provider.to)}'
                       // Pass 12 (FR-BILLX-020): show the configured cycle.
                       '${(_provider.summary.cycleStartDay ?? 1) > 1 ? ' · cycle starts day ${_provider.summary.cycleStartDay}' : ''}',
                       style: AppTypography.bodySmall
@@ -823,7 +823,7 @@ class _MemberCard extends StatelessWidget {
   final VoidCallback onTap;
 
   String _fmtDate(DateTime? d) {
-    if (d == null) return '—';
+    if (d == null) return '-';
     const m = [
       'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
       'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
@@ -892,7 +892,7 @@ class _MemberCard extends StatelessWidget {
                     // ledger adjustments — the bill is explainable at a glance.
                     if (member.vacationDays > 0)
                       Text(
-                        'On vacation ${member.vacationDays} meal(s) — not billed',
+                        'Vacation: ${member.vacationDays} meal(s), not billed',
                         style: AppTypography.labelSmall
                             .copyWith(color: AppColors.vacation),
                       ),

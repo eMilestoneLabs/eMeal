@@ -1547,8 +1547,7 @@ class MealConfigProvider extends ChangeNotifier {
 
     final total = compressed.fold<int>(0, (s, b) => s + b.length);
     if (total > cap) {
-      _error = 'Images exceed the ${cap ~/ 1024} KB combined limit even after '
-          'compression. Please use smaller photos.';
+      _error = 'Photos are too large (${cap ~/ 1024} KB max). Use smaller ones.';
       notifyListeners();
       return null;
     }

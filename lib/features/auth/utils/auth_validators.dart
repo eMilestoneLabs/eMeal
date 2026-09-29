@@ -52,7 +52,7 @@ abstract final class AuthValidators {
     if (value.length < 8) return 'Password must be at least 8 characters';
     final strength = PasswordStrengthIndicator.strengthOf(value);
     if (strength.index <= PasswordStrength.weak.index) {
-      return 'Too weak — add a number or a capital letter';
+      return 'Add a number or capital letter';
     }
     return null;
   }

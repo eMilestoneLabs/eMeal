@@ -143,9 +143,7 @@ class _RetentionInfoBanner extends StatelessWidget {
           const SizedBox(width: 10),
           Expanded(
             child: Text(
-              'Data older than 3 months is automatically archived to Excel + '
-              'PDF before being removed from the live server. These files '
-              'are your permanent copy — download them any time.',
+              'Older data is saved here as Excel and PDF. Download it any time.',
               style: AppTypography.bodySmall
                   .copyWith(color: colorScheme.onSurfaceVariant),
             ),
@@ -221,7 +219,7 @@ class _ArchiveCard extends StatelessWidget {
                     ),
                     const SizedBox(height: 2),
                     Text(
-                      '${_fmtDate(archive.periodStart)} – '
+                      '${_fmtDate(archive.periodStart)} - '
                       '${_fmtDate(archive.periodEnd)}'
                       ' · ${archive.totalRecords} records',
                       style: AppTypography.labelSmall
@@ -325,9 +323,7 @@ class _EmptyArchives extends StatelessWidget {
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 40),
           child: Text(
-            'Archives appear here automatically once a group\'s data '
-            'passes the 3-month retention point. Nothing is ever removed '
-            'from the server before its archive is generated.',
+            'Archives appear here once data passes the retention period.',
             textAlign: TextAlign.center,
             style: AppTypography.bodySmall
                 .copyWith(color: colorScheme.onSurfaceVariant),

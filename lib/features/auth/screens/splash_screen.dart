@@ -113,18 +113,25 @@ class _SplashScreenState extends State<SplashScreen>
     // Stage 1: Background
     _bgCtrl.forward();
     await Future<void>.delayed(const Duration(milliseconds: 150));
+    // Guidebook §4: a one-shot delay must be mounted-guarded. The router can
+    // leave splash mid-intro (deep link, notification tap, signed-in redirect);
+    // driving a disposed controller then throws.
+    if (!mounted) return;
 
     // Stage 2: Logo
     _logoCtrl.forward();
     await Future<void>.delayed(const Duration(milliseconds: 350));
+    if (!mounted) return;
 
     // Stage 3: Text
     _textCtrl.forward();
     await Future<void>.delayed(const Duration(milliseconds: 400));
+    if (!mounted) return;
 
     // Stage 4: Dots
     _dotsCtrl.forward();
     await Future<void>.delayed(const Duration(milliseconds: 900));
+    if (!mounted) return;
 
     // Intro finished. Navigate now if the session has resolved; otherwise wait
     // — didChangeDependencies retries the moment auth state arrives.

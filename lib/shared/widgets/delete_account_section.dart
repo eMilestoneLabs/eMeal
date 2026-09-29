@@ -122,8 +122,7 @@ class _DeleteAccountDialogState extends State<_DeleteAccountDialog> {
   static const List<String> _consequences = [
     'You are signed out of every device immediately.',
     'Your name, email, phone and photo are erased.',
-    'Attendance & billing history required for group records is kept '
-        'per policy — without your personal details.',
+    'Group attendance and billing records are kept, without your details.',
   ];
 
   bool get _confirmed => _confirmController.text.trim() == 'DELETE';

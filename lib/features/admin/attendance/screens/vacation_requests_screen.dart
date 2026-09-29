@@ -105,12 +105,11 @@ class _VacationRequestsScreenState extends State<VacationRequestsScreen> {
           await showDialog<void>(
             context: context,
             builder: (ctx) => AlertDialog(
-              title: const Text('Approved — with kept Present marks'),
+              title: const Text('Approved with some meals kept'),
               content: Text(
-                'The member already marked Present on '
-                '${value.conflicts.length} meal(s) inside this range. Those '
-                'marks are kept and billed as marked (the member was told):\n\n'
-                '${value.conflicts.map((c) => '• ${c.date} — ${c.mealName}').join('\n')}',
+                'Already marked Present on ${value.conflicts.length} meal(s). '
+                'These stay billed:\n\n'
+                '${value.conflicts.map((c) => '• ${c.date} · ${c.mealName}').join('\n')}',
               ),
               actions: [
                 TextButton(

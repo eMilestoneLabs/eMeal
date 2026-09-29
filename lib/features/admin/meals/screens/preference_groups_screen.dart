@@ -111,9 +111,7 @@ class _PreferenceGroupsScreenState extends State<PreferenceGroupsScreen> {
     if (hadGroups) {
       final ok = await _confirm(
         'Switch to Standalone?',
-        '${_groups.length} preference group(s) will be SAVED — not deleted. '
-        'Members pick ONE simple tag instead. Switch back to Preference '
-        'Groups any time and your groups return exactly as configured.',
+        'Your ${_groups.length} group(s) are saved, not deleted. Switch back any time.',
         confirmLabel: 'Switch',
       );
       if (ok != true) return;
@@ -219,7 +217,7 @@ class _PreferenceGroupsScreenState extends State<PreferenceGroupsScreen> {
   /// Inline standalone tag editing — 2..5 window enforced before the trip.
   Future<void> _removeStandaloneTag(String tag) async {
     if (_meal.enabledPreferences.length <= _minStandalone) {
-      _toast('Standalone preferences need at least $_minStandalone options.');
+      _toast('Add at least $_minStandalone options');
       return;
     }
     final next = List.of(_meal.enabledPreferences)..remove(tag);
@@ -230,7 +228,7 @@ class _PreferenceGroupsScreenState extends State<PreferenceGroupsScreen> {
     final t = tag.trim();
     if (t.isEmpty) return;
     if (_meal.enabledPreferences.length >= _maxStandalone) {
-      _toast('Standalone preferences carry at most $_maxStandalone options.');
+      _toast('Maximum $_maxStandalone options');
       return;
     }
     if (_meal.enabledPreferences
@@ -310,7 +308,7 @@ class _PreferenceGroupsScreenState extends State<PreferenceGroupsScreen> {
   ) async {
     final ok = await _confirm(
       'Remove "${o.label}"?',
-      'Past selections keep their history — this only hides the option going forward.',
+      'Hidden from now on. Past choices are kept.',
     );
     if (ok != true) return;
     final res = await _repo.deactivateOption(o.id);
@@ -325,7 +323,7 @@ class _PreferenceGroupsScreenState extends State<PreferenceGroupsScreen> {
   Future<void> _removeGroup(PreferenceGroupModel g) async {
     final ok = await _confirm(
       'Remove "${g.label}" from this meal?',
-      'Members will no longer choose it. Past records and bills stay exactly as they were.',
+      'Members can\'t choose it anymore. Past records stay.',
     );
     if (ok != true) return;
     final res = await _repo.unbindFromMeal(widget.meal.id, g.id);
@@ -587,7 +585,7 @@ class _ModeSelector extends StatelessWidget {
               selected: standaloneActive,
               icon: Icons.style_rounded,
               title: 'Standalone',
-              description: 'One simple list — members pick a single tag',
+              description: 'One list. Members pick one tag.',
               accent: AppColors.secondary,
               onTap: onStandalone,
             ),
@@ -845,7 +843,7 @@ class _StandaloneCardState extends State<_StandaloneCard> {
                         style: AppTypography.titleSmall
                             .copyWith(fontWeight: FontWeight.w800)),
                     Text(
-                      '${widget.tags.length} of ${widget.maxOptions} · members pick ONE',
+                      '${widget.tags.length} of ${widget.maxOptions} · members pick one',
                       style: AppTypography.labelSmall.copyWith(
                         color: isDark
                             ? AppColors.textSecondaryDark
@@ -938,10 +936,10 @@ class _StandaloneCardState extends State<_StandaloneCard> {
             padding: const EdgeInsets.only(top: 8),
             child: Text(
               atFloor
-                  ? 'Keep at least ${widget.minOptions} options — one option is not a choice.'
+                  ? 'Keep at least ${widget.minOptions} options'
                   : atCap
-                      ? 'Limit reached — a standalone list carries at most ${widget.maxOptions} options.'
-                      : 'Shown exactly as published — nothing is added or substituted.',
+                      ? 'Maximum ${widget.maxOptions} options'
+                      : 'Shown exactly as published',
               style: AppTypography.labelSmall.copyWith(
                 color: (atFloor || atCap)
                     ? AppColors.warning
@@ -998,7 +996,7 @@ class _GroupCard extends StatelessWidget {
         ? 'Choose 1'
         : (group.minSelect == group.maxSelect
             ? 'Choose ${group.minSelect}'
-            : 'Choose ${group.minSelect}–${group.maxSelect}');
+            : 'Choose ${group.minSelect}-${group.maxSelect}');
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -1316,9 +1314,7 @@ class _EmptyState extends StatelessWidget {
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 32),
             child: Text(
-              'No preference groups yet.\nAdd dimensions like "Staple (Ruti/Rice)" '
-              'or "Non-Veg (Chicken/Mutton +₹30)" — members will pick one from '
-              'each when marking Present.',
+              'No preference groups yet.\nAdd one, like "Staple" or "Non-Veg".',
               textAlign: TextAlign.center,
               style: AppTypography.bodySmall
                   .copyWith(color: AppColors.textSecondary),
@@ -1412,7 +1408,7 @@ class _GroupEditorSheetState extends State<_GroupEditorSheet> {
       // ISSUE-2: 2–5 options per group, asserted before the round-trip.
       if (_options.length < _minOptions) {
         setState(() =>
-            _error = 'Add at least $_minOptions options — one option is not a choice.');
+            _error = 'Add at least $_minOptions options');
         return;
       }
       if (_options.length > _maxOptions) {
@@ -1461,11 +1457,8 @@ class _GroupEditorSheetState extends State<_GroupEditorSheet> {
                     ? 'Edit "${widget.initial!.label}"'
                     : 'New preference group',
                 subtitle: _isEdit
-                    ? 'Rename the group or change its selection rules — '
-                        'options are managed on the group card.'
-                    : 'A group is one choice members make when marking Present — '
-                        'e.g. "Staple" with Ruti / Rice. Add 2–5 options below '
-                        'and pick how many they may choose.',
+                    ? 'Edit the name and selection rules.'
+                    : 'One choice members make, like "Staple". Add 2-5 options.',
               ),
               TextField(
                 controller: _label,
@@ -1529,7 +1522,7 @@ class _GroupEditorSheetState extends State<_GroupEditorSheet> {
                 // this is ON; the server enforces the same cascade + lock.
                 subtitle: _vegOnly
                     ? const Text(
-                        'Every option in this group stays Veg — locked per option')
+                        'All options stay Veg')
                     : null,
                 value: _vegOnly,
                 onChanged: (v) => setState(() {
@@ -1570,7 +1563,7 @@ class _GroupEditorSheetState extends State<_GroupEditorSheet> {
                       child: Text(
                         _options.length < _minOptions
                             ? 'add ${_minOptions - _options.length} more · min $_minOptions'
-                            : '$_minOptions–$_maxOptions ✓',
+                            : '$_minOptions-$_maxOptions ✓',
                         style: AppTypography.labelSmall.copyWith(
                           fontWeight: FontWeight.w700,
                           color: _options.length < _minOptions
@@ -1629,8 +1622,7 @@ class _GroupEditorSheetState extends State<_GroupEditorSheet> {
     final fg = isDark ? AppColors.textSecondaryDark : AppColors.textSecondary;
     return Tooltip(
       message:
-          '"None" is added automatically — members who want no item pick it. '
-          'It is free, always last, and does not count toward the 2–5 limit.',
+          '"None" is added automatically and is always free.',
       child: Container(
         padding:
             const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
@@ -1832,8 +1824,7 @@ class _OptionEditorSheetState extends State<_OptionEditorSheet> {
               icon: Icons.add_circle_outline_rounded,
               title: 'New option',
               subtitle:
-                  'One choice inside this group. Add an optional extra price (₹) — '
-                  'members see it while choosing.',
+                  'Add an optional extra price (₹).',
             ),
             TextField(
               controller: _label,
@@ -1876,7 +1867,7 @@ class _OptionEditorSheetState extends State<_OptionEditorSheet> {
               // ISSUE-014: locked ON inside a Veg-Only group — the group is
               // the parent policy; change the group to change the options.
               subtitle: widget.vegOnly
-                  ? const Text('Locked — this group is Veg-Only')
+                  ? const Text('Locked: Veg-Only group')
                   : null,
               value: widget.vegOnly ? true : _isVeg,
               onChanged: widget.vegOnly
@@ -2012,8 +2003,7 @@ class _HelpBanner extends StatelessWidget {
           const SizedBox(width: 10),
           Expanded(
             child: Text(
-              'Each group is one choice members make when marking Present. '
-              'A meal can have several — e.g. Staple (Choose 1) + Non-Veg (Optional).',
+              'Each group is one choice. A meal can have several.',
               style: AppTypography.bodySmall
                   .copyWith(color: AppColors.textSecondary, height: 1.4),
             ),
@@ -2076,8 +2066,7 @@ class _SavedGroupsPanel extends StatelessWidget {
             ],
           ),
           Text(
-            'Nothing was deleted — switch back to Preference Groups and these '
-            'return exactly as configured.',
+            'Nothing was deleted. Switch back any time.',
             style: AppTypography.labelSmall.copyWith(
               color: isDark
                   ? AppColors.textSecondaryDark
@@ -2148,7 +2137,7 @@ class _KitchenCountsSheet extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('Kitchen counts — $mealName',
+          Text('Kitchen counts · $mealName',
               style: AppTypography.titleMedium),
           Text(date,
               style: AppTypography.bodySmall
@@ -2156,7 +2145,7 @@ class _KitchenCountsSheet extends StatelessWidget {
           const SizedBox(height: 12),
           if (data.isEmpty)
             Text(
-              'No selections yet today — counts appear as members mark Present.',
+              'No choices yet today',
               style: AppTypography.bodySmall
                   .copyWith(color: AppColors.textSecondary),
             )

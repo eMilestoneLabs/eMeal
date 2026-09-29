@@ -841,7 +841,7 @@ class _InfoCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final user = provider.user;
-    final mobile = user?.phone?.isNotEmpty == true ? user!.phone! : '—';
+    final mobile = user?.phone?.isNotEmpty == true ? user!.phone! : '-';
     final groupLabel = provider.groupCount == 0
         ? 'Not in any group'
         : '${provider.groupCount} group${provider.groupCount != 1 ? 's' : ''}';
@@ -861,7 +861,7 @@ class _InfoCard extends StatelessWidget {
           _InfoTile(
             icon: Icons.badge_rounded,
             label: 'Role',
-            value: user?.role.displayName ?? '—',
+            value: user?.role.displayName ?? '-',
             isDark: isDark,
           ),
           _Divider(isDark: isDark),

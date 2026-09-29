@@ -445,10 +445,7 @@ class _MealConfigFormState extends State<MealConfigForm> {
       builder: (ctx) => AlertDialog(
         title: const Text('Switch to Standalone?'),
         content: Text(
-          '$count preference group(s) will be SAVED — not deleted. Members '
-          'pick ONE simple tag instead. Switch back to Preference Groups any '
-          'time and your groups return exactly as configured. This applies '
-          'immediately.',
+          'Your $count group(s) are saved, not deleted. Switch back any time.',
         ),
         actions: [
           TextButton(
@@ -468,7 +465,7 @@ class _MealConfigFormState extends State<MealConfigForm> {
           _preferenceTags = List.of(_kDefaultPreferenceTags);
         }
       });
-      _toast('$count group(s) saved — switch back any time to restore');
+      _toast('$count group(s) saved');
     }
   }
 
@@ -487,8 +484,7 @@ class _MealConfigFormState extends State<MealConfigForm> {
       if (handler == null) return;
       if (!_canSave) {
         setState(() => _submitError =
-            'Complete the meal details first — a name and a valid attendance '
-            'window are required before configuring Preference Groups.');
+            'Add a name and attendance window first.');
         return;
       }
       await _submitWith(handler);
@@ -511,7 +507,7 @@ class _MealConfigFormState extends State<MealConfigForm> {
         final count = _activeGroupNames.length;
         if (!await _setBindingsActive(false)) return;
         _lastModeWasGroups = true;
-        _toast('$count group(s) saved — re-enable to restore');
+        _toast('$count group(s) saved');
       }
       if (mounted) setState(() => _preferencesForMeal = false);
       return;
@@ -571,8 +567,7 @@ class _MealConfigFormState extends State<MealConfigForm> {
 
       if (compressed.length > _maxTotalBytes) {
         setState(() => _imageError =
-            'Photo is too large even after compression (limit '
-            '${_maxTotalBytes ~/ 1024} KB). Try a smaller image.');
+            'Photo is too large (${_maxTotalBytes ~/ 1024} KB max). Try a smaller one.');
         return;
       }
 
@@ -643,15 +638,13 @@ class _MealConfigFormState extends State<MealConfigForm> {
         const SizedBox(height: 4),
         Text(
           widget.initialMeal == null
-              ? 'Lowercase identifier for this meal slot (e.g. "breakfast", "morning_tea", "iftar"). Used for analytics grouping.'
+              ? 'A short ID, like "breakfast". Set once.'
               // GAP 2: the server treats slotKey as IMMUTABLE after creation
               // (SRS MMT-002 — it is the analytics/billing continuity key) and
               // silently ignores it in a PATCH. Presenting an editable field
               // whose edits are discarded is exactly the "ignore failures
               // silently" trap, so on EDIT it is shown locked with the reason.
-              : 'Fixed when the meal was created — it is the analytics and '
-                  'billing continuity key, so past records keep resolving. '
-                  'Create a new meal if you need a different slot.',
+              : 'Set when the meal was created. Create a new meal to change it.',
           style: TextStyle(fontSize: 11, color: colorScheme.onSurfaceVariant),
         ),
         const SizedBox(height: 8),
@@ -757,7 +750,7 @@ class _MealConfigFormState extends State<MealConfigForm> {
                   size: 14, color: AppColors.warning),
               SizedBox(width: 4),
               Text(
-                'Window is less than 30 minutes — students may miss it.',
+                'Short window. Members may miss it.',
                 style: TextStyle(
                     fontSize: 11, color: AppColors.warning),
               ),
@@ -806,7 +799,7 @@ class _MealConfigFormState extends State<MealConfigForm> {
                       size: 18, color: AppColors.textTertiary)
                   : null,
               helperText: _priceLocked
-                  ? 'Price locked — attendance window has started.'
+                  ? 'Price locked while attendance is open'
                   : 'Required while meal pricing is enabled.',
               helperStyle: _priceLocked
                   ? const TextStyle(color: AppColors.warning)
@@ -1239,12 +1232,10 @@ class _MealConfigFormState extends State<MealConfigForm> {
                         // per-meal toggle locks (setting preserved, returns
                         // when Global is switched back ON).
                         !widget.globalPreferencesEnabled
-                            ? 'Locked — the Global Meal Preferences switch is '
-                                'OFF (Meal System settings). This meal\'s '
-                                'saved setting returns when it is turned ON.'
+                            ? 'Off in Meal System settings'
                             : _groupsMode
                                 ? 'Members complete each preference group when marking attendance.'
-                                : 'Students select a tag (Veg, Fish, etc.) when marking attendance.',
+                                : 'Members pick a tag when marking attendance.',
                         style: TextStyle(
                           fontSize: 11,
                           color: colorScheme.onSurfaceVariant,
@@ -1291,7 +1282,7 @@ class _MealConfigFormState extends State<MealConfigForm> {
                           child: _PrefModeCard(
                             icon: Icons.sell_rounded,
                             title: 'Standalone',
-                            subtitle: 'Members pick ONE simple tag',
+                            subtitle: 'Members pick one tag',
                             selected: !_groupsMode,
                             busy: _bindingsBusy || _submitting,
                             accent: AppColors.secondary,
@@ -1308,7 +1299,7 @@ class _MealConfigFormState extends State<MealConfigForm> {
                                 : _groupsMode
                                     ? '${_activeGroupNames.length} active group(s)'
                                     : (_suspendedGroupNames.isNotEmpty
-                                        ? '${_suspendedGroupNames.length} saved — tap to manage'
+                                        ? '${_suspendedGroupNames.length} saved · Tap to manage'
                                         : 'Rules, veg flags, price add-ons'),
                             selected: _groupsMode,
                             busy: _bindingsBusy || _submitting,

@@ -25,7 +25,7 @@ void main() {
 
     test('rejects a missing window', () {
       expect(validateMealWindows([w('m1', 'Breakfast', null, null)]),
-          contains('needs an attendance window'));
+          contains('needs an opening and closing time'));
     });
 
     test('rejects an overnight window', () {
@@ -63,7 +63,7 @@ void main() {
           w('m1', 'Breakfast', '07:00', '09:00'),
           w('m2', 'Lunch', null, null),
         ]),
-        contains('"Lunch" needs an attendance window'),
+        contains('"Lunch" needs an opening and closing time'),
       );
     });
 

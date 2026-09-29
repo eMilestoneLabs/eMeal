@@ -128,7 +128,7 @@ class _AdminSettingsScreenState extends State<AdminSettingsScreen> {
           _NavTile(
             icon: Icons.edit_note_rounded,
             title: 'Personal Notepad',
-            subtitle: 'Private notes & reminders — stored only on this device',
+            subtitle: 'Private notes, only on this device',
             onTap: () => context.push(RouteNames.notepad),
           ),
 

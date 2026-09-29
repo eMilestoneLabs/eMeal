@@ -64,9 +64,7 @@ class VerificationGate {
       builder: (ctx) => AlertDialog(
         title: const Text('Verify your email'),
         content: const Text(
-          'Email verification is required before you can mark attendance, '
-          'book guests, or send requests. Verify now to continue — we will '
-          'send a code to your email.',
+          'Verify your email to mark attendance, book guests and send requests.',
         ),
         actions: [
           TextButton(

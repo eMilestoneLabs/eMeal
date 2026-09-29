@@ -180,7 +180,7 @@ class _NoGroupScreenState extends State<NoGroupScreen>
 
                         // ── Subtext ───────────────────────────────────
                         Text(
-                          'Ask your Admin or Manager for an invite QR code\nto start tracking meals & attendance.',
+                          'Ask your admin for a QR code to join.',
                           style: AppTypography.bodyMedium.copyWith(
                             color: isDark
                                 ? AppColors.textSecondaryDark

@@ -40,7 +40,7 @@ class NotepadEmptyState extends StatelessWidget {
       NoteFilter.today => (
         icon: Icons.today_rounded,
         title: 'Nothing written today',
-        subtitle: 'Today is a blank page — capture your first thought.',
+        subtitle: 'Capture your first thought.',
       ),
       NoteFilter.week => (
         icon: Icons.date_range_rounded,
@@ -50,7 +50,7 @@ class NotepadEmptyState extends StatelessWidget {
       NoteFilter.checklists => (
         icon: Icons.checklist_rounded,
         title: 'No checklists yet',
-        subtitle: 'Turn plans into ticked boxes — create your first list.',
+        subtitle: 'Create your first list.',
       ),
       NoteFilter.archived => (
         icon: Icons.archive_outlined,
@@ -61,8 +61,7 @@ class NotepadEmptyState extends StatelessWidget {
         icon: Icons.edit_note_rounded,
         title: 'Ideas begin with a single thought',
         subtitle:
-            'Write your first note. Capture memories, create lists, '
-            'organize your life — all stored privately on this device.',
+            'Write your first note. Saved privately on this device.',
       ),
     };
   }

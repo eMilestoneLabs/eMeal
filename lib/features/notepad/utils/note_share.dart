@@ -49,7 +49,7 @@ abstract final class NoteShare {
     final blocks =
         notes.map(asDetailedText).where((t) => t.trim().isNotEmpty).toList();
     if (blocks.isEmpty) return;
-    final text = blocks.join('\n\n———\n\n');
+    final text = blocks.join('\n\n---\n\n');
     await Share.share(text, subject: 'Notes (${blocks.length})');
   }
 }

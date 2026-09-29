@@ -98,7 +98,7 @@ class _RecordHistorySheetState extends State<RecordHistorySheet> {
           ),
           const SizedBox(height: 4),
           Text(
-            'Every change to this record — nothing is hidden.',
+            'Full change history',
             style: AppTypography.bodySmall
                 .copyWith(color: AppColors.textSecondary),
           ),
@@ -124,9 +124,7 @@ class _RecordHistorySheetState extends State<RecordHistorySheet> {
                   borderRadius: BorderRadius.circular(10),
                 ),
                 child: Text(
-                  'This record was created automatically by your group’s '
-                  'opt-out policy. If you didn’t eat, request a correction — '
-                  'it’s approved without admin friction.',
+                  'Marked automatically. Didn’t eat? Request a correction.',
                   style: AppTypography.bodySmall
                       .copyWith(color: AppColors.textSecondary),
                 ),

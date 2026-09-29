@@ -135,9 +135,7 @@ class _StudentSettingsScreenState extends State<StudentSettingsScreen> {
                     // are never auto-marked — the system won't guess your
                     // picks; say so up front.
                     subtitle:
-                        'Automatically marked present when a meal window opens. '
-                        'Meals that need a preference pick stay manual — the '
-                        'system never guesses your choice.',
+                        'Marked present when a meal opens. Meals with choices stay manual.',
                     value: provider.isDefaultAttendance,
                     // Live-Test-6 ISSUE-6: the toggle now persists to the
                     // backend; surface a failure instead of silently snapping
@@ -171,11 +169,11 @@ class _StudentSettingsScreenState extends State<StudentSettingsScreen> {
                     icon: Icons.beach_access_rounded,
                     iconColor: AppColors.vacation,
                     title: provider.isVacationMode
-                        ? 'Vacation Status — Active'
+                        ? 'Vacation · Active'
                         : 'Vacation Status',
                     subtitle: provider.isVacationMode
-                        ? 'Active — attendance and reminders are paused. You may turn it off if you return early.'
-                        : 'Automatically activated when your vacation request is approved. You may turn it off if you return early.',
+                        ? 'Attendance and reminders are paused.'
+                        : 'Turns on when your vacation is approved.',
                     value: provider.isVacationMode,
                     // Issue 4: enabling vacation is admin-approval-only. The
                     // switch can be turned OFF (early return) but never ON by
@@ -188,7 +186,7 @@ class _StudentSettingsScreenState extends State<StudentSettingsScreen> {
                     isDark: isDark,
                     disabledReason: provider.isVacationMode
                         ? null
-                        : 'Automatically activated when your vacation request is approved.',
+                        : 'Turns on when your vacation is approved.',
                   ),
                   // Issue 3: submit a date-range vacation request for admin approval.
                   _ActionTile(
@@ -268,7 +266,7 @@ class _StudentSettingsScreenState extends State<StudentSettingsScreen> {
                     iconColor: AppColors.primary,
                     title: 'Personal Notepad',
                     subtitle:
-                        'Private notes, lists and reminders — stored only on this device.',
+                        'Private notes, only on this device',
                     onTap: () => context.push(RouteNames.notepad),
                     isDark: isDark,
                   ),
@@ -760,7 +758,7 @@ class _LogoutDialog extends StatelessWidget {
             ),
             const SizedBox(height: AppConstants.space8),
             Text(
-              'You will be returned to the login screen and will need to sign in again.',
+              'You\'ll need to sign in again.',
               style: AppTypography.bodySmall.copyWith(
                 color: isDark
                     ? AppColors.textSecondaryDark

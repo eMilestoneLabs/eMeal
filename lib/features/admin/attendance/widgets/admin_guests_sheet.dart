@@ -557,7 +557,7 @@ class _PickHostDialogState extends State<_PickHostDialog> {
           ),
           const SizedBox(height: AppConstants.space8),
           Text(
-            'The member must confirm — guests increase their bill.',
+            'The member confirms before it is billed.',
             style: AppTypography.labelSmall.copyWith(color: AppColors.warning),
           ),
         ],

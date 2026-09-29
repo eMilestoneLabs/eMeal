@@ -109,8 +109,7 @@ class ExportPreviewScreen extends StatelessWidget {
             Padding(
               padding: const EdgeInsets.symmetric(vertical: 8),
               child: Text(
-                '… ${rows.length - 200} more rows — the full list is included '
-                'in the exported file.',
+                '+ ${rows.length - 200} more rows in the full report',
                 style: AppTypography.labelSmall
                     .copyWith(color: AppColors.textTertiary),
               ),
@@ -142,8 +141,7 @@ class ExportPreviewScreen extends StatelessWidget {
                       const SizedBox(width: 10),
                       Expanded(
                         child: Text(
-                          'Preparing your report — the share sheet opens '
-                          'automatically.',
+                          'Preparing your report…',
                           style: AppTypography.labelSmall
                               .copyWith(color: AppColors.textSecondary),
                         ),

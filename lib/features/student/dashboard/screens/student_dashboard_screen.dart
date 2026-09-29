@@ -748,7 +748,7 @@ class _VacationBanner extends StatelessWidget {
               mainAxisSize: MainAxisSize.min,
               children: [
                 Text(
-                  'Vacation Mode Active — attendance paused.',
+                  'On vacation. Attendance paused.',
                   style: AppTypography.bodySmall.copyWith(
                     color: AppColors.vacation,
                     fontWeight: FontWeight.w600,
@@ -1017,7 +1017,7 @@ class _NoMealTodayCard extends StatelessWidget {
                   ),
                   const SizedBox(height: 2),
                   Text(
-                    'No meal is scheduled for today — attendance is not required.',
+                    'No meals scheduled today',
                     style: AppTypography.bodySmall.copyWith(
                       color: isDark
                           ? AppColors.textSecondaryDark

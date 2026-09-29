@@ -202,7 +202,7 @@ class _GroupAppBar extends StatelessWidget {
           decoration: const InputDecoration(
             labelText: 'Group name',
             hintText: 'e.g. Hostel Block A',
-            helperText: '2–50 characters',
+            helperText: '2-50 characters',
           ),
           onSubmitted: (v) => Navigator.of(ctx).pop(v.trim()),
         ),
@@ -226,7 +226,7 @@ class _GroupAppBar extends StatelessWidget {
     if (newName.length < 2) {
       messenger.showSnackBar(
         const SnackBar(
-          content: Text('Group name must be 2–50 characters'),
+          content: Text('Use 2-50 characters'),
           behavior: SnackBarBehavior.floating,
         ),
       );
@@ -251,8 +251,7 @@ class _GroupAppBar extends StatelessWidget {
       messenger.showSnackBar(
         const SnackBar(
           content: Text(
-            'A group cannot have the same name as the organisation. '
-            'Choose a different group name.',
+            'Group name can\'t match your organisation name.',
           ),
           behavior: SnackBarBehavior.floating,
         ),
@@ -1077,8 +1076,8 @@ class _MealsTab extends StatelessWidget {
                 const SizedBox(height: 8),
                 Text(
                   config.preferencesEnabled
-                      ? 'Members select a preference (Veg/Chicken/Fish/etc.) when marking attendance.'
-                      : 'Disabled — members just mark present/absent.',
+                      ? 'Members pick a preference when marking attendance.'
+                      : 'Off. Members just mark present or absent.',
                   style: TextStyle(
                     fontSize: 13,
                     color: colorScheme.onSurfaceVariant,
@@ -1276,7 +1275,7 @@ class _SettingsTabState extends State<_SettingsTab> {
       SnackBar(
         content: Text(ok
             ? (newValue ? 'Meal system enabled' : 'Meal system disabled')
-            : 'Failed to update meal settings'),
+            : 'Couldn\'t update meal settings'),
       ),
     );
   }
@@ -1300,7 +1299,7 @@ class _SettingsTabState extends State<_SettingsTab> {
       SnackBar(
         content: Text(ok
             ? (newValue ? 'Weekly menu enabled' : 'Weekly menu disabled')
-            : 'Failed to update weekly menu setting'),
+            : 'Couldn\'t update the weekly menu'),
       ),
     );
   }
@@ -1326,7 +1325,7 @@ class _SettingsTabState extends State<_SettingsTab> {
             ? (newValue
                 ? 'Day-Wise meal mode enabled'
                 : 'Day-Wise meal mode disabled')
-            : 'Failed to update day-wise setting'),
+            : 'Couldn\'t update daily meals'),
       ),
     );
   }
@@ -1341,8 +1340,7 @@ class _SettingsTabState extends State<_SettingsTab> {
       builder: (ctx) => AlertDialog(
         title: const Text('Archive Group?'),
         content: Text(
-          'Archiving "${widget.group.name}" hides it and removes all member '
-          'access. You can restore it later from the archived group.',
+          'This hides "${widget.group.name}" and removes member access. You can restore it later.',
         ),
         actions: [
           TextButton(
@@ -1382,7 +1380,7 @@ class _SettingsTabState extends State<_SettingsTab> {
     if (!ok) {
       messenger.showSnackBar(
         const SnackBar(
-            content: Text('Failed to archive — the group is still active')),
+            content: Text('Couldn\'t archive the group')),
       );
     }
   }
@@ -1403,7 +1401,7 @@ class _SettingsTabState extends State<_SettingsTab> {
       Navigator.of(context).pop();
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(widget.provider.createError ?? 'Failed to restore')),
+        SnackBar(content: Text(widget.provider.createError ?? 'Couldn\'t restore the group')),
       );
     }
   }
@@ -1422,9 +1420,8 @@ class _SettingsTabState extends State<_SettingsTab> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                'This permanently removes "${widget.group.name}" and ALL of its '
-                'data (members, meals, attendance, billing). This CANNOT be '
-                'undone.\n\nType the group name to confirm:',
+                'This permanently deletes "${widget.group.name}" and all its data. '
+                'This can\'t be undone.\n\nType the group name to confirm:',
               ),
               const SizedBox(height: 12),
               TextField(
@@ -1477,7 +1474,7 @@ class _SettingsTabState extends State<_SettingsTab> {
       messenger.showSnackBar(
         SnackBar(
           content: Text(
-            widget.provider.createError ?? 'Delete failed — group restored',
+            widget.provider.createError ?? 'Couldn\'t delete. Group restored.',
           ),
         ),
       );
@@ -1552,8 +1549,8 @@ class _SettingsTabState extends State<_SettingsTab> {
                 style: TextStyle(fontWeight: FontWeight.w600)),
             subtitle: Text(
               group.mealConfig.mealsEnabled
-                  ? 'Students can view the weekly menu and mark meal attendance.'
-                  : 'Attendance only mode — meal UI is hidden for students.',
+                  ? 'Members can view the weekly menu and mark attendance.'
+                  : 'Attendance only. Members don\'t see meals.',
               style: TextStyle(
                   fontSize: 12, color: colorScheme.onSurfaceVariant),
             ),
@@ -1606,8 +1603,8 @@ class _SettingsTabState extends State<_SettingsTab> {
                   style: TextStyle(fontWeight: FontWeight.w600)),
               subtitle: Text(
                 group.mealConfig.dayWiseMealsEnabled
-                    ? 'Members see only the meals configured for today. Weekly Menu is hidden.'
-                    : 'Disabled — enable to run meals per calendar day instead of a weekly plan.',
+                    ? 'Members see only today\'s meals.'
+                    : 'Off. Turn on to plan meals day by day.',
                 style: TextStyle(
                     fontSize: 12, color: colorScheme.onSurfaceVariant),
               ),
@@ -1677,7 +1674,7 @@ class _SettingsTabState extends State<_SettingsTab> {
           icon: Icons.delete_forever_rounded,
           color: colorScheme.error,
           title: 'Delete Permanently',
-          subtitle: 'Remove the group and ALL its data. Cannot be undone.',
+          subtitle: 'Delete the group and all its data. Can\'t be undone.',
           // Ultra-smooth: delete returns to the list instantly (optimistic),
           // so no busy/disabled state is needed here.
           busy: false,

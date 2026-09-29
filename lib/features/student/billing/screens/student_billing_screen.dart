@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:smart_meal_management/core/errors/app_exception.dart';
 import 'package:smart_meal_management/core/theme/app_colors.dart';
 import 'package:smart_meal_management/core/utils/report_date_bounds.dart';
 import 'package:smart_meal_management/core/theme/app_typography.dart';
@@ -316,7 +317,7 @@ class _StudentBillingScreenState extends State<StudentBillingScreen> {
       Ok(:final value) => value.map(ExportAdjustment.fromApi).toList(),
       // Never export an incomplete report silently — surfaces through the
       // existing "Export failed: …" handler.
-      Err(:final failure) => throw Exception(failure.message),
+      Err(:final failure) => throw UnexpectedException(message: failure.message),
     };
   }
 
@@ -374,7 +375,9 @@ class _StudentBillingScreenState extends State<StudentBillingScreen> {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Export failed: $e')),
+          SnackBar(
+              content: Text(userFacingMessage(e,
+                  fallback: 'Couldn\'t export. Please try again.'))),
         );
       }
     } finally {
@@ -1114,7 +1117,7 @@ class _StudentBillingScreenState extends State<StudentBillingScreen> {
             backgroundColor:
                 approve ? AppColors.present : AppColors.textSecondary,
             content: Text(approve
-                ? 'Charge approved — added to your bill'
+                ? 'Charge approved'
                 : 'Charge declined'),
           ),
         );

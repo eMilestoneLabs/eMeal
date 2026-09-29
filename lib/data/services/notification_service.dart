@@ -234,7 +234,7 @@ class NotificationService {
       if (remind10.isAfter(now)) {
         await _scheduleReminder(
           id: notifId++,
-          title: 'Last chance — ${meal.name}',
+          title: 'Last chance: ${meal.name}',
           body:
               'Attendance window closes at ${TimeFormat.hm12(meal.attendanceWindow.closeTime)}!',
           scheduledAt: remind10,

@@ -308,7 +308,7 @@ class _AdminSignupScreenState extends State<AdminSignupScreen> {
               ),
               const SizedBox(height: 24),
 
-              const _SectionLabel('Login Preference'),
+              const _SectionLabel('Sign-in method'),
               const SizedBox(height: 10),
               Row(children: [
                 _PrefChip(label: 'Email', selected: _loginPref == LoginPreference.email,

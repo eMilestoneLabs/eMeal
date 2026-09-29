@@ -348,7 +348,7 @@ class _ExportScreenState extends State<ExportScreen> {
     final billAbsentMeals = _billAbsentMeals;
     final summaries = BillingService.summarize(rows,
         billSkippedMeals: billSkippedMeals, billAbsentMeals: billAbsentMeals);
-    final rangeLabel = '${_fmt(_startDate)} – ${_fmt(_endDate)}';
+    final rangeLabel = '${_fmt(_startDate)} - ${_fmt(_endDate)}';
     final groupName = _selectedGroupName;
     final pricingEnabled = _pricingEnabled;
 
@@ -428,8 +428,8 @@ class _ExportScreenState extends State<ExportScreen> {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(_provider.exportSuccess
-            ? 'Export ready — share sheet opened.'
-            : (_provider.error ?? 'Export failed')),
+            ? 'Report ready to share'
+            : (_provider.error ?? 'Couldn\'t export. Please try again.')),
       ),
     );
   }

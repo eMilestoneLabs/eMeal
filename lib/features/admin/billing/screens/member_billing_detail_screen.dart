@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:smart_meal_management/core/errors/app_exception.dart';
 import 'package:smart_meal_management/core/theme/app_colors.dart';
 import 'package:smart_meal_management/core/theme/app_typography.dart';
 import 'package:smart_meal_management/core/utils/time_format.dart';
@@ -229,7 +230,7 @@ class _MemberBillingDetailScreenState extends State<MemberBillingDetailScreen> {
       Ok(:final value) => value.map(ExportAdjustment.fromApi).toList(),
       // Never export an incomplete report silently — surfaces through the
       // existing "Export failed: …" handler.
-      Err(:final failure) => throw Exception(failure.message),
+      Err(:final failure) => throw UnexpectedException(message: failure.message),
     };
   }
 
@@ -237,7 +238,7 @@ class _MemberBillingDetailScreenState extends State<MemberBillingDetailScreen> {
     if (_exporting) return;
     setState(() => _exporting = true);
     final svc = ExportService.instance;
-    final label = '${_fmtDate(widget.from)} – ${_fmtDate(widget.to)}';
+    final label = '${_fmtDate(widget.from)} - ${_fmtDate(widget.to)}';
     final name = '${widget.userName} · ${widget.groupName}';
     try {
       // Live-Test-16 ISSUE-16: this member's itemised adjustments (with
@@ -280,13 +281,15 @@ class _MemberBillingDetailScreenState extends State<MemberBillingDetailScreen> {
       }
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Export ready — share sheet opened.')),
+          const SnackBar(content: Text('Report ready to share')),
         );
       }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Export failed: $e')),
+          SnackBar(
+              content: Text(userFacingMessage(e,
+                  fallback: 'Couldn\'t export. Please try again.'))),
         );
       }
     } finally {
@@ -320,7 +323,7 @@ class _MemberBillingDetailScreenState extends State<MemberBillingDetailScreen> {
     for (final r in _rows) {
       if (r.isPresent) counts[r.mealName] = (counts[r.mealName] ?? 0) + 1;
     }
-    if (counts.isEmpty) return '—';
+    if (counts.isEmpty) return '-';
     return counts.entries.reduce((a, b) => a.value >= b.value ? a : b).key;
   }
 
@@ -364,7 +367,7 @@ class _MemberBillingDetailScreenState extends State<MemberBillingDetailScreen> {
   }
 
   String _fmtTime(DateTime? d) => d == null
-      ? '—'
+      ? '-'
       : TimeFormat.tod12(TimeOfDay.fromDateTime(d));
 
   @override
@@ -475,7 +478,7 @@ class _MemberBillingDetailScreenState extends State<MemberBillingDetailScreen> {
           Text('${UserRole.labelOf(widget.role)}  ·  ${widget.groupName}',
               style: AppTypography.bodySmall
                   .copyWith(color: Colors.white.withValues(alpha: 0.85))),
-          Text('${_fmtDate(widget.from)} – ${_fmtDate(widget.to)}',
+          Text('${_fmtDate(widget.from)} - ${_fmtDate(widget.to)}',
               style: AppTypography.labelSmall
                   .copyWith(color: Colors.white.withValues(alpha: 0.75))),
           if (widget.pricingEnabled) ...[
@@ -625,7 +628,7 @@ class _MemberBillingDetailScreenState extends State<MemberBillingDetailScreen> {
                         child: Text(
                             r.isPresent || _isPolicyBilled(r)
                                 ? '₹${r.price ?? 0}'
-                                : '—',
+                                : '-',
                             textAlign: TextAlign.right,
                             maxLines: 1,
                             style: AppTypography.labelSmall.copyWith(
@@ -853,7 +856,7 @@ class _MemberBillingDetailScreenState extends State<MemberBillingDetailScreen> {
         if (r.autoSkipped) return 'Skipped (auto)';
         return _isPolicyBilled(r) ? 'Skipped (billed)' : 'Skipped';
       default:
-        return '—';
+        return '-';
     }
   }
 

@@ -52,7 +52,8 @@ class AuthRepository implements IAuthRepository {
         try {
           session = AuthSession.fromJson(value);
         } catch (e) {
-          return Err(UnexpectedFailure(message: 'Unexpected login response: $e'));
+          return Err(UnexpectedFailure(
+              message: 'Something went wrong. Please try again.', cause: e));
         }
         // Role-context guard — prevents cross-role login.
         final liveRoleOk = switch (roleContext) {
@@ -128,7 +129,8 @@ class AuthRepository implements IAuthRepository {
         try {
           session = AuthSession.fromJson(value);
         } catch (e) {
-          return Err(UnexpectedFailure(message: 'Unexpected OTP response: $e'));
+          return Err(UnexpectedFailure(
+              message: 'Something went wrong. Please try again.', cause: e));
         }
         final liveRoleOk = switch (roleContext) {
           'admin' => session.user.role.isAdminGroup,
@@ -225,7 +227,8 @@ class AuthRepository implements IAuthRepository {
         try {
           session = AuthSession.fromJson(value);
         } catch (e) {
-          return Err(UnexpectedFailure(message: 'Unexpected signup response: $e'));
+          return Err(UnexpectedFailure(
+              message: 'Something went wrong. Please try again.', cause: e));
         }
         _session = session;
         _profileCache[session.user.id] = session.user;
@@ -305,7 +308,8 @@ class AuthRepository implements IAuthRepository {
         try {
           session = AuthSession.fromJson(value);
         } catch (e) {
-          return Err(UnexpectedFailure(message: 'Unexpected refresh response: $e'));
+          return Err(UnexpectedFailure(
+              message: 'Something went wrong. Please try again.', cause: e));
         }
         _session = session;
         _profileCache[session.user.id] = session.user;

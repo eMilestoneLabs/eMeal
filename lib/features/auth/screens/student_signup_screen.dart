@@ -333,7 +333,7 @@ class _StudentSignupScreenState extends State<StudentSignupScreen> {
               const SizedBox(height: 24),
 
               // Section: Login preference
-              const _SectionHeader(label: 'Login Preference'),
+              const _SectionHeader(label: 'Sign-in method'),
               const SizedBox(height: 8),
               Text(
                 'How would you like to sign in next time?',

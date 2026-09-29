@@ -244,7 +244,7 @@ class DioApiService {
       return Err(_mapDioError(e));
     } on SocketException {
       return const Err(NetworkFailure(
-        message: 'No internet connection. Please check your network.',
+        message: 'No internet connection',
       ));
     } catch (e) {
       return Err(UnexpectedFailure(message: e.toString(), cause: e));
@@ -417,12 +417,12 @@ class DioApiService {
       case DioExceptionType.receiveTimeout:
       case DioExceptionType.sendTimeout:
         return const NetworkFailure(
-          message: 'Request timed out. Please try again.',
+          message: 'This is taking too long. Please try again.',
         );
 
       case DioExceptionType.connectionError:
         return const NetworkFailure(
-          message: 'Unable to reach the server. Check your connection.',
+          message: 'Can\'t reach the server. Check your connection.',
         );
 
       case DioExceptionType.badResponse:
@@ -431,7 +431,7 @@ class DioApiService {
 
         if (status == 401) {
           return AuthFailure(
-            message: serverMessage ?? 'Session expired. Please log in again.',
+            message: serverMessage ?? 'Session expired. Please sign in again.',
             cause: e,
           );
         }
@@ -451,7 +451,7 @@ class DioApiService {
           return ValidationFailure(
             message: selectionsDetail ??
                 serverMessage ??
-                'Invalid request. Check your input.',
+                'Please check your details and try again.',
             fieldErrors: fieldErrors,
             cause: e,
           );
@@ -477,7 +477,7 @@ class DioApiService {
         }
         if (status >= 500) {
           return NetworkFailure(
-            message: serverMessage ?? 'Server error. Please try again later.',
+            message: serverMessage ?? 'Something went wrong on our side. Please try again.',
             statusCode: status,
             cause: e,
           );
@@ -494,7 +494,7 @@ class DioApiService {
       case DioExceptionType.unknown:
       case DioExceptionType.badCertificate:
         return NetworkFailure(
-          message: 'Connection error: ${e.message ?? 'Unknown'}',
+          message: 'Connection problem. Please try again.',
           cause: e,
         );
     }

@@ -158,8 +158,7 @@ class _EmptyFolders extends StatelessWidget {
             ),
             const SizedBox(height: AppConstants.space8),
             Text(
-              'Add a tag to any note and it becomes a folder here.\n'
-              'One folder can hold as many notes as you like.',
+              'Tag a note to create a folder here.',
               textAlign: TextAlign.center,
               style: AppTypography.bodySmall.copyWith(
                 height: 1.6,

@@ -92,8 +92,8 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(created.isApproved
-            ? 'Applied — your record has been corrected.'
-            : 'Request sent — awaiting admin review.'),
+            ? 'Record updated'
+            : 'Request sent for review'),
         behavior: SnackBarBehavior.floating,
       ),
     );
@@ -541,7 +541,7 @@ class _VacationBanner extends StatelessWidget {
           const SizedBox(width: AppConstants.space12),
           Expanded(
             child: Text(
-              'Vacation Mode is ON — attendance is paused.',
+              'On vacation. Attendance paused.',
               style: AppTypography.bodySmall.copyWith(
                 color: AppColors.vacation,
                 fontWeight: FontWeight.w600,
@@ -594,7 +594,7 @@ class _DefaultAttendanceBanner extends StatelessWidget {
           const SizedBox(width: 10),
           Expanded(
             child: Text(
-              'Default Attendance ON — you are auto-marked present.',
+              'Auto-attendance on',
               style: AppTypography.bodySmall.copyWith(
                 color: AppColors.primary,
                 fontWeight: FontWeight.w500,
@@ -712,10 +712,8 @@ class _NoMealsView extends StatelessWidget {
             const SizedBox(height: AppConstants.space8),
             Text(
               isPlannerOffDay
-                  ? 'No meal is scheduled for today.\n'
-                      'Attendance is not required — nothing will be billed.'
-                  : 'No meal has been configured by the admin/manager.\n'
-                      'Attendance is not allowed.',
+                  ? 'No meals today'
+                  : 'No meals set up yet',
               style: AppTypography.bodySmall.copyWith(
                 color: isDark
                     ? AppColors.textSecondaryDark
@@ -761,7 +759,7 @@ class _WindowClosedNotice extends StatelessWidget {
           const SizedBox(width: 10),
           Expanded(
             child: Text(
-              'All attendance windows are closed for today. Your Admin can still update attendance manually.',
+              'All meals are closed for today.',
               style: AppTypography.bodySmall.copyWith(
                 color: isDark
                     ? AppColors.textSecondaryDark

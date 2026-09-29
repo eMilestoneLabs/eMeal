@@ -170,7 +170,7 @@ class BillingPeriodsRepository {
     // Never hand a truncated ledger to an export.
     return const Err(UnexpectedFailure(
       message:
-          'This range has too many adjustments to export at once. Please choose a shorter date range.',
+          'Too many entries. Choose a shorter range.',
     ));
   }
 

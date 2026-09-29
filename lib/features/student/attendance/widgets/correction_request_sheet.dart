@@ -215,9 +215,7 @@ class _CorrectionRequestSheetState extends State<_CorrectionRequestSheet> {
                     .copyWith(fontWeight: FontWeight.w700)),
             const SizedBox(height: 4),
             Text(
-              'An admin reviews your request. Your record (and bill) only '
-              'changes if it is approved. Corrections are allowed for '
-              'today only — until 11:59 PM.',
+              'Your admin reviews it. Available until 11:59 PM today.',
               style: AppTypography.bodySmall
                   .copyWith(color: AppColors.textSecondary),
             ),
@@ -311,11 +309,11 @@ class _CorrectionRequestSheetState extends State<_CorrectionRequestSheet> {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  _typeTile('claim_present', 'I ate — mark me Present',
+                  _typeTile('claim_present', 'I ate, mark me Present',
                       'Needs admin approval; billed only after approval.'),
                   _typeTile(
                       'correct_to_absent',
-                      'I didn’t eat — mark me Absent',
+                      'I didn’t eat, mark me Absent',
                       'Needs admin approval; nothing is charged if approved.'),
                   if (prefs.isNotEmpty || _meal.preferenceGroups.isNotEmpty)
                     _typeTile('fix_preference', 'Fix my preference',

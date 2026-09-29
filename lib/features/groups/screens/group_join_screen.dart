@@ -518,8 +518,7 @@ class _PendingView extends StatelessWidget {
         ),
         const SizedBox(height: 8),
         Text(
-          'Your request to join ${group.name} has been sent. You will be '
-          'notified once an admin approves it.',
+          'Request sent to ${group.name}. We\'ll notify you once it\'s approved.',
           textAlign: TextAlign.center,
           style: AppTypography.bodyMedium.copyWith(
             color: isDark ? AppColors.textSecondaryDark : AppColors.textSecondary,
@@ -690,7 +689,7 @@ class _SuccessView extends StatelessWidget {
         ),
         const SizedBox(height: 8),
         Text(
-          'Successfully joined $name${type.isNotEmpty ? ' ($type)' : ''}.',
+          'You\'ve joined $name${type.isNotEmpty ? ' ($type)' : ''}.',
           style: AppTypography.bodyMedium.copyWith(
             color: isDark ? AppColors.textSecondaryDark : AppColors.textSecondary,
           ),
@@ -845,8 +844,7 @@ class _RolePicker extends StatelessWidget {
         ),
         const SizedBox(height: 4),
         Text(
-          'Shown on your profile and to your admin. Display only — it never '
-          'changes your permissions.',
+          'Shown on your profile. It doesn\'t change permissions.',
           style: AppTypography.bodySmall.copyWith(
             color: isDark
                 ? AppColors.textSecondaryDark

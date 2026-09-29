@@ -525,7 +525,7 @@ class _CreateGroupSheetState extends State<_CreateGroupSheet> {
     // is unknown, so it never rejects wrongly.
     final org = widget.orgName?.trim() ?? '';
     if (org.isNotEmpty && v.toLowerCase() == org.toLowerCase()) {
-      return 'This is the organisation name — choose another';
+      return 'This name belongs to your organisation';
     }
     return null;
   }
@@ -643,7 +643,7 @@ class _CreateGroupSheetState extends State<_CreateGroupSheet> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content:
-              Text(widget.provider.createError ?? 'Failed to create group'),
+              Text(widget.provider.createError ?? 'Couldn\'t create the group'),
           behavior: SnackBarBehavior.floating,
         ),
       );
@@ -713,7 +713,7 @@ class _CreateGroupSheetState extends State<_CreateGroupSheet> {
             decoration: InputDecoration(
               labelText: 'Group Name *',
               hintText: 'e.g. Hostel Block A, Office Cafeteria',
-              helperText: '2–50 characters',
+              helperText: '2-50 characters',
               errorText: _nameCtrl.text.isEmpty ? null : _nameError,
               filled: true,
               fillColor: colorScheme.surfaceContainerLowest,
@@ -745,8 +745,7 @@ class _CreateGroupSheetState extends State<_CreateGroupSheet> {
           ),
           const SizedBox(height: 2),
           Text(
-            'Shown everywhere for this group. You can hold a different role '
-            'in each group. Display only — it never changes your permissions.',
+            'Your title in this group. It doesn\'t change permissions.',
             style: AppTypography.bodySmall
                 .copyWith(color: colorScheme.onSurfaceVariant),
           ),
@@ -823,8 +822,8 @@ class _CreateGroupSheetState extends State<_CreateGroupSheet> {
               ),
               subtitle: Text(
                 _mealsEnabled
-                    ? 'Students can view menus and mark meal attendance.'
-                    : 'Attendance only — no meal features.',
+                    ? 'Members can view menus and mark attendance.'
+                    : 'Attendance only',
                 style: AppTypography.bodySmall
                     .copyWith(color: colorScheme.onSurfaceVariant),
               ),
@@ -897,8 +896,7 @@ class _CreateGroupSheetState extends State<_CreateGroupSheet> {
           ),
           const SizedBox(height: 2),
           Text(
-            'India only (currency ₹ INR). State, City, PIN and QR expiry are '
-            'required.',
+            'India only (₹). State, city, PIN and QR expiry are required.',
             style: AppTypography.bodySmall
                 .copyWith(color: colorScheme.onSurfaceVariant),
           ),

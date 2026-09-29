@@ -224,7 +224,7 @@ class _GroupDetailScreenState extends State<GroupDetailScreen> {
         ..hideCurrentSnackBar()
         ..showSnackBar(
           const SnackBar(
-            content: Text('Failed to leave group. Please try again.'),
+            content: Text('Couldn\'t leave the group. Please try again.'),
             behavior: SnackBarBehavior.floating,
           ),
         );

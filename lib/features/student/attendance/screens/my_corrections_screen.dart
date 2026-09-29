@@ -100,8 +100,8 @@ class _MyCorrectionsScreenState extends State<MyCorrectionsScreen> {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(created.isApproved
-            ? 'Applied — your record has been corrected.'
-            : 'Request sent — awaiting admin review.'),
+            ? 'Record updated'
+            : 'Request sent for review'),
       ),
     );
     _load();
@@ -137,8 +137,7 @@ class _MyCorrectionsScreenState extends State<MyCorrectionsScreen> {
               ? _info(_error!, AppColors.error, onRetry: _load)
               : _items.isEmpty
                   ? _info(
-                      'No correction requests yet.\nUse "Request correction" on a '
-                      'closed meal when you ate but could not mark in time.',
+                      'No correction requests yet',
                       AppColors.textSecondary,
                     )
                   : RefreshIndicator(

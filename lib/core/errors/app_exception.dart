@@ -50,3 +50,9 @@ final class StorageException extends AppException {
 final class UnexpectedException extends AppException {
   const UnexpectedException({required super.message, super.cause});
 }
+
+/// Text safe to show a user for [error]: the message of an [AppException]
+/// the app raised on purpose, otherwise [fallback]. Raw exception text
+/// (stack-ish `Exception: …` / `FileSystemException …`) never reaches the UI.
+String userFacingMessage(Object error, {required String fallback}) =>
+    error is AppException ? error.message : fallback;

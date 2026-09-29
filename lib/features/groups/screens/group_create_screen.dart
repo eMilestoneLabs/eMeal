@@ -492,7 +492,7 @@ class _Step2MealToggle extends StatelessWidget {
             icon: Icons.restaurant_rounded,
             title: 'Meals + Attendance',
             subtitle:
-                'Configure breakfast, lunch, dinner etc. Members view weekly menus and mark meal attendance.',
+                'Meals and weekly menus. Members mark attendance per meal.',
             color: AppColors.secondary,
             isSelected: mealsEnabled,
             onTap: () => onChanged(true),
@@ -502,7 +502,7 @@ class _Step2MealToggle extends StatelessWidget {
             icon: Icons.how_to_reg_rounded,
             title: 'Attendance Only',
             subtitle:
-                'No meal configuration. Members mark daily attendance. Great for coaching institutes and offices.',
+                'Simple daily attendance. Great for classes and offices.',
             color: AppColors.primary,
             isSelected: !mealsEnabled,
             onTap: () => onChanged(false),
@@ -636,7 +636,7 @@ class _Step3Preferences extends StatelessWidget {
         const SizedBox(height: 6),
         Text(
           mealsEnabled
-              ? 'Allow members to tag their preference (Veg, Chicken, Fish, etc.) when marking attendance.'
+              ? 'Members pick a preference when marking attendance.'
               : 'Preferences require meals to be enabled. Skipping this step.',
           style: TextStyle(
             fontSize: 14,

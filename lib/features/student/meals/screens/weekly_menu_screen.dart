@@ -131,8 +131,7 @@ class _WeeklyMenuScreenState extends State<WeeklyMenuScreen> {
       return const AppEmptyState(
         icon: Icons.calendar_today_rounded,
         title: EmptyCopy.noWeeklyMenu,
-        subtitle: "Your admin hasn't published the weekly menu for this week.\n"
-            'Check back soon — menus are usually updated before the week begins.',
+        subtitle: 'This week\'s menu isn\'t published yet.',
       );
     }
 
@@ -293,7 +292,7 @@ class _WeekLabel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isToday = selectedDay == DayOfWeek.fromWeekday(DateTime.now().weekday);
-    final label = isToday ? 'Today — ${selectedDay.label}' : selectedDay.label;
+    final label = isToday ? 'Today · ${selectedDay.label}' : selectedDay.label;
 
     return Row(
       children: [

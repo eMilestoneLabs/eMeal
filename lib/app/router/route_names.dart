@@ -18,6 +18,9 @@ abstract final class RouteNames {
 
   /// Event entry selection: choose Admin or Guest before login/scan.
   static const String eventEntry = '/event-entry';
+
+  /// Events preview shown while the Events module is switched off.
+  static const String eventsComingSoon = '/events-coming-soon';
   static const String forgotPassword = '/forgot-password';
   static const String resetPassword = '/reset-password';
 

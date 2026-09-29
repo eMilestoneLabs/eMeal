@@ -124,7 +124,7 @@ class _BillingPeriodsSheetState extends State<BillingPeriodsSheet> {
   @override
   Widget build(BuildContext context) {
     final fmt =
-        '${widget.from.day}/${widget.from.month}/${widget.from.year} – '
+        '${widget.from.day}/${widget.from.month}/${widget.from.year} - '
         '${widget.to.day}/${widget.to.month}/${widget.to.year}';
 
     return Container(
@@ -165,8 +165,7 @@ class _BillingPeriodsSheetState extends State<BillingPeriodsSheet> {
           ),
           const SizedBox(height: 4),
           Text(
-            'Finalizing locks all attendance and billing changes for the '
-            'period. Post-lock corrections need an audited reopen.',
+            'This locks attendance and billing for the period. You can reopen it if needed.',
             style:
                 AppTypography.bodySmall.copyWith(color: AppColors.textSecondary),
           ),
@@ -242,7 +241,7 @@ class _BillingPeriodsSheetState extends State<BillingPeriodsSheet> {
                                       fontWeight: FontWeight.w600)),
                               Text(
                                 finalized
-                                    ? 'Finalized — writes locked'
+                                    ? 'Finalized · Locked'
                                     : 'Reopened: ${p['reopenReason'] ?? ''}',
                                 style: AppTypography.bodySmall.copyWith(
                                     color: AppColors.textSecondary),

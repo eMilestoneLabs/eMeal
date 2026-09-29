@@ -654,7 +654,7 @@ class _TodayMealCardState extends State<_TodayMealCard> {
                   ),
                   const SizedBox(width: AppConstants.space8),
                   Text(
-                    'Attendance paused — vacation mode is ON',
+                    'On vacation. Attendance paused.',
                     style: AppTypography.bodySmall.copyWith(
                       color: AppColors.vacation,
                       fontWeight: FontWeight.w500,
@@ -1035,7 +1035,7 @@ class _DefaultAttendActions extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            'Auto-marked Present — tap only if changing:',
+            'Auto-marked Present. Tap to change:',
             style: AppTypography.bodySmall.copyWith(
               color: AppColors.primary,
               fontWeight: FontWeight.w500,
@@ -1154,7 +1154,7 @@ class _MarkedState extends StatelessWidget {
                 const SizedBox(width: 6),
                 Expanded(
                   child: Text(
-                    'Attendance closed — you can no longer change this meal.',
+                    'Attendance closed',
                     style: AppTypography.labelSmall.copyWith(
                       color: isDark
                           ? AppColors.textSecondaryDark
@@ -1411,7 +1411,7 @@ class _VacationBanner extends StatelessWidget {
           const SizedBox(width: AppConstants.space12),
           Expanded(
             child: Text(
-              'Vacation Mode is ON — attendance is paused.',
+              'On vacation. Attendance paused.',
               style: AppTypography.bodySmall.copyWith(
                 color: AppColors.vacation,
                 fontWeight: FontWeight.w600,
@@ -1465,7 +1465,7 @@ class _DefaultAttendanceBanner extends StatelessWidget {
           const SizedBox(width: AppConstants.space12),
           Expanded(
             child: Text(
-              'Auto-attendance ON — you\'re pre-marked present. Only act if absent or skipping.',
+              'Auto-attendance on. You\'re marked present.',
               style: AppTypography.bodySmall.copyWith(
                 color: AppColors.primary,
                 fontWeight: FontWeight.w500,
@@ -1563,8 +1563,7 @@ class _WindowClosedNotice extends StatelessWidget {
           const SizedBox(width: AppConstants.space12),
           Expanded(
             child: Text(
-              'All attendance windows are closed for today. '
-              'Your Admin can still update attendance manually.',
+              'All meals are closed for today.',
               style: AppTypography.bodySmall.copyWith(
                 color: isDark
                     ? AppColors.textSecondaryDark

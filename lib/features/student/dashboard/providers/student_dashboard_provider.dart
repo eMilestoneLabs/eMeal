@@ -564,7 +564,7 @@ class StudentDashboardProvider extends ChangeNotifier {
       _error = firstFailureMessage ?? 'Could not load your dashboard.';
     } else if (failedSections > 0) {
       _sectionError =
-          'Some sections could not refresh — showing last known data.';
+          'Showing last saved data';
     }
 
     // Pass 13 (FR-OFF-006): only stamp freshness when live data landed.

@@ -42,7 +42,7 @@ class LoginPreferenceSelector extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          'Login Preference',
+          'Sign-in method',
           style: AppTypography.bodySmall.copyWith(
             color: labelColor,
             fontWeight: FontWeight.w600,
@@ -71,13 +71,13 @@ class LoginPreferenceSelector extends StatelessWidget {
         if (!emailVerified) ...[
           const SizedBox(height: AppConstants.space8),
           Text(
-            'Verify your email to change your login preference.',
+            'Verify your email to change your sign-in method.',
             style: AppTypography.bodySmall.copyWith(color: labelColor),
           ),
         ] else if (!hasPhone) ...[
           const SizedBox(height: AppConstants.space8),
           Text(
-            'Add a mobile number to enable Mobile login.',
+            'Add a mobile number to sign in with it.',
             style: AppTypography.bodySmall.copyWith(color: labelColor),
           ),
         ],

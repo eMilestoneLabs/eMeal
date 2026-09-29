@@ -27,7 +27,7 @@ class StudentProfileProvider extends ChangeNotifier {
 
   UserModel? get user => _auth.currentUser;
 
-  String get displayName => user?.name ?? '—';
+  String get displayName => user?.name ?? '-';
   String get email => user?.email ?? 'No email set';
   String get initials => user?.initials ?? '?';
   bool get hasAvatar =>

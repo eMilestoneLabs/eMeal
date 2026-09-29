@@ -164,7 +164,7 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
         updated.checklistDone == updated.checklistTotal;
     if (nowComplete && !wasComplete) {
       setState(() => _celebrationTick++);
-      _snack('All ${updated.checklistTotal} items done — great job! 🎉');
+      _snack('All ${updated.checklistTotal} done. Great job! 🎉');
     }
   }
 
@@ -607,7 +607,7 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
               children: [
                 Text(
                   complete
-                      ? 'All done — beautifully finished! 🎉'
+                      ? 'All done! 🎉'
                       : '${note.checklistDone} / ${note.checklistTotal} completed',
                   style: AppTypography.titleSmall.copyWith(
                     fontWeight: FontWeight.w700,

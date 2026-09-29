@@ -444,7 +444,7 @@ class _OtpScreenState extends State<OtpScreen> {
                         : () =>
                             _routeAfterAuth(AuthProviderScope.of(context)),
                     child: Text(
-                      'Skip for now — verify later from Profile',
+                      'Skip for now',
                       style: AppTypography.bodySmall.copyWith(
                         color: colorScheme.onSurfaceVariant,
                         fontWeight: FontWeight.w600,

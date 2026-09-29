@@ -130,9 +130,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                 ),
                 const SizedBox(height: AppConstants.space8),
                 Text(
-                  'Enter your registered email address. '
-                  'We\'ll send you a one-time code to reset your password. '
-                  '(Mobile OTP recovery is coming soon.)',
+                  'Enter your email. We\'ll send a code to reset your password.',
                   style: AppTypography.bodyMedium.copyWith(
                     color: isDark
                         ? AppColors.textSecondaryDark
@@ -276,7 +274,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                   child: TextButton(
                     onPressed: () => context.pop(),
                     child: Text(
-                      'Back to Login',
+                      'Back to sign in',
                       style: AppTypography.labelMedium.copyWith(
                         color: colorScheme.onSurfaceVariant,
                       ),

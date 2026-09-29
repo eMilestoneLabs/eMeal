@@ -470,8 +470,7 @@ class _CameraErrorView extends StatelessWidget {
   String get _message {
     switch (error.errorCode) {
       case MobileScannerErrorCode.permissionDenied:
-        return 'Camera permission is required to scan QR codes.\n\n'
-            'Please enable camera access in Settings → App Permissions.';
+        return 'Allow camera access in Settings to scan QR codes.';
       case MobileScannerErrorCode.unsupported:
         return 'QR scanning is not supported on this device.';
       default:
