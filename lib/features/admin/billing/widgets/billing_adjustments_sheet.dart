@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:smart_meal_management/core/constants/app_constants.dart';
 import 'package:smart_meal_management/core/theme/app_colors.dart';
 import 'package:smart_meal_management/core/theme/app_typography.dart';
 import 'package:smart_meal_management/data/repositories/billing_periods_repository.dart';
@@ -552,7 +553,8 @@ class _BillingAdjustmentsSheetState extends State<BillingAdjustmentsSheet> {
     return TextField(
       controller: _reasonCtrl,
       onChanged: (_) => setState(() {}),
-      maxLength: 300,
+      // Live-Test-16 ISSUE-1: audit-trail reason capped (server enforces too).
+      maxLength: AppConstants.adjustmentReasonMaxLength,
       maxLines: 2,
       minLines: 1,
       style: AppTypography.bodyMedium.copyWith(color: textPrimary),

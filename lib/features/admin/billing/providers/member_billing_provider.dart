@@ -7,6 +7,7 @@ import 'package:smart_meal_management/data/services/response_cache_service.dart'
 import 'package:smart_meal_management/data/services/selected_group_store.dart';
 import 'package:smart_meal_management/data/services/selected_group_subscription.dart';
 import 'package:smart_meal_management/shared/models/billing_series.dart';
+import 'package:smart_meal_management/shared/enums/user_role.dart';
 import 'package:smart_meal_management/shared/models/billing_summary.dart';
 import 'package:smart_meal_management/shared/models/group_model.dart';
 import 'package:smart_meal_management/shared/models/result.dart';
@@ -20,8 +21,6 @@ enum BillingSort {
   mostMeals,
   leastMeals,
   name,
-  newest,
-  oldest,
 }
 
 enum BillingBucket { day, week, month }
@@ -78,35 +77,34 @@ class MemberBillingProvider extends ChangeNotifier {
             .where((m) =>
                 m.userName.toLowerCase().contains(q) ||
                 m.role.toLowerCase().contains(q) ||
+                // ISSUE-15: the chip now shows "Hostel Manager" — match it too.
+                UserRole.labelOf(m.role).toLowerCase().contains(q) ||
                 m.userId.toLowerCase().contains(q) ||
                 (m.email?.toLowerCase().contains(q) ?? false) ||
                 (m.phone?.toLowerCase().contains(q) ?? false))
             .toList();
 
-    int byDate(DateTime? a, DateTime? b) {
-      if (a == null && b == null) return 0;
-      if (a == null) return 1;
-      if (b == null) return -1;
-      return a.compareTo(b);
-    }
+    // Live-Test-16 ISSUE-12: Newest/Oldest removed (meaningless on a bill).
+    // Equal keys fall back to name so the order is stable across repaints.
+    int byName(BillingMemberRow a, BillingMemberRow b) =>
+        a.userName.toLowerCase().compareTo(b.userName.toLowerCase());
+    int then(int primary, BillingMemberRow a, BillingMemberRow b) =>
+        primary != 0 ? primary : byName(a, b);
 
     switch (sort) {
       case BillingSort.highestBill:
         // Consistency fix: sort by the same NET figure the rows headline.
-        list.sort((a, b) => b.netBill.compareTo(a.netBill));
+        list.sort((a, b) => then(b.netBill.compareTo(a.netBill), a, b));
       case BillingSort.lowestBill:
-        list.sort((a, b) => a.netBill.compareTo(b.netBill));
+        list.sort((a, b) => then(a.netBill.compareTo(b.netBill), a, b));
       case BillingSort.mostMeals:
-        list.sort((a, b) => b.presentCount.compareTo(a.presentCount));
+        list.sort(
+            (a, b) => then(b.presentCount.compareTo(a.presentCount), a, b));
       case BillingSort.leastMeals:
-        list.sort((a, b) => a.presentCount.compareTo(b.presentCount));
+        list.sort(
+            (a, b) => then(a.presentCount.compareTo(b.presentCount), a, b));
       case BillingSort.name:
-        list.sort((a, b) =>
-            a.userName.toLowerCase().compareTo(b.userName.toLowerCase()));
-      case BillingSort.newest:
-        list.sort((a, b) => byDate(b.lastActivity, a.lastActivity));
-      case BillingSort.oldest:
-        list.sort((a, b) => byDate(a.lastActivity, b.lastActivity));
+        list.sort(byName);
     }
     return list;
   }

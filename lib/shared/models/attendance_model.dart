@@ -95,6 +95,20 @@ class AttendanceModel {
   /// ([{groupLabel, optionLabel, quantity, ...}]) — display-only.
   final List<dynamic>? preferences;
 
+  /// Live-Test-16 ISSUE-5: the SAVED group picks rebuilt from [preferences]
+  /// (each snapshot entry carries groupId + optionKey + quantity), so a
+  /// selector re-opened on a marked meal shows what was actually chosen.
+  /// Malformed / pre-group entries are skipped; empty when nothing saved.
+  List<PreferenceSelection> get savedSelections => [
+        for (final e in preferences ?? const <dynamic>[])
+          if (e is Map && e['groupId'] != null && e['optionKey'] != null)
+            PreferenceSelection(
+              groupId: e['groupId'].toString(),
+              optionKey: e['optionKey'].toString(),
+              quantity: (e['quantity'] as num?)?.toInt() ?? 1,
+            ),
+      ];
+
   /// SRS FR-TRUST-002/010 (Pass 7): how this record came to exist —
   /// self | default | system_default | admin | request | verified.
   /// Drives the "Auto-marked" badge and change-history display.

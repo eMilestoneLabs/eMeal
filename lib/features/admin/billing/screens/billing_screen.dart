@@ -6,6 +6,8 @@ import 'package:smart_meal_management/features/admin/billing/providers/member_bi
 import 'package:smart_meal_management/features/admin/billing/screens/member_billing_detail_screen.dart';
 import 'package:smart_meal_management/features/admin/billing/widgets/billing_adjustments_sheet.dart';
 import 'package:smart_meal_management/features/admin/billing/widgets/billing_periods_sheet.dart';
+import 'package:smart_meal_management/core/utils/report_date_bounds.dart';
+import 'package:smart_meal_management/shared/enums/user_role.dart';
 import 'package:smart_meal_management/shared/widgets/app_screen_states.dart';
 import 'package:smart_meal_management/features/auth/providers/auth_provider.dart';
 import 'package:smart_meal_management/shared/models/billing_summary.dart';
@@ -44,12 +46,17 @@ class _BillingScreenState extends State<BillingScreen> {
       '${d.day.toString().padLeft(2, '0')}/${d.month.toString().padLeft(2, '0')}/${d.year}';
 
   Future<void> _pickCustom() async {
+    // Live-Test-16 ISSUE-14: nothing older than the retained history.
+    final first = ReportDateBounds.firstPickable(
+        _provider.selectedGroup?.dataAvailableFrom);
+    final last = DateTime.now();
+    final (start, end) =
+        ReportDateBounds.clampRange(_provider.from, _provider.to, first, last);
     final picked = await showDateRangePicker(
       context: context,
-      firstDate: DateTime.now().subtract(const Duration(days: 365)),
-      lastDate: DateTime.now(),
-      initialDateRange:
-          DateTimeRange(start: _provider.from, end: _provider.to),
+      firstDate: first,
+      lastDate: last,
+      initialDateRange: DateTimeRange(start: start, end: end),
     );
     if (picked != null) _provider.setCustomRange(picked.start, picked.end);
   }
@@ -382,10 +389,6 @@ class _BillingScreenState extends State<BillingScreen> {
                 DropdownMenuItem(
                     value: BillingSort.leastMeals, child: Text('Least meals')),
                 DropdownMenuItem(value: BillingSort.name, child: Text('Name')),
-                DropdownMenuItem(
-                    value: BillingSort.newest, child: Text('Newest')),
-                DropdownMenuItem(
-                    value: BillingSort.oldest, child: Text('Oldest')),
               ],
               onChanged: (v) {
                 if (v != null) _provider.setSort(v);
@@ -966,7 +969,7 @@ class _RolePill extends StatelessWidget {
         color: AppColors.info.withValues(alpha: 0.12),
         borderRadius: BorderRadius.circular(20),
       ),
-      child: Text(role,
+      child: Text(UserRole.labelOf(role),
           style: AppTypography.labelSmall
               .copyWith(color: AppColors.info, fontWeight: FontWeight.w600)),
     );
@@ -987,7 +990,12 @@ class _AnalyticsSection extends StatelessWidget {
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     final pts = provider.series.points;
-    final topMembers = provider.summary.members.take(6).toList();
+    // Live-Test-16 ISSUE-20: "Top member spending" ranks by the NET bill the
+    // list headlines (was: first 6 in server order, plotting gross).
+    final topMembers = (List<BillingMemberRow>.of(provider.summary.members)
+          ..sort((a, b) => b.netBill.compareTo(a.netBill)))
+        .take(6)
+        .toList();
     return Container(
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 14),
       decoration: BoxDecoration(
@@ -1095,11 +1103,11 @@ class _AnalyticsSection extends StatelessWidget {
                     BarChartData(
                       alignment: BarChartAlignment.spaceAround,
                       maxY: (topMembers.fold<int>(0,
-                                  (m, e) => e.totalBill > m ? e.totalBill : m) ==
+                                  (m, e) => e.netBill > m ? e.netBill : m) ==
                               0
                           ? 1
                           : topMembers.fold<int>(0,
-                                  (m, e) => e.totalBill > m ? e.totalBill : m) *
+                                  (m, e) => e.netBill > m ? e.netBill : m) *
                               1.2),
                       borderData: FlBorderData(show: false),
                       gridData: const FlGridData(show: false),
@@ -1110,7 +1118,9 @@ class _AnalyticsSection extends StatelessWidget {
                         for (var i = 0; i < topMembers.length; i++)
                           BarChartGroupData(x: i, barRods: [
                             BarChartRodData(
-                              toY: topMembers[i].totalBill.toDouble(),
+                              toY: topMembers[i].netBill < 0
+                                  ? 0
+                                  : topMembers[i].netBill.toDouble(),
                               width: 16,
                               color: AppColors.warning,
                               borderRadius: const BorderRadius.vertical(
@@ -1143,7 +1153,14 @@ class _AnalyticsSection extends StatelessWidget {
           sideTitles: SideTitles(
             showTitles: true,
             reservedSize: 26,
+            // Live-Test-16 ISSUE-20: without a fixed interval fl_chart asks for
+            // titles at fractional x (0, 0.5, 1, 1.5…); toInt() mapped both
+            // halves to the same bucket, printing every date twice.
+            interval: 1,
             getTitlesWidget: (value, meta) {
+              if (value != value.roundToDouble()) {
+                return const SizedBox.shrink();
+              }
               final i = value.toInt();
               if (i < 0 || i >= labels.length) return const SizedBox.shrink();
               // Thin out labels when there are many buckets.

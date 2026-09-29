@@ -632,8 +632,19 @@ class _NotepadListScreenState extends State<NotepadListScreen> {
     }
 
     void addDaySections(List<Note> items) {
-      final map = NoteDateFormat.groupByDay(items);
-      for (final section in NoteDaySection.values) {
+      // Live-Test-16 ISSUE-6: sections follow the ACTIVE sort — grouped by the
+      // same timestamp it orders by, and walked oldest-first for Oldest first
+      // (fixed Today→Older order used to override every sort choice).
+      final sort = _provider.sort;
+      final byCreated = sort == NoteSort.newest || sort == NoteSort.oldest;
+      final map = NoteDateFormat.groupByDay(
+        items,
+        dateOf: byCreated ? (n) => n.createdAt : null,
+      );
+      final sections = sort == NoteSort.oldest
+          ? NoteDaySection.values.reversed
+          : NoteDaySection.values;
+      for (final section in sections) {
         final bucket = map[section];
         if (bucket == null || bucket.isEmpty) continue;
         children.add(_SectionHeader(label: section.label, isDark: isDark));

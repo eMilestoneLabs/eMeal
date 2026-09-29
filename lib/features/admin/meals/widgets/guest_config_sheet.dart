@@ -45,10 +45,6 @@ class _GuestConfigSheetState extends State<_GuestConfigSheet> {
       TextEditingController(text: '${_cfg.maxGuestsPerMemberPerMeal}');
   late final TextEditingController _perDay = TextEditingController(
       text: _cfg.maxGuestsPerMemberPerDay?.toString() ?? '');
-  late final TextEditingController _adultPrice =
-      TextEditingController(text: _cfg.guestAdultPrice?.toString() ?? '');
-  late final TextEditingController _childPrice =
-      TextEditingController(text: _cfg.guestChildPrice?.toString() ?? '');
   late final TextEditingController _surcharge =
       TextEditingController(text: _cfg.guestSurcharge?.toString() ?? '');
   late final TextEditingController _cutoff = TextEditingController(
@@ -58,10 +54,7 @@ class _GuestConfigSheetState extends State<_GuestConfigSheet> {
 
   @override
   void dispose() {
-    for (final c in [
-      _perMeal, _perDay, _adultPrice, _childPrice,
-      _surcharge, _cutoff, _advance,
-    ]) {
+    for (final c in [_perMeal, _perDay, _surcharge, _cutoff, _advance]) {
       c.dispose();
     }
     super.dispose();
@@ -74,12 +67,15 @@ class _GuestConfigSheetState extends State<_GuestConfigSheet> {
     // clear to null — "no daily cap" / "no per-guest price" must round-trip.
     Navigator.of(context).pop(GroupGuestConfig(
       guestAttendanceEnabled: _cfg.guestAttendanceEnabled,
-      maxGuestsPerMemberPerMeal:
-          (_int(_perMeal) ?? _cfg.maxGuestsPerMemberPerMeal).clamp(1, 20),
+      // Live-Test-16 ISSUE-4: hard ceiling (server enforces the same).
+      maxGuestsPerMemberPerMeal: (_int(_perMeal) ?? _cfg.maxGuestsPerMemberPerMeal)
+          .clamp(1, AppConstants.guestMaxPerMeal),
       maxGuestsPerMemberPerDay: _int(_perDay),
       guestPricingMode: _cfg.guestPricingMode,
-      guestAdultPrice: _int(_adultPrice),
-      guestChildPrice: _int(_childPrice),
+      // Adult/child prices are no longer editable (mode retired) — the stored
+      // values round-trip untouched so no database column is rewritten.
+      guestAdultPrice: _cfg.guestAdultPrice,
+      guestChildPrice: _cfg.guestChildPrice,
       guestSurcharge: _int(_surcharge),
       guestSurchargeType: _cfg.guestSurchargeType,
       guestRequiresApproval: _cfg.guestRequiresApproval,
@@ -145,9 +141,11 @@ class _GuestConfigSheetState extends State<_GuestConfigSheet> {
           ),
           Flexible(
             child: SingleChildScrollView(
+              // Live-Test-16 ISSUE-4: top inset so the first row's FLOATING
+              // labels are never clipped by the scroll viewport edge.
               padding: const EdgeInsets.fromLTRB(
                 AppConstants.space20,
-                0,
+                AppConstants.space12,
                 AppConstants.space20,
                 AppConstants.space20,
               ),
@@ -159,16 +157,18 @@ class _GuestConfigSheetState extends State<_GuestConfigSheet> {
                       Expanded(
                         child: _numField(
                           _perMeal,
-                          label: 'Max guests / meal',
-                          hint: '5',
+                          label: 'Guests / meal',
+                          hint: '1–${AppConstants.guestMaxPerMeal}',
+                          helper: 'Max ${AppConstants.guestMaxPerMeal}',
                         ),
                       ),
                       const SizedBox(width: AppConstants.space12),
                       Expanded(
                         child: _numField(
                           _perDay,
-                          label: 'Max / day (blank = off)',
-                          hint: 'No cap',
+                          label: 'Guests / day',
+                          hint: 'No limit',
+                          helper: 'Blank = no daily limit',
                         ),
                       ),
                     ],
@@ -179,16 +179,18 @@ class _GuestConfigSheetState extends State<_GuestConfigSheet> {
                       Expanded(
                         child: _numField(
                           _cutoff,
-                          label: 'Cutoff (min before close)',
+                          label: 'Cutoff (min)',
                           hint: '0',
+                          helper: 'Stop before window closes',
                         ),
                       ),
                       const SizedBox(width: AppConstants.space12),
                       Expanded(
                         child: _numField(
                           _advance,
-                          label: 'Advance booking (days)',
-                          hint: '0 = today only',
+                          label: 'Book ahead (days)',
+                          hint: '0',
+                          helper: '0 = same day only',
                         ),
                       ),
                     ],
@@ -206,6 +208,9 @@ class _GuestConfigSheetState extends State<_GuestConfigSheet> {
                     ),
                     const SizedBox(height: AppConstants.space8),
                     DropdownButtonFormField<String>(
+                      // ISSUE-4 "UI cut": long labels ellipsize instead of
+                      // overflowing on narrow phones / large text scale.
+                      isExpanded: true,
                       initialValue: _cfg.guestPricingMode,
                       decoration:
                           const InputDecoration(labelText: 'Pricing mode'),
@@ -213,10 +218,6 @@ class _GuestConfigSheetState extends State<_GuestConfigSheet> {
                         DropdownMenuItem(
                           value: 'sameAsMember',
                           child: Text('Same as member price'),
-                        ),
-                        DropdownMenuItem(
-                          value: 'perGuestPrice',
-                          child: Text('Per-guest price (adult/child)'),
                         ),
                         DropdownMenuItem(
                           value: 'flatSurcharge',
@@ -227,30 +228,11 @@ class _GuestConfigSheetState extends State<_GuestConfigSheet> {
                           _cfg = _cfg.copyWith(guestPricingMode: v)),
                     ),
                     const SizedBox(height: AppConstants.space12),
-                    if (_cfg.guestPricingMode == 'perGuestPrice')
-                      Row(
-                        children: [
-                          Expanded(
-                            child: _numField(
-                              _adultPrice,
-                              label: 'Adult price (₹)',
-                              hint: 'Required',
-                            ),
-                          ),
-                          const SizedBox(width: AppConstants.space12),
-                          Expanded(
-                            child: _numField(
-                              _childPrice,
-                              label: 'Child price (₹)',
-                              hint: 'Falls back to adult',
-                            ),
-                          ),
-                        ],
-                      ),
                     if (_cfg.guestPricingMode == 'flatSurcharge') ...[
                       // GST-011: the surcharge is Fixed ₹ OR a percentage of
                       // the final effective member price — never both.
                       DropdownButtonFormField<String>(
+                        isExpanded: true, // ISSUE-4: never overflow
                         initialValue: _cfg.guestSurchargeType,
                         decoration: const InputDecoration(
                           labelText: 'Surcharge type',
@@ -334,6 +316,7 @@ class _GuestConfigSheetState extends State<_GuestConfigSheet> {
     TextEditingController controller, {
     required String label,
     required String hint,
+    String? helper,
   }) =>
       TextField(
         controller: controller,
@@ -342,6 +325,10 @@ class _GuestConfigSheetState extends State<_GuestConfigSheet> {
         decoration: InputDecoration(
           labelText: label,
           hintText: hint,
+          // ISSUE-4: short labels + a one-line helper so nothing truncates in
+          // the half-width fields.
+          helperText: helper,
+          helperMaxLines: 1,
           isDense: true,
         ),
       );

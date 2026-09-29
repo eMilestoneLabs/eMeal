@@ -68,14 +68,20 @@ abstract final class NoteDateFormat {
   static String timeStamp(DateTime when) => DateFormat.jm().format(when);
 
   /// Groups an already-sorted list into day sections, preserving order.
+  ///
+  /// Live-Test-16 ISSUE-6: [dateOf] picks WHICH timestamp decides the
+  /// section — it must be the one the list is sorted by (created for
+  /// Newest/Oldest, edited for Last modified), otherwise sections contradict
+  /// the chosen order. Default (null) = edited time, the previous behaviour.
   static Map<NoteDaySection, List<Note>> groupByDay(
     List<Note> notes, {
     DateTime? now,
+    DateTime Function(Note note)? dateOf,
   }) {
     final ref = now ?? DateTime.now();
     final map = <NoteDaySection, List<Note>>{};
     for (final n in notes) {
-      final section = sectionFor(n.updatedAt, now: ref);
+      final section = sectionFor(dateOf?.call(n) ?? n.updatedAt, now: ref);
       (map[section] ??= <Note>[]).add(n);
     }
     return map;

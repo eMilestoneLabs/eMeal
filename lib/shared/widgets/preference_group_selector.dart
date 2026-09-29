@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:smart_meal_management/core/theme/app_colors.dart';
 import 'package:smart_meal_management/core/theme/app_typography.dart';
 import 'package:smart_meal_management/shared/models/preference_group_model.dart';
@@ -83,12 +84,18 @@ class _PreferenceGroupSelectorState extends State<PreferenceGroupSelector> {
     // Live-Test-7: seed existing picks (edit flows) — only ones the current
     // groups still know; the first _emit below reports them to the parent.
     final known = {
-      for (final g in widget.groups) g.id: {for (final o in g.options) o.key},
+      for (final g in widget.groups)
+        g.id: {for (final o in g.options) o.key: o},
     };
     for (final s in widget.initialSelections) {
-      if (known[s.groupId]?.contains(s.optionKey) ?? false) {
+      final o = known[s.groupId]?[s.optionKey];
+      if (o != null) {
+        final q = s.quantity < 1 ? 1 : s.quantity;
+        // Live-Test-16 ISSUE-5: a SAVED pick is re-seeded on marked meals —
+        // clamp it to the option's CURRENT bounds (same rule as _setQty), so
+        // a since-lowered max can never be re-submitted and rejected.
         (_picked[s.groupId] ??= {})[s.optionKey] =
-            s.quantity < 1 ? 1 : s.quantity;
+            o.minQty <= o.maxQty ? q.clamp(o.minQty, o.maxQty) : q;
       }
     }
     // Live-Test-6 ISSUE-2 root cause: the selector only reported on TAPS, so
@@ -391,15 +398,18 @@ class _OptionChip extends StatelessWidget {
               ),
             ),
             if (selected && quantityEnabled && option.maxQty > option.minQty) ...[
-              const SizedBox(width: 8),
-              _qtyBtn(Icons.remove, () => onQty(quantity - 1)),
+              const SizedBox(width: 6),
+              _qtyBtn(Icons.remove, quantity > option.minQty,
+                  () => onQty(quantity - 1)),
               Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 6),
+                padding: const EdgeInsets.symmetric(horizontal: 4),
                 child: Text('×$quantity',
-                    style: AppTypography.labelMedium
-                        .copyWith(color: AppColors.primary)),
+                    style: AppTypography.labelMedium.copyWith(
+                        color: AppColors.primary,
+                        fontWeight: FontWeight.w700)),
               ),
-              _qtyBtn(Icons.add, () => onQty(quantity + 1)),
+              _qtyBtn(Icons.add, quantity < option.maxQty,
+                  () => onQty(quantity + 1)),
             ],
           ],
         ),
@@ -407,9 +417,40 @@ class _OptionChip extends StatelessWidget {
     );
   }
 
-  Widget _qtyBtn(IconData icon, VoidCallback onPressed) => InkWell(
-        onTap: enabled ? onPressed : null,
-        borderRadius: BorderRadius.circular(10),
-        child: Icon(icon, size: 16, color: AppColors.primary),
-      );
+  /// Live-Test-16 ISSUE-10: a real stepper button. The old bare 16 px icon
+  /// had no hit area, so near-misses fell through to the chip's own InkWell
+  /// and DESELECTED the option. The opaque 32 px target absorbs every tap on
+  /// it (never reaching the chip), dims at the min/max bound, and gives a
+  /// selection tick. Quantity clamping itself is unchanged (_setQty).
+  Widget _qtyBtn(IconData icon, bool canStep, VoidCallback onPressed) {
+    final active = enabled && canStep;
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: active
+          ? () {
+              HapticFeedback.selectionClick();
+              onPressed();
+            }
+          : () {}, // swallow — a tap on a bound must not toggle the chip
+      child: SizedBox(
+        width: 32,
+        height: 32,
+        child: Center(
+          child: Container(
+            width: 26,
+            height: 26,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: AppColors.primary.withValues(alpha: active ? 0.16 : 0.06),
+            ),
+            child: Icon(icon,
+                size: 16,
+                color: active
+                    ? AppColors.primary
+                    : AppColors.primary.withValues(alpha: 0.35)),
+          ),
+        ),
+      ),
+    );
+  }
 }

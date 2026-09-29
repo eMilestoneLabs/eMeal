@@ -89,6 +89,15 @@ class _OtpScreenState extends State<OtpScreen> {
   Timer? _timer;
   bool get _canResend => _secondsLeft == 0;
 
+  /// Live-Test-16 ISSUE-3: the post-SIGNUP screen (student / admin — event
+  /// signup untouched) offers Resend immediately. The signup email is
+  /// server-sent and verified-accepted by the mail server, but live tests
+  /// showed it can fail to reach the inbox; Resend uses the exact request
+  /// "Verify now" makes, which is confirmed to arrive. Never auto-sent, so
+  /// the server's first code is not invalidated unless the member asks.
+  bool get _resendNowOnSignup =>
+      _isSignup && !_popOnSuccess && _roleContext != 'event';
+
   @override
   void initState() {
     super.initState();
@@ -98,7 +107,13 @@ class _OtpScreenState extends State<OtpScreen> {
     if (_shouldAutoRequest) {
       WidgetsBinding.instance.addPostFrameCallback((_) => _requestInitialOtp());
     }
-    _startCountdown();
+    if (_resendNowOnSignup) {
+      // ISSUE-3: no 60 s lock on the first code — Resend is live at once;
+      // the normal countdown resumes after the member's own resend.
+      _secondsLeft = 0;
+    } else {
+      _startCountdown();
+    }
   }
 
   /// Send the first OTP for the Email-OTP login flow (AUTH-015). Errors surface
@@ -404,7 +419,10 @@ class _OtpScreenState extends State<OtpScreen> {
                         : TextButton(
                             onPressed: _resend,
                             child: Text(
-                              'Resend OTP',
+                              // ISSUE-3: clear call to action on signup.
+                              _resendNowOnSignup
+                                  ? "Didn't get the code? Resend OTP"
+                                  : 'Resend OTP',
                               style: AppTypography.bodySmall.copyWith(
                                 color: _roleColor,
                                 fontWeight: FontWeight.w700,

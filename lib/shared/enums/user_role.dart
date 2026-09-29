@@ -104,6 +104,11 @@ enum UserRole {
     return null;
   }
 
+  /// Live-Test-16 ISSUE-15: display label for a RAW role string from a
+  /// payload ("hostelManager" → "Hostel Manager"). Unknown values are shown
+  /// unchanged, so a role this build does not know yet still renders.
+  static String labelOf(String raw) => fromName(raw)?.label ?? raw;
+
   // ── Group membership ──────────────────────────────────────────────────────
 
   /// True for student, member, guest — routed to StudentShell.

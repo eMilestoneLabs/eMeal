@@ -122,8 +122,10 @@ class BillingService {
     // skip is only ever synthesised AFTER the real window has closed.
     final todayById = {for (final m in todayMeals) m.id: m};
     if (activeMeals.isEmpty) {
-      // No meal catalogue — fall back to the raw records as-is.
-      return records
+      // No meal catalogue — fall back to the raw records. Live-Test-16
+      // ISSUE-17: now ordered member → date like the main path (was raw
+      // server order — newest first — in attendance-only groups).
+      final fallback = records
           .map((r) => BillingRow(
                 userId: r.userId,
                 userName: displayMemberName(r.userName),
@@ -136,7 +138,13 @@ class BillingService {
                 markedAt: r.markedAt,
                 autoSkipped: false,
               ))
-          .toList();
+          .toList()
+        ..sort((a, b) {
+          final n =
+              a.userName.toLowerCase().compareTo(b.userName.toLowerCase());
+          return n != 0 ? n : a.date.compareTo(b.date);
+        });
+      return fallback;
     }
 
     // Distinct members from the records (those who marked at least once).
@@ -282,6 +290,26 @@ class BillingService {
           .compareTo(order[b.mealId] ?? activeMeals.length);
     });
     return rows;
+  }
+
+  /// Live-Test-16 ISSUE-17: re-orders already-built [rows] DATE-first
+  /// (date → meal order → member name) for the group report's detailed
+  /// table. Same meal-order rule as [buildRows] (archived/unknown meals sort
+  /// last within their day). Returns a new list; [rows] is not mutated.
+  static List<BillingRow> sortDateFirst(
+      List<BillingRow> rows, List<MealModel> meals) {
+    final active = meals.where((m) => m.isActive).toList()
+      ..sort((a, b) => a.order.compareTo(b.order));
+    final order = {for (var i = 0; i < active.length; i++) active[i].id: i};
+    return List<BillingRow>.of(rows)
+      ..sort((a, b) {
+        final dt = a.date.compareTo(b.date);
+        if (dt != 0) return dt;
+        final mo = (order[a.mealId] ?? active.length)
+            .compareTo(order[b.mealId] ?? active.length);
+        if (mo != 0) return mo;
+        return a.userName.toLowerCase().compareTo(b.userName.toLowerCase());
+      });
   }
 
   /// Aggregates [rows] into per-member billing summaries.

@@ -1,4 +1,6 @@
+import 'package:smart_meal_management/core/constants/app_constants.dart';
 import 'package:smart_meal_management/core/errors/failure.dart';
+import 'package:smart_meal_management/core/utils/paged_fetch.dart';
 import 'package:smart_meal_management/data/contracts/i_attendance_repository.dart';
 import 'package:smart_meal_management/data/services/dio_api_service.dart';
 import 'package:smart_meal_management/shared/models/attendance_model.dart';
@@ -146,6 +148,39 @@ class AttendanceRepository implements IAttendanceRepository {
       Ok(:final value) =>
         Ok(PaginatedResponse.fromJson(value, AttendanceModel.fromJson)),
     };
+  }
+
+  /// Live-Test-16 ISSUE-17: the COMPLETE attendance history for a range.
+  ///
+  /// Report/billing screens used to read only page 1 (100 rows), silently
+  /// dropping older days once a range held more — incomplete exports and
+  /// wrong bills. Page 1 is fetched exactly as before (so ranges up to the
+  /// page size cost the same single request); larger ranges are read in
+  /// bounded chunks ([fetchAllPages]) — never one giant response. A missing
+  /// row is surfaced as an error — never a truncated report.
+  Future<Result<List<AttendanceModel>>> getAttendanceHistoryAll({
+    required String userId,
+    required String groupId,
+    required String organizationId,
+    DateTime? from,
+    DateTime? to,
+  }) {
+    return fetchAllPages<AttendanceModel>(
+      fetchPage: (page, limit) => getAttendanceHistory(
+        userId: userId,
+        groupId: groupId,
+        organizationId: organizationId,
+        from: from,
+        to: to,
+        params: PaginationParams(page: page, limit: limit),
+      ),
+      idOf: (r) => r.id,
+      firstPageSize: AppConstants.historyFetchPageSize,
+      chunkSize: AppConstants.historyFetchChunkSize,
+      parallelism: AppConstants.historyFetchParallelism,
+      truncatedMessage:
+          'Some records could not be loaded. Please try again.',
+    );
   }
 
   /// Members on APPROVED vacation covering [date] for [groupId] (day-level).

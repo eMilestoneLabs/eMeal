@@ -104,6 +104,25 @@ class AdminAttendanceProvider extends ChangeNotifier {
   List<MealGuestModel> _guests = [];
   List<MealGuestModel> get guests => _guests;
 
+  /// Live-Test-16 ISSUE-9: org:group:date the in-memory rows belong to. A
+  /// change of ANY part clears every per-context list before painting the
+  /// new context, and late responses for an older context are discarded.
+  String? _contextKey;
+
+  /// Live-Test-9 ISSUE-4.5 (locked ordering): guests list by booking time
+  /// (earliest first); ties fall back to name. Shared by the cache paint and
+  /// the network result so both render identically.
+  static List<MealGuestModel> _sortedGuests(List<MealGuestModel> value) =>
+      List.of(value)
+        ..sort((a, b) {
+          final c = (a.createdAt ?? DateTime(0))
+              .compareTo(b.createdAt ?? DateTime(0));
+          if (c != 0) return c;
+          return (a.displayName ?? '')
+              .toLowerCase()
+              .compareTo((b.displayName ?? '').toLowerCase());
+        });
+
   /// Live-Test-10 (filter mapping, survey-locked): guests follow the active
   /// status filter instead of always rendering in full —
   ///   All → every guest · Present → approved bookings · Absent →
@@ -142,19 +161,45 @@ class AdminAttendanceProvider extends ChangeNotifier {
     bool guestsEnabled = false,
   }) async {
     // Cache-first: paint last-known records instantly, then refresh.
-    final cacheKey =
-        'admin_attendance:$organizationId:$groupId:${_selectedDate.year}-${_selectedDate.month}-${_selectedDate.day}';
+    final dayKey =
+        '${_selectedDate.year}-${_selectedDate.month}-${_selectedDate.day}';
+    final cacheKey = 'admin_attendance:$organizationId:$groupId:$dayKey';
+    // Live-Test-16 ISSUE-9: guests get the SAME cache-first paint as member
+    // rows (org/group/date-scoped key; money stripped before write).
+    final guestsCacheKey =
+        'admin_attendance_guests:$organizationId:$groupId:$dayKey';
+    final contextKey = '$organizationId:$groupId:$dayKey';
+    if (contextKey != _contextKey) {
+      // ISSUE-9: a date / group / org switch must never show the previous
+      // context's rows, guests or vacation list — not even for one frame.
+      _contextKey = contextKey;
+      _records = [];
+      _guests = [];
+      _vacationRecords = [];
+      _vacationUserIds = {};
+      _vacationCount = 0;
+    }
     if (_records.isEmpty) {
       _isLoading = true; // sync: first build shows the loader, never "No records found"
       // Miss-vs-empty aware: a cached EMPTY day (e.g. every morning before
       // anyone marks) paints instantly too; only a true cache MISS keeps the
       // loader while the network fetch below runs.
-      final cached = await ResponseCacheService.instance.readListOrNull(
+      final cachedF = ResponseCacheService.instance.readListOrNull(
           cacheKey, AttendanceModel.fromJson, maxAge: const Duration(hours: 12));
+      final cachedGuestsF = guestsEnabled && _guests.isEmpty
+          ? ResponseCacheService.instance.readListOrNull(
+              guestsCacheKey, MealGuestModel.fromJson,
+              maxAge: const Duration(hours: 12))
+          : null;
+      final cached = await cachedF;
+      final cachedGuests = cachedGuestsF == null ? null : await cachedGuestsF;
+      // A newer load for another context started while the cache was read.
+      if (_contextKey != contextKey) return;
       if (cached != null) {
         _records = cached;
         _isLoading = false;
       }
+      if (cachedGuests != null) _guests = _sortedGuests(cachedGuests);
     } else {
       _isLoading = false;
     }
@@ -185,6 +230,9 @@ class AdminAttendanceProvider extends ChangeNotifier {
       organizationId: organizationId,
       date: _selectedDate,
     );
+    // ISSUE-9: a late response for a context the admin already left is
+    // dropped — it must never overwrite the rows of the date now on screen.
+    if (_contextKey != contextKey) return;
 
     switch (result) {
       case Ok(:final value):
@@ -206,18 +254,16 @@ class AdminAttendanceProvider extends ChangeNotifier {
     // a previously-correct number.
     if (guestsFuture != null) {
       final guestsResult = await guestsFuture;
+      if (_contextKey != contextKey) return; // ISSUE-9: stale context
       if (guestsResult case Ok(:final value)) {
-        // Live-Test-9 ISSUE-4.5 (locked ordering): guests list by booking
-        // time (earliest first); ties fall back to name.
-        _guests = List.of(value)
-          ..sort((a, b) {
-            final c = (a.createdAt ?? DateTime(0))
-                .compareTo(b.createdAt ?? DateTime(0));
-            if (c != 0) return c;
-            return (a.displayName ?? '')
-                .toLowerCase()
-                .compareTo((b.displayName ?? '').toLowerCase());
-          });
+        _guests = _sortedGuests(value);
+        // ISSUE-9: write-through for the next instant paint. priceSnapshot
+        // is stripped — financial figures are never SWR-cached (guidebook
+        // §2); the attendance list never renders a guest price anyway.
+        ResponseCacheService.instance.writeList(
+            guestsCacheKey,
+            value,
+            (g) => g.toJson()..['priceSnapshot'] = null);
         notifyListeners();
       }
     } else if (_guests.isNotEmpty) {
@@ -226,6 +272,7 @@ class AdminAttendanceProvider extends ChangeNotifier {
     }
 
     final vacationResult = await vacationFuture;
+    if (_contextKey != contextKey) return; // ISSUE-9: stale context
     if (vacationResult case Ok(:final value)) {
       _vacationUserIds = value.map((m) => m.id).toSet();
       _vacationCount = value.length;

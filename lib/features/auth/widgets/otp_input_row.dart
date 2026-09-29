@@ -127,7 +127,19 @@ class _OtpInputRowState extends State<OtpInputRow> {
 
   @override
   Widget build(BuildContext context) {
+    // Live-Test-16: 6 boxes x 46 px + 5 gaps x 10 px = 326 px, wider than a
+    // 360 dp phone's content area (312 px) — the last box was clipped 14 px.
+    // scaleDown NEVER enlarges: on wider screens this renders pixel-identical;
+    // on narrow ones the whole row shrinks just enough to fit.
+    return FittedBox(
+      fit: BoxFit.scaleDown,
+      child: _row(),
+    );
+  }
+
+  Widget _row() {
     return Row(
+      mainAxisSize: MainAxisSize.min,
       mainAxisAlignment: MainAxisAlignment.center,
       children: List.generate(widget.length, (i) {
         final isLast = i == widget.length - 1;

@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:smart_meal_management/core/constants/app_constants.dart';
 import 'package:smart_meal_management/core/theme/app_colors.dart';
+import 'package:smart_meal_management/core/utils/report_date_bounds.dart';
 import 'package:smart_meal_management/core/theme/app_typography.dart';
 import 'package:smart_meal_management/data/repositories/attendance_repository.dart';
+import 'package:smart_meal_management/data/repositories/billing_periods_repository.dart';
 import 'package:smart_meal_management/data/repositories/group_repository.dart';
 import 'package:smart_meal_management/data/repositories/meal_repository.dart';
 import 'package:smart_meal_management/data/services/billing_service.dart';
@@ -16,7 +18,6 @@ import 'package:smart_meal_management/features/admin/exports/screens/export_prev
 import 'package:smart_meal_management/shared/models/attendance_model.dart';
 import 'package:smart_meal_management/shared/models/group_model.dart';
 import 'package:smart_meal_management/shared/models/meal_model.dart';
-import 'package:smart_meal_management/shared/models/paginated_response.dart';
 import 'package:smart_meal_management/shared/models/result.dart';
 import 'package:smart_meal_management/shared/widgets/app_primary_button.dart';
 import 'package:smart_meal_management/features/auth/providers/auth_provider.dart';
@@ -165,11 +166,23 @@ class _ExportScreenState extends State<ExportScreen> {
     catch (_) { return 'Group'; }
   }
 
+  /// Live-Test-16 ISSUE-14: the selected group's retained-history floor.
+  DateTime? get _dataAvailableFrom {
+    for (final g in _groups) {
+      if (g.id == _selectedGroupId) return g.dataAvailableFrom;
+    }
+    return null;
+  }
+
   Future<void> _pickStartDate() async {
+    // ISSUE-14: nothing older than the retained history (initial clamped so
+    // the picker's own range assertion can never fire).
+    final first = ReportDateBounds.firstPickable(_dataAvailableFrom);
+    final last = _endDate.isBefore(first) ? first : _endDate;
     final picked = await showDatePicker(context: context,
-        initialDate: _startDate,
-        firstDate: DateTime.now().subtract(const Duration(days: 365)),
-        lastDate: _endDate);
+        initialDate: ReportDateBounds.clampDay(_startDate, first, last),
+        firstDate: first,
+        lastDate: last);
     if (picked != null) setState(() => _startDate = picked);
   }
 
@@ -227,14 +240,26 @@ class _ExportScreenState extends State<ExportScreen> {
     setState(() => _loadingRecords = true);
     final groupId = _selectedGroupId ?? user.groupId ?? '';
     final orgId = user.organizationId;
-    final result = await AttendanceRepository().getAttendanceHistory(
+    // Live-Test-16 ISSUE-17: the WHOLE range (was page 1 = newest 100 rows).
+    final result = await AttendanceRepository().getAttendanceHistoryAll(
       userId: '',
       groupId: groupId, organizationId: orgId,
       from: _startDate, to: _endDate,
-      params: const PaginationParams(page: 1, limit: 100),
     );
     List<AttendanceModel> records = [];
-    if (result case Ok(:final value)) records = value.data;
+    switch (result) {
+      case Ok(:final value):
+        records = value;
+      case Err(:final failure):
+        // ISSUE-17: never build a report from missing records — an empty or
+        // partial report would silently misstate attendance and billing.
+        if (!mounted) return;
+        setState(() => _loadingRecords = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Could not load attendance: ${failure.message}')),
+        );
+        return;
+    }
     final mealsResult = await MealRepository().getGroupMeals(
       organizationId: orgId,
       groupId: groupId,
@@ -259,6 +284,12 @@ class _ExportScreenState extends State<ExportScreen> {
     // summary carries the SAME host-inclusive net bill as the billing screens
     // (hosted guests always bill to their host, never separately).
     var financialsByUser = <String, MemberExportFinancials>{};
+    // Live-Test-16 ISSUE-16: itemised adjustments ride the same wave as the
+    // billing summary (priced groups only — no ledger otherwise).
+    final adjustmentsF = _pricingEnabled
+        ? BillingPeriodsRepository().listAdjustmentsForExport(
+            groupId: groupId, from: _startDate, to: _endDate)
+        : null;
     final billingRes = await AttendanceRepository().getBillingSummaryV2(
       organizationId: orgId,
       groupId: groupId,
@@ -279,17 +310,39 @@ class _ExportScreenState extends State<ExportScreen> {
             ),
       };
     }
+    var adjustments = const <ExportAdjustment>[];
+    if (adjustmentsF != null) {
+      final adjRes = await adjustmentsF;
+      switch (adjRes) {
+        case Ok(:final value):
+          adjustments = value.map(ExportAdjustment.fromApi).toList();
+        case Err(:final failure):
+          // ISSUE-16: never preview/export a report silently missing its
+          // itemised adjustments — stop and say why.
+          if (!mounted) return;
+          setState(() => _loadingRecords = false);
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Could not load adjustments: ${failure.message}')),
+          );
+          return;
+      }
+    }
     if (!mounted) return;
     setState(() => _loadingRecords = false);
 
     // Compute the EXACT rows/summaries the export files will contain, so the
     // preview and the downloaded report can never disagree.
-    final rows = BillingService.buildRows(
-      records: records,
-      meals: meals,
-      from: _startDate,
-      to: _endDate,
-      vacationUserIds: vacationUserIds,
+    // Live-Test-16 ISSUE-17: the group report's detailed rows read
+    // DATE-wise (date → meal order → member). Summaries stay by member.
+    final rows = BillingService.sortDateFirst(
+      BillingService.buildRows(
+        records: records,
+        meals: meals,
+        from: _startDate,
+        to: _endDate,
+        vacationUserIds: vacationUserIds,
+      ),
+      meals,
     );
     final billSkippedMeals = _billSkippedMeals;
     final billAbsentMeals = _billAbsentMeals;
@@ -324,6 +377,7 @@ class _ExportScreenState extends State<ExportScreen> {
             rangeLabel: rangeLabel,
             vacationUserIds: vacationUserIds,
             financialsByUser: financialsByUser,
+            adjustments: adjustments,
             billSkippedMeals: billSkippedMeals,
             billAbsentMeals: billAbsentMeals,
           ),
@@ -342,6 +396,7 @@ class _ExportScreenState extends State<ExportScreen> {
     required String rangeLabel,
     required Set<String> vacationUserIds,
     Map<String, MemberExportFinancials> financialsByUser = const {},
+    List<ExportAdjustment> adjustments = const [],
     bool billSkippedMeals = false,
     bool? billAbsentMeals,
     List<BillingRow>? precomputedRows,
@@ -362,6 +417,7 @@ class _ExportScreenState extends State<ExportScreen> {
         dateRangeLabel: rangeLabel,
         vacationUserIds: vacationUserIds,
         financialsByUser: financialsByUser,
+        adjustments: adjustments,
         billSkippedMeals: billSkippedMeals,
         billAbsentMeals: billAbsentMeals,
       );

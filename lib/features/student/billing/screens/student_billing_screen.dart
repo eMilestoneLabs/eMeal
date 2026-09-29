@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:smart_meal_management/core/theme/app_colors.dart';
+import 'package:smart_meal_management/core/utils/report_date_bounds.dart';
 import 'package:smart_meal_management/core/theme/app_typography.dart';
 import 'package:smart_meal_management/data/repositories/attendance_repository.dart';
 import 'package:smart_meal_management/data/repositories/billing_periods_repository.dart';
@@ -14,7 +15,6 @@ import 'package:smart_meal_management/shared/models/attendance_model.dart';
 import 'package:smart_meal_management/shared/models/group_model.dart';
 import 'package:smart_meal_management/shared/models/meal_model.dart';
 import 'package:smart_meal_management/shared/models/my_billing.dart';
-import 'package:smart_meal_management/shared/models/paginated_response.dart';
 import 'package:smart_meal_management/shared/models/result.dart';
 import 'package:smart_meal_management/shared/widgets/app_skeleton.dart';
 
@@ -68,6 +68,8 @@ class _StudentBillingScreenState extends State<StudentBillingScreen> {
   // Live-Test-7 ISSUE-4: independent Absent-billing policy (effective value).
   bool _billAbsentMeals = false;
   String _groupName = '';
+  // Live-Test-16 ISSUE-14: retained-history floor for the custom picker.
+  DateTime? _dataAvailableFrom;
 
   // Cached for export (same inputs the on-screen rows were built from).
   List<AttendanceModel> _records = [];
@@ -119,13 +121,13 @@ class _StudentBillingScreenState extends State<StudentBillingScreen> {
     // ONE parallel wave (was 5 sequential round-trips — the whole screen
     // waited ~5× a single RTT). All five reads are independent; the my-billing
     // result is simply ignored below when the group turns out to be unpriced.
-    final recF = _attendanceRepo.getAttendanceHistory(
+    // Live-Test-16 ISSUE-17: the WHOLE range (was page 1 = newest 100 rows).
+    final recF = _attendanceRepo.getAttendanceHistoryAll(
       userId: _userId,
       groupId: _groupId,
       organizationId: _orgId,
       from: _from,
       to: _to,
-      params: const PaginationParams(page: 1, limit: 100),
     );
     final mealF = _mealRepo.getGroupMeals(
       organizationId: _orgId,
@@ -154,7 +156,7 @@ class _StudentBillingScreenState extends State<StudentBillingScreen> {
 
     List<AttendanceModel> records = [];
     if (recRes case Ok(:final value)) {
-      records = value.data;
+      records = value;
     } else if (recRes case Err(:final failure)) {
       _error = failure.message;
     }
@@ -170,6 +172,8 @@ class _StudentBillingScreenState extends State<StudentBillingScreen> {
       _billSkippedMeals = value.mealConfig.billSkippedMeals;
       _billAbsentMeals = value.mealConfig.billAbsentMeals;
       _groupName = value.name;
+      // ISSUE-14: rides the group payload this load already fetched.
+      _dataAvailableFrom = value.dataAvailableFrom;
     }
 
     // Vacation is PER GROUP, and this screen bills ONE group. The raw
@@ -260,11 +264,15 @@ class _StudentBillingScreenState extends State<StudentBillingScreen> {
   }
 
   Future<void> _pickCustom() async {
+    // Live-Test-16 ISSUE-14: nothing older than the retained history.
+    final first = ReportDateBounds.firstPickable(_dataAvailableFrom);
+    final last = DateTime.now();
+    final (start, end) = ReportDateBounds.clampRange(_from, _to, first, last);
     final picked = await showDateRangePicker(
       context: context,
-      firstDate: DateTime.now().subtract(const Duration(days: 365)),
-      lastDate: DateTime.now(),
-      initialDateRange: DateTimeRange(start: _from, end: _to),
+      firstDate: first,
+      lastDate: last,
+      initialDateRange: DateTimeRange(start: start, end: end),
     );
     if (picked != null) {
       setState(() {
@@ -293,6 +301,25 @@ class _StudentBillingScreenState extends State<StudentBillingScreen> {
     };
   }
 
+  /// Live-Test-16 ISSUE-16: self-scoped ledger entries for this export
+  /// (server forces the caller). Unpriced group → none. A failed read FAILS
+  /// the export (never a report silently missing its itemised entries).
+  Future<List<ExportAdjustment>> _exportAdjustments() async {
+    if (!_pricingEnabled || _groupId.isEmpty) return const [];
+    final res = await _billingRepo.listAdjustmentsForExport(
+      groupId: _groupId,
+      from: _from,
+      to: _to,
+      mine: true,
+    );
+    return switch (res) {
+      Ok(:final value) => value.map(ExportAdjustment.fromApi).toList(),
+      // Never export an incomplete report silently — surfaces through the
+      // existing "Export failed: …" handler.
+      Err(:final failure) => throw Exception(failure.message),
+    };
+  }
+
   Future<void> _export(String fmt) async {
     if (_exporting) return;
     setState(() => _exporting = true);
@@ -301,6 +328,9 @@ class _StudentBillingScreenState extends State<StudentBillingScreen> {
     final name = _groupName.isEmpty ? 'My Billing' : _groupName;
     final financials = _exportFinancials;
     try {
+      // Live-Test-16 ISSUE-16: the member's OWN itemised adjustments (with
+      // reason) — fetched only when exporting, never on screen load.
+      final adjustments = await _exportAdjustments();
       switch (fmt) {
         case 'pdf':
           await svc.exportPdf(
@@ -314,6 +344,7 @@ class _StudentBillingScreenState extends State<StudentBillingScreen> {
             todayMeals: _todayMeals,
             vacationUserIds: _vacationUserIds,
             financialsByUser: financials,
+            adjustments: adjustments,
             billSkippedMeals: _billSkippedMeals,
             billAbsentMeals: _billAbsentMeals,
           );
@@ -330,6 +361,7 @@ class _StudentBillingScreenState extends State<StudentBillingScreen> {
             todayMeals: _todayMeals,
             vacationUserIds: _vacationUserIds,
             financialsByUser: financials,
+            adjustments: adjustments,
             billSkippedMeals: _billSkippedMeals,
             billAbsentMeals: _billAbsentMeals,
           );

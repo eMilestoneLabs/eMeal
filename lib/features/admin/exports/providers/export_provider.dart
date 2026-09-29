@@ -51,6 +51,8 @@ class ExportProvider extends ChangeNotifier {
     // Guests + adjustments per member so exported summaries reconcile with
     // the billing screens (net = meals + guests + adjustments).
     Map<String, MemberExportFinancials> financialsByUser = const {},
+    // Live-Test-16 ISSUE-16: itemised ledger adjustments (with reason).
+    List<ExportAdjustment> adjustments = const [],
     // SRS Module 03 (survey Q17/Q22): group Bill-Skip policy.
     bool billSkippedMeals = false,
     // Live-Test-7 ISSUE-4: independent Absent policy (null = follow Skip).
@@ -79,6 +81,7 @@ class ExportProvider extends ChangeNotifier {
             dateRangeLabel: dateRangeLabel,
             vacationUserIds: vacationUserIds,
             financialsByUser: financialsByUser,
+            adjustments: adjustments,
             billSkippedMeals: billSkippedMeals,
             billAbsentMeals: billAbsentMeals,
             precomputedRows: precomputedRows,
@@ -96,6 +99,7 @@ class ExportProvider extends ChangeNotifier {
             dateRangeLabel: dateRangeLabel,
             vacationUserIds: vacationUserIds,
             financialsByUser: financialsByUser,
+            adjustments: adjustments,
             billSkippedMeals: billSkippedMeals,
             billAbsentMeals: billAbsentMeals,
             precomputedRows: precomputedRows,

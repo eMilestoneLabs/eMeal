@@ -1,3 +1,5 @@
+import 'package:smart_meal_management/core/constants/app_constants.dart';
+import 'package:smart_meal_management/core/errors/failure.dart';
 import 'package:smart_meal_management/data/services/dio_api_service.dart';
 import 'package:smart_meal_management/shared/models/result.dart';
 
@@ -122,6 +124,54 @@ class BillingPeriodsRepository {
       '/billing/adjustments/$entryId/${approve ? 'approve' : 'reject'}',
       body: const {},
     );
+  }
+
+  /// Live-Test-16 ISSUE-16: EVERY ledger adjustment in [from]..[to] for an
+  /// export — admin: GET /billing/adjustments (optional [userId]); member
+  /// ([mine]): GET /billing/adjustments/mine (server forces the caller).
+  /// Pages of 100 (the server's page cap) until a short page; a failed page
+  /// fails the whole read — an export is never silently missing entries.
+  Future<Result<List<Map<String, dynamic>>>> listAdjustmentsForExport({
+    required String groupId,
+    required DateTime from,
+    required DateTime to,
+    String? userId,
+    bool mine = false,
+  }) async {
+    const pageSize = AppConstants.adjustmentExportPageSize;
+    const maxPages = AppConstants.adjustmentExportMaxPages;
+    final all = <Map<String, dynamic>>[];
+    for (var page = 1; page <= maxPages; page++) {
+      final result = await DioApiService.instance.get<Map<String, dynamic>>(
+        mine ? '/billing/adjustments/mine' : '/billing/adjustments',
+        queryParameters: {
+          'groupId': groupId,
+          if (!mine && userId != null) 'userId': userId,
+          'fromDate': _dateOnly(from),
+          'toDate': _dateOnly(to),
+          'page': '$page',
+          'limit': '$pageSize',
+        },
+      );
+      switch (result) {
+        case Err(:final failure):
+          return Err(failure);
+        case Ok(:final value):
+          final rows = (value['data'] as List? ?? const [])
+              .whereType<Map<String, dynamic>>()
+              .toList();
+          all.addAll(rows);
+          final total = (value['total'] as num?)?.toInt();
+          if (rows.length < pageSize || (total != null && all.length >= total)) {
+            return Ok(all);
+          }
+      }
+    }
+    // Never hand a truncated ledger to an export.
+    return const Err(UnexpectedFailure(
+      message:
+          'This range has too many adjustments to export at once. Please choose a shorter date range.',
+    ));
   }
 
   /// GET /billing/adjustments — newest first, optional member filter.

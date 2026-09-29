@@ -4,6 +4,7 @@ import 'dart:typed_data';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_image_compress/flutter_image_compress.dart';
+import 'package:smart_meal_management/core/utils/pdf_compression.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:smart_meal_management/core/theme/app_colors.dart';
 import 'package:smart_meal_management/core/theme/app_typography.dart';
@@ -68,12 +69,13 @@ class _NoticeComposerScreenState extends State<NoticeComposerScreen> {
 
   static const int _imageMaxBytes = 100 * 1024;
   static const int _docMaxBytes = 50 * 1024;
-  // ISSUE-001 (Live-Test-10): the backend now auto-compresses oversized
-  // attachments (sharp for images, pdf-lib for PDFs). These transport caps
-  // mirror the server DTO ceilings — anything under them may be sent even when
-  // above the stored limit; the server compresses it to fit.
-  static const int _imageTransportMaxBytes = 2 * 1024 * 1024;
+  // Largest PDF accepted as INPUT to on-device compression (unchanged cap).
+  // Live-Test-16 ISSUE-13: compression is app-side only — the output must
+  // fit the stored limit above before anything is uploaded.
   static const int _docTransportMaxBytes = 1024 * 1024;
+
+  // Live-Test-16 ISSUE-13: on-device PDF compression in progress.
+  bool _compressingDoc = false;
 
   // Issue 2: targeting. 'org' = entire organisation; 'groups' = specific
   // groups. Specific-group delivery reuses the existing single-groupId contract
@@ -164,28 +166,18 @@ class _NoticeComposerScreenState extends State<NoticeComposerScreen> {
       });
       return;
     }
-    // Device compression could not reach the limit — send the smallest bytes
-    // we have (compressed JPEG, else the original with its real mime type) and
-    // let the server auto-compress. Only a file too large even for transport
-    // is rejected, with the exact SRS message.
-    final fallback = best ?? raw;
-    if (fallback.length > _imageTransportMaxBytes) {
-      setState(() => _error =
-          'Unable to upload image. Please select an image smaller than 100 KB.');
-      return;
-    }
-    setState(() {
-      _imageBytes = fallback;
-      _imageMime =
-          best != null ? 'image/jpeg' : (picked.mimeType ?? 'image/jpeg');
-      _error = null;
-    });
+    // Live-Test-16 ISSUE-13 (user-locked): compression is APP-SIDE ONLY — the
+    // server is never asked to compress. A photo the device ladder cannot
+    // bring under the limit (practically: an undecodable codec) is rejected
+    // here with the exact SRS message instead of being uploaded oversized.
+    setState(() => _error =
+        'Unable to upload image. Please select an image smaller than 100 KB.');
   }
 
   /// NTC-013 + ISSUE-001: pick a PDF/DOC/DOCX/TXT document. PDFs above 50 KB
-  /// (up to the transport cap) are sent anyway — the server auto-compresses
-  /// them to fit. DOC/DOCX/TXT cannot be recompressed, so they keep the strict
-  /// 50 KB limit.
+  /// (up to the input cap) are compressed ON THE DEVICE to fit (Live-Test-16
+  /// ISSUE-13 — never by the server). DOC/DOCX/TXT cannot be recompressed, so
+  /// they keep the strict 50 KB limit.
   Future<void> _pickDocument() async {
     final res = await FilePicker.platform.pickFiles(
       type: FileType.custom,
@@ -194,12 +186,38 @@ class _NoticeComposerScreenState extends State<NoticeComposerScreen> {
     );
     final file = res?.files.firstOrNull;
     if (file == null || !mounted) return;
-    final bytes = file.bytes;
+    var bytes = file.bytes;
     final pickedExt = (file.extension ?? '').toLowerCase();
-    final serverCompressible =
-        pickedExt == 'pdf' && (bytes?.length ?? 0) <= _docTransportMaxBytes;
-    if (bytes == null ||
-        (bytes.length > _docMaxBytes && !serverCompressible)) {
+    // Live-Test-16 ISSUE-13 (user-locked): compress ON THE DEVICE, maximum
+    // quality first; reject only when even that cannot reach the 50 KB
+    // stored limit. The server is never asked to compress. The input cap
+    // (_docTransportMaxBytes) is unchanged. DOC/DOCX/TXT keep the strict
+    // 50 KB limit — they cannot be recompressed without changing content.
+    if (bytes != null &&
+        bytes.length > _docMaxBytes &&
+        pickedExt == 'pdf' &&
+        bytes.length <= _docTransportMaxBytes) {
+      setState(() {
+        _compressingDoc = true;
+        _error = null;
+      });
+      Uint8List? compressed;
+      String? failure;
+      try {
+        compressed = await compressPdfToBudget(bytes, _docMaxBytes);
+      } on PdfUnreadableException {
+        failure =
+            'This PDF is password-protected or damaged. Please choose another file.';
+      }
+      if (!mounted) return;
+      setState(() => _compressingDoc = false);
+      if (failure != null) {
+        setState(() => _error = failure);
+        return;
+      }
+      bytes = compressed;
+    }
+    if (bytes == null || bytes.length > _docMaxBytes) {
       setState(() => _error =
           'Unable to upload document. Please select a document smaller than 50 KB.');
       return;
@@ -212,8 +230,9 @@ class _NoticeComposerScreenState extends State<NoticeComposerScreen> {
         'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
       _ => 'text/plain',
     };
+    final fitted = bytes; // non-null + within the stored limit (checked above)
     setState(() {
-      _docDataUri = 'data:$mime;base64,${base64Encode(bytes)}';
+      _docDataUri = 'data:$mime;base64,${base64Encode(fitted)}';
       _docName = file.name;
       _error = null;
     });
@@ -242,6 +261,9 @@ class _NoticeComposerScreenState extends State<NoticeComposerScreen> {
   }
 
   Future<void> _submit() async {
+    // ISSUE-13: never publish while the chosen PDF is still being compressed
+    // (it would go out without the attachment the admin is adding).
+    if (_compressingDoc) return;
     final title = _titleCtrl.text.trim();
     final body = _bodyCtrl.text.trim();
     if (title.isEmpty || body.isEmpty) {
@@ -409,16 +431,29 @@ class _NoticeComposerScreenState extends State<NoticeComposerScreen> {
               const SizedBox(width: 10),
               Expanded(
                 child: OutlinedButton.icon(
-                  onPressed: _saving ? null : _pickDocument,
-                  icon: Icon(
-                    _docDataUri != null
-                        ? Icons.check_circle_rounded
-                        : Icons.attach_file_rounded,
-                    size: 18,
-                    color: _docDataUri != null ? AppColors.present : null,
-                  ),
+                  // ISSUE-13: locked while the device compresses the PDF.
+                  onPressed:
+                      (_saving || _compressingDoc) ? null : _pickDocument,
+                  icon: _compressingDoc
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : Icon(
+                          _docDataUri != null
+                              ? Icons.check_circle_rounded
+                              : Icons.attach_file_rounded,
+                          size: 18,
+                          color:
+                              _docDataUri != null ? AppColors.present : null,
+                        ),
                   label: Text(
-                    _docDataUri != null ? (_docName ?? 'Document') : 'Add document',
+                    _compressingDoc
+                        ? 'Compressing…'
+                        : (_docDataUri != null
+                            ? (_docName ?? 'Document')
+                            : 'Add document'),
                     overflow: TextOverflow.ellipsis,
                   ),
                 ),
@@ -573,7 +608,7 @@ class _NoticeComposerScreenState extends State<NoticeComposerScreen> {
           SizedBox(
             height: 50,
             child: FilledButton.icon(
-              onPressed: _saving ? null : _submit,
+              onPressed: (_saving || _compressingDoc) ? null : _submit,
               style: FilledButton.styleFrom(backgroundColor: AppColors.primary),
               icon: _saving
                   ? const SizedBox(

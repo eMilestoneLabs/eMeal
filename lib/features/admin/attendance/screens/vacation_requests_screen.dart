@@ -3,6 +3,9 @@ import 'package:smart_meal_management/core/theme/app_colors.dart';
 import 'package:smart_meal_management/core/theme/app_typography.dart';
 import 'package:smart_meal_management/core/utils/name_display.dart';
 import 'package:smart_meal_management/data/repositories/vacation_repository.dart';
+import 'package:smart_meal_management/data/services/response_cache_service.dart';
+import 'package:smart_meal_management/features/auth/providers/auth_provider.dart';
+import 'package:smart_meal_management/shared/models/group_model.dart';
 import 'package:smart_meal_management/shared/models/result.dart';
 import 'package:smart_meal_management/shared/models/vacation_request_model.dart';
 import 'package:smart_meal_management/shared/widgets/app_skeleton.dart';
@@ -28,6 +31,12 @@ class _VacationRequestsScreenState extends State<VacationRequestsScreen> {
   String _filter = 'pending';
   List<VacationRequestModel> _items = [];
 
+  // Live-Test-16 ISSUE-19: vacation is group-scoped, so each request shows
+  // WHICH group it covers. Names come from the shared org-groups cache
+  // (`admin_groups:{org}`, warmed by every admin tab) — zero network.
+  Map<String, String> _groupNames = const {};
+  bool _groupNamesRequested = false;
+
   static const _filters = ['pending', 'approved', 'rejected', 'cancelled'];
 
   @override
@@ -35,6 +44,26 @@ class _VacationRequestsScreenState extends State<VacationRequestsScreen> {
     super.initState();
     _load();
   }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_groupNamesRequested) return;
+    _groupNamesRequested = true;
+    final orgId = AuthProviderScope.of(context).currentUser?.organizationId;
+    if (orgId == null || orgId.isEmpty) return;
+    ResponseCacheService.instance
+        .readListOrNull('admin_groups:$orgId', GroupModel.fromJson,
+            maxAge: const Duration(hours: 12))
+        .then((groups) {
+      if (!mounted || groups == null) return;
+      setState(() => _groupNames = {for (final g in groups) g.id: g.name});
+    });
+  }
+
+  /// ISSUE-19: label for a request's scope (legacy org-level = all groups).
+  String? _groupLabel(String? groupId) =>
+      groupId == null ? 'All groups' : _groupNames[groupId];
 
   Future<void> _load() async {
     setState(() {
@@ -247,6 +276,29 @@ class _VacationRequestsScreenState extends State<VacationRequestsScreen> {
               ),
             ],
           ),
+          // ISSUE-19: the group this request covers.
+          if (_groupLabel(r.groupId) != null) ...[
+            const SizedBox(height: 6),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+              decoration: BoxDecoration(
+                color: AppColors.vacation.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.groups_rounded,
+                      size: 12, color: AppColors.vacation),
+                  const SizedBox(width: 4),
+                  Text(_groupLabel(r.groupId)!,
+                      style: AppTypography.labelSmall.copyWith(
+                          color: AppColors.vacation,
+                          fontWeight: FontWeight.w700)),
+                ],
+              ),
+            ),
+          ],
           const SizedBox(height: 8),
           Row(
             children: [

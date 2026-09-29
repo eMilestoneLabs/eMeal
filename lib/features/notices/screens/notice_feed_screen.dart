@@ -269,6 +269,10 @@ class _NoticeFeedScreenState extends State<NoticeFeedScreen> {
         content: const Text('Notification removed'),
         behavior: SnackBarBehavior.floating,
         duration: const Duration(seconds: 4),
+        // Live-Test-16 ISSUE-8: since Flutter 3.29 an action SnackBar defaults
+        // to `persist: true` and ignores [duration] — the Undo bar never left
+        // and `closed` never completed, so the dismissal was never sent.
+        persist: false,
         action: SnackBarAction(label: 'UNDO', onPressed: () {}),
       ),
     );

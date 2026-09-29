@@ -58,6 +58,38 @@ abstract final class AppConstants {
   /// this only powers the friendly pre-save gate on Add Meal.
   static const int maxMasterMealsPerGroup = 10;
 
+  // ── Live-Test-16 input limits (server stays authoritative) ────────────────
+  /// ISSUE-1: billing-adjustment audit-trail reason. Mirrors the server
+  /// ADJUSTMENT_REASON_MAX_LENGTH default.
+  static const int adjustmentReasonMaxLength = 30;
+
+  /// ISSUE-4: hard ceiling on guests a member may host per meal. Mirrors the
+  /// server GUEST_MAX_PER_MEAL default.
+  static const int guestMaxPerMeal = 5;
+
+  /// ISSUE-17: attendance-history page size for full-range report fetches —
+  /// equals the single page the report screens always requested, so ranges
+  /// up to this size cost exactly the same one request as before.
+  static const int historyFetchPageSize = 100;
+
+  /// ISSUE-17 (scalability): when a range holds more than one page, rows are
+  /// read in chunks of this size (~0.7 MB JSON each) with at most
+  /// [historyFetchParallelism] requests in flight — never one giant response.
+  static const int historyFetchChunkSize = 1000;
+  static const int historyFetchParallelism = 3;
+
+  /// ISSUE-17 consequence: reports now carry the WHOLE range, so the PDF may
+  /// span far more than the `pdf` package's default 20-page safety cap
+  /// (100 members × 3 meals × 31 days ≈ 9,300 rows ≈ 270 pages). Large builds
+  /// already run in a background isolate (exportIsolateRowThreshold).
+  static const int reportPdfMaxPages = 2000;
+
+  /// ISSUE-16: adjustment export paging — the page size mirrors the server's
+  /// `listAdjustments` page cap (100); the page ceiling bounds one export
+  /// (a range needing more fails loudly, never silently truncated).
+  static const int adjustmentExportPageSize = 100;
+  static const int adjustmentExportMaxPages = 50;
+
   // ── Attendance window ──────────────────────────────────────────────────────
   /// Minutes before a meal window closes that reminders fire.
   static const int reminderLeadMinutes1 = 60;

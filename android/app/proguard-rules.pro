@@ -13,6 +13,14 @@
 -keep class * extends com.google.gson.reflect.TypeToken
 -keep public class * implements java.lang.reflect.Type
 
+# Live-Test-16 ISSUE-13: PdfBox-Android (on-device PDF compression). The AAR
+# ships its own consumer rules (reflective SecurityHandler + document
+# interchange keeps), so R8 can still shrink the rest of the library. Only the
+# optional dependencies we deliberately do NOT bundle are silenced:
+# BouncyCastle (excluded — we never decrypt) and JPX (JPEG-2000) decoding.
+-dontwarn org.bouncycastle.**
+-dontwarn com.gemalto.jp2.**
+
 # flutter_secure_storage — Android Keystore-backed prefs.
 -keep class com.it_nomads.fluttersecurestorage.** { *; }
 

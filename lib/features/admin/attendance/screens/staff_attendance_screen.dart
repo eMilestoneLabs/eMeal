@@ -10,6 +10,8 @@ import 'package:smart_meal_management/data/repositories/attendance_repository.da
 import 'package:smart_meal_management/data/repositories/group_repository.dart';
 import 'package:smart_meal_management/data/repositories/meal_repository.dart';
 import 'package:smart_meal_management/features/auth/providers/auth_provider.dart';
+import 'package:smart_meal_management/data/services/billing_service.dart';
+import 'package:smart_meal_management/shared/widgets/saved_choice_line.dart';
 import 'package:smart_meal_management/shared/models/attendance_model.dart';
 import 'package:smart_meal_management/shared/models/group_model.dart';
 import 'package:smart_meal_management/data/services/selected_group_store.dart';
@@ -602,6 +604,8 @@ class _StaffAttendanceScreenState extends State<StaffAttendanceScreen> {
 
   Widget _mealCard(MealModel meal, bool isDark) {
     final status = _statusFor(meal.id);
+    // Live-Test-16 ISSUE-5: the saved record drives what is shown as chosen.
+    final record = _recordFor(meal.id);
     final busy = _busyMealId == meal.id;
     final open = meal.attendanceWindow.openTime;
     final close = meal.attendanceWindow.closeTime;
@@ -621,7 +625,14 @@ class _StaffAttendanceScreenState extends State<StaffAttendanceScreen> {
     final prefsOn = !hasGroups &&
         meal.preferencesEnabled &&
         meal.enabledPreferences.isNotEmpty;
-    final selectedPref = _selectedPref[meal.id];
+    // ISSUE-5: an untouched meal shows its SAVED flat preference; once the
+    // admin taps a chip their in-progress choice (incl. a deselect) wins.
+    final selectedPref = _selectedPref.containsKey(meal.id)
+        ? _selectedPref[meal.id]
+        : record?.preference;
+    final savedChoice = status == AttendanceStatus.present && record != null
+        ? BillingRow.selectionDisplay(record)
+        : null;
     final prefsSatisfied =
         hasGroups ? groupsComplete : (!prefsOn || selectedPref != null);
 
@@ -728,10 +739,21 @@ class _StaffAttendanceScreenState extends State<StaffAttendanceScreen> {
                 ),
             ],
           ),
+          // ISSUE-5: name the saved choice (identifiable without colour).
+          if (savedChoice != null && savedChoice.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            SavedChoiceLine(text: savedChoice),
+          ],
           // ── Preference groups (FR-PG parity with the member card) ─────────
           if (hasGroups) ...[
             const SizedBox(height: 12),
             PreferenceGroupSelector(
+              // ISSUE-5: re-seed from the SAVED picks whenever the record
+              // itself changes (load / mark / group switch) — the selector
+              // only reads initialSelections in initState.
+              key: ValueKey(
+                  'pgs_${meal.id}_${record?.id ?? ''}_${record?.markedAt?.millisecondsSinceEpoch ?? ''}'),
+              initialSelections: record?.savedSelections ?? const [],
               groups: meal.preferenceGroups,
               enabled: !busy,
               onChanged: (selections, delta, complete) => setState(() {

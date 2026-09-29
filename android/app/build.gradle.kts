@@ -84,6 +84,12 @@ flutter {
 
 dependencies {
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")
+    // Live-Test-16 ISSUE-13: on-device PDF compression (Apache-2.0).
+    // BouncyCastle is excluded — we never decrypt; an encrypted PDF is
+    // rejected with a clear message instead (saves several MB of APK).
+    implementation("com.tom-roush:pdfbox-android:2.0.27.0") {
+        exclude(group = "org.bouncycastle")
+    }
 }
 
 // Kotlin 2.x removed the legacy `kotlinOptions { jvmTarget = "17" }` DSL.

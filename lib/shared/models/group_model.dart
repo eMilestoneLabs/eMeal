@@ -1,4 +1,7 @@
+import 'dart:math' as math;
+
 import 'package:equatable/equatable.dart';
+import 'package:smart_meal_management/core/constants/app_constants.dart';
 import 'package:smart_meal_management/shared/enums/user_role.dart';
 
 // ── MemberSettingOverrides ─────────────────────────────────────────────────────
@@ -281,7 +284,9 @@ class GroupGuestConfig extends Equatable {
   final int maxGuestsPerMemberPerMeal;
   final int? maxGuestsPerMemberPerDay;
 
-  /// sameAsMember | perGuestPrice | flatSurcharge (FR-HG-051).
+  /// sameAsMember | flatSurcharge (FR-HG-051). Live-Test-16 ISSUE-4: the
+  /// adult/child `perGuestPrice` mode is retired — a legacy value (old server
+  /// payload or cached JSON) is normalized to sameAsMember in [fromJson].
   final String guestPricingMode;
   final int? guestAdultPrice;
   final int? guestChildPrice;
@@ -307,11 +312,9 @@ class GroupGuestConfig extends Equatable {
     required bool pricingEnabled,
   }) {
     if (!pricingEnabled) return null;
+    // Live-Test-16 ISSUE-4: every guest is priced identically (the retired
+    // adult/child mode reads as sameAsMember) — mirrors the server.
     switch (guestPricingMode) {
-      case 'perGuestPrice':
-        return isAdult
-            ? (guestAdultPrice ?? mealPrice)
-            : (guestChildPrice ?? guestAdultPrice ?? mealPrice);
       case 'flatSurcharge':
         // GST-011: fixed ₹ (default) or percentage of the effective price.
         final base = mealPrice ?? 0;
@@ -327,11 +330,16 @@ class GroupGuestConfig extends Equatable {
   factory GroupGuestConfig.fromJson(Map<String, dynamic> j) =>
       GroupGuestConfig(
         guestAttendanceEnabled: j['guestAttendanceEnabled'] ?? false,
-        maxGuestsPerMemberPerMeal:
-            _asIntOrNull(j['maxGuestsPerMemberPerMeal']) ?? 5,
+        // Live-Test-16 ISSUE-4: clamp to the hard ceiling even for a cached
+        // pre-change payload (the server now publishes ≤ ceiling itself).
+        maxGuestsPerMemberPerMeal: math.min(
+            _asIntOrNull(j['maxGuestsPerMemberPerMeal']) ??
+                AppConstants.guestMaxPerMeal,
+            AppConstants.guestMaxPerMeal),
         maxGuestsPerMemberPerDay: _asIntOrNull(j['maxGuestsPerMemberPerDay']),
-        guestPricingMode:
-            j['guestPricingMode']?.toString() ?? 'sameAsMember',
+        guestPricingMode: j['guestPricingMode']?.toString() == 'flatSurcharge'
+            ? 'flatSurcharge'
+            : 'sameAsMember',
         guestAdultPrice: _asIntOrNull(j['guestAdultPrice']),
         guestChildPrice: _asIntOrNull(j['guestChildPrice']),
         guestSurcharge: _asIntOrNull(j['guestSurcharge']),
@@ -737,6 +745,7 @@ class GroupModel extends Equatable {
     this.joinCodeExpiresAt,
     this.archivedAt,
     this.joinStatus,
+    this.dataAvailableFrom,
   });
 
   final String id;
@@ -804,6 +813,11 @@ class GroupModel extends Equatable {
   /// GRP-016: archive timestamp (null while active).
   final DateTime? archivedAt;
 
+  /// Live-Test-16 ISSUE-14: earliest date this group's history can still
+  /// contain (server-derived retention window start). Null = unknown (older
+  /// server / retention not initialized) → callers keep their old default.
+  final DateTime? dataAvailableFrom;
+
   /// MEM-004: transient join outcome returned by POST /groups/join —
   /// 'active' (joined) or 'pending' (awaiting admin approval). null elsewhere.
   final String? joinStatus;
@@ -857,6 +871,9 @@ class GroupModel extends Equatable {
             ? DateTime.tryParse(j['archivedAt'])
             : null,
         joinStatus: j['joinStatus'] as String?,
+        dataAvailableFrom: j['dataAvailableFrom'] != null
+            ? DateTime.tryParse(j['dataAvailableFrom'].toString())
+            : null,
       );
 
   Map<String, dynamic> toJson() => {
@@ -891,6 +908,12 @@ class GroupModel extends Equatable {
         'qrExpiryDays': qrExpiryDays,
         'joinCodeExpiresAt': joinCodeExpiresAt?.toIso8601String(),
         'archivedAt': archivedAt?.toIso8601String(),
+        // ISSUE-14: round-trips through the shared admin_groups cache.
+        'dataAvailableFrom': dataAvailableFrom == null
+            ? null
+            : '${dataAvailableFrom!.year.toString().padLeft(4, '0')}-'
+                '${dataAvailableFrom!.month.toString().padLeft(2, '0')}-'
+                '${dataAvailableFrom!.day.toString().padLeft(2, '0')}',
       };
 
   GroupModel copyWith({
@@ -946,6 +969,8 @@ class GroupModel extends Equatable {
         qrExpiryDays: qrExpiryDays,
         joinCodeExpiresAt: joinCodeExpiresAt ?? this.joinCodeExpiresAt,
         archivedAt: archivedAt ?? this.archivedAt,
+        // ISSUE-14: server-owned — always carried through copies.
+        dataAvailableFrom: dataAvailableFrom,
       );
 
   @override

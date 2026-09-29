@@ -16,6 +16,8 @@ import 'package:smart_meal_management/features/admin/attendance/screens/vacation
 import 'package:smart_meal_management/features/admin/attendance/widgets/admin_guests_sheet.dart';
 import 'package:smart_meal_management/features/admin/attendance/widgets/attendance_filter_bar.dart';
 import 'package:smart_meal_management/features/admin/attendance/widgets/member_attendance_row.dart';
+import 'package:smart_meal_management/data/services/billing_service.dart';
+import 'package:smart_meal_management/shared/widgets/saved_choice_line.dart';
 import 'package:smart_meal_management/shared/models/attendance_model.dart';
 import 'package:smart_meal_management/shared/models/group_model.dart';
 import 'package:smart_meal_management/shared/models/guest_model.dart';
@@ -904,6 +906,9 @@ class _MyAttendanceSheetState extends State<_MyAttendanceSheet> {
   DateTime? _fetchedAt;
   final Set<String> _correcting = {};
   final Map<String, AttendanceStatus> _status = {};
+  // Live-Test-16 ISSUE-5: the admin's own saved record per meal — the source
+  // for the "Your choice" line and for re-seeding the group selector.
+  final Map<String, AttendanceModel> _recordByMeal = {};
   // Issue 1/2 parity: track each meal's chosen preference like the student
   // flow, seeded from any existing record so the admin sees what they picked.
   final Map<String, String?> _selectedPref = {};
@@ -942,6 +947,7 @@ class _MyAttendanceSheetState extends State<_MyAttendanceSheet> {
         // sheet, so ignore everyone else's records — only reflect the admin's.
         if (r.userId != widget.userId) continue;
         _status[r.mealId] = r.status;
+        _recordByMeal[r.mealId] = r;
         if (r.preference != null) _selectedPref[r.mealId] = r.preference;
       }
     }
@@ -1007,6 +1013,7 @@ class _MyAttendanceSheetState extends State<_MyAttendanceSheet> {
       case Ok(:final value):
         setState(() {
           _status[meal.id] = value.status;
+          _recordByMeal[meal.id] = value;
           _correcting.remove(meal.id);
           if (value.preference != null) {
             _selectedPref[meal.id] = value.preference;
@@ -1080,9 +1087,19 @@ class _MyAttendanceSheetState extends State<_MyAttendanceSheet> {
                             final meal = _meals[i];
                             final st =
                                 _status[meal.id] ?? AttendanceStatus.pending;
+                            final saved = _recordByMeal[meal.id];
                             return _MySelfMealCard(
                               meal: meal,
                               status: st,
+                              // ISSUE-5: saved choice (name) + saved picks.
+                              savedChoice: st == AttendanceStatus.present &&
+                                      saved != null
+                                  ? BillingRow.selectionDisplay(saved)
+                                  : null,
+                              savedRecordKey:
+                                  '${saved?.id ?? ''}_${saved?.markedAt?.millisecondsSinceEpoch ?? ''}',
+                              initialSelections:
+                                  saved?.savedSelections ?? const [],
                               // ISSUE-010: member-rule parity — buttons hide
                               // outside the window; closed offers same-day
                               // correction (no approval).
@@ -1148,11 +1165,23 @@ class _MySelfMealCard extends StatelessWidget {
     this.windowState = 'open',
     this.correcting = false,
     this.onStartCorrection,
+    this.savedChoice,
+    this.savedRecordKey = '',
+    this.initialSelections = const [],
   });
 
   final MealModel meal;
   final AttendanceStatus status;
   final String? selectedPref;
+
+  /// Live-Test-16 ISSUE-5: display text of the saved choice (null = none).
+  final String? savedChoice;
+
+  /// ISSUE-5: identity of the saved record — re-seeds the selector on change.
+  final String savedRecordKey;
+
+  /// ISSUE-5: the saved group picks the selector starts from.
+  final List<PreferenceSelection> initialSelections;
 
   /// ISSUE-010: 'upcoming' | 'open' (incl. grace) | 'closed' — member parity.
   final String windowState;
@@ -1226,6 +1255,11 @@ class _MySelfMealCard extends StatelessWidget {
                       : AppColors.textSecondary,
                 )),
           ],
+          // ISSUE-5: the saved choice by NAME — also after the window closes.
+          if (savedChoice != null && savedChoice!.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            SavedChoiceLine(text: savedChoice!),
+          ],
           // Preference chips (Issue 1/2 parity with the student flow).
           if (prefsOn && actionable) ...[
             const SizedBox(height: 12),
@@ -1298,6 +1332,8 @@ class _MySelfMealCard extends StatelessWidget {
           if (groupsOn && actionable) ...[
             const SizedBox(height: 12),
             PreferenceGroupSelector(
+              key: ValueKey('self_pgs_${meal.id}_$savedRecordKey'),
+              initialSelections: initialSelections,
               groups: meal.preferenceGroups,
               enabled: !busy,
               onChanged: (selections, delta, complete) =>

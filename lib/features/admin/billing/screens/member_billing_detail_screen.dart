@@ -3,13 +3,14 @@ import 'package:smart_meal_management/core/theme/app_colors.dart';
 import 'package:smart_meal_management/core/theme/app_typography.dart';
 import 'package:smart_meal_management/core/utils/time_format.dart';
 import 'package:smart_meal_management/data/repositories/attendance_repository.dart';
+import 'package:smart_meal_management/data/repositories/billing_periods_repository.dart';
 import 'package:smart_meal_management/data/repositories/meal_repository.dart';
 import 'package:smart_meal_management/data/repositories/group_repository.dart';
 import 'package:smart_meal_management/data/services/billing_service.dart';
 import 'package:smart_meal_management/data/services/export_service.dart';
+import 'package:smart_meal_management/shared/enums/user_role.dart';
 import 'package:smart_meal_management/shared/models/attendance_model.dart';
 import 'package:smart_meal_management/shared/models/meal_model.dart';
-import 'package:smart_meal_management/shared/models/paginated_response.dart';
 import 'package:smart_meal_management/shared/models/result.dart';
 import 'package:smart_meal_management/shared/widgets/app_skeleton.dart';
 import 'package:smart_meal_management/shared/widgets/user_avatar.dart';
@@ -128,13 +129,14 @@ class _MemberBillingDetailScreenState extends State<MemberBillingDetailScreen> {
     });
     // ONE parallel wave (was 4 sequential round-trips): all four reads are
     // independent — start them together, then await in order.
-    final recF = _attendanceRepo.getAttendanceHistory(
+    // Live-Test-16 ISSUE-17: the WHOLE range — page 1 (100 rows) dropped
+    // older days for members with many meals, understating the bill/export.
+    final recF = _attendanceRepo.getAttendanceHistoryAll(
       userId: widget.userId,
       groupId: widget.groupId,
       organizationId: widget.organizationId,
       from: widget.from,
       to: widget.to,
-      params: const PaginationParams(page: 1, limit: 100),
     );
     final mealF = _mealRepo.getGroupMeals(
       organizationId: widget.organizationId,
@@ -160,7 +162,7 @@ class _MemberBillingDetailScreenState extends State<MemberBillingDetailScreen> {
     List<AttendanceModel> records = [];
     String? err;
     if (recRes case Ok(:final value)) {
-      records = value.data;
+      records = value;
     } else if (recRes case Err(:final failure)) {
       err = failure.message;
     }
@@ -212,6 +214,25 @@ class _MemberBillingDetailScreenState extends State<MemberBillingDetailScreen> {
         ),
       };
 
+  /// Live-Test-16 ISSUE-16: this member's ledger entries for the export.
+  /// Unpriced group → none. A failed read FAILS the export (never a report
+  /// silently missing its itemised entries).
+  Future<List<ExportAdjustment>> _exportAdjustments() async {
+    if (!widget.pricingEnabled || widget.groupId.isEmpty) return const [];
+    final res = await BillingPeriodsRepository().listAdjustmentsForExport(
+      groupId: widget.groupId,
+      userId: widget.userId,
+      from: widget.from,
+      to: widget.to,
+    );
+    return switch (res) {
+      Ok(:final value) => value.map(ExportAdjustment.fromApi).toList(),
+      // Never export an incomplete report silently — surfaces through the
+      // existing "Export failed: …" handler.
+      Err(:final failure) => throw Exception(failure.message),
+    };
+  }
+
   Future<void> _export(String fmt) async {
     if (_exporting) return;
     setState(() => _exporting = true);
@@ -219,6 +240,9 @@ class _MemberBillingDetailScreenState extends State<MemberBillingDetailScreen> {
     final label = '${_fmtDate(widget.from)} – ${_fmtDate(widget.to)}';
     final name = '${widget.userName} · ${widget.groupName}';
     try {
+      // Live-Test-16 ISSUE-16: this member's itemised adjustments (with
+      // reason) — fetched only when exporting, never on screen load.
+      final adjustments = await _exportAdjustments();
       switch (fmt) {
         case 'pdf':
           await svc.exportPdf(
@@ -232,6 +256,7 @@ class _MemberBillingDetailScreenState extends State<MemberBillingDetailScreen> {
             todayMeals: _todayMeals,
             vacationUserIds: _vacationUserIds,
             financialsByUser: _exportFinancials,
+            adjustments: adjustments,
             billSkippedMeals: widget.billSkippedMeals,
             billAbsentMeals: widget._billAbsent,
           );
@@ -248,6 +273,7 @@ class _MemberBillingDetailScreenState extends State<MemberBillingDetailScreen> {
             todayMeals: _todayMeals,
             vacationUserIds: _vacationUserIds,
             financialsByUser: _exportFinancials,
+            adjustments: adjustments,
             billSkippedMeals: widget.billSkippedMeals,
             billAbsentMeals: widget._billAbsent,
           );
@@ -446,7 +472,7 @@ class _MemberBillingDetailScreenState extends State<MemberBillingDetailScreen> {
             ],
           ),
           const SizedBox(height: 2),
-          Text('${widget.role}  ·  ${widget.groupName}',
+          Text('${UserRole.labelOf(widget.role)}  ·  ${widget.groupName}',
               style: AppTypography.bodySmall
                   .copyWith(color: Colors.white.withValues(alpha: 0.85))),
           Text('${_fmtDate(widget.from)} – ${_fmtDate(widget.to)}',

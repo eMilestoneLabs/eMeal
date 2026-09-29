@@ -127,6 +127,13 @@ class StudentDashboardProvider extends ChangeNotifier {
   bool get remindersEnabled => _remindersEnabled;
   GroupMealConfig get groupConfig => _groupConfig;
   String get groupName => _groupName;
+
+  /// Live-Test-16 ISSUE-2: the group today's meals/records belong to — lets
+  /// the vacation form reuse this already-loaded data only for the SAME group.
+  String? get loadedGroupId => _loadedGroupId;
+
+  /// Live-Test-16 ISSUE-2: when today's meals arrived (server-clock gating).
+  DateTime? get mealsFetchedAt => _mealsFetchedAt;
   /// #2: the member's per-group display role label ('' when unset).
   String get functionalRole => _functionalRole;
 
